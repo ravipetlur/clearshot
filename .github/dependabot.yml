@@ -1,0 +1,21 @@
+# Weekly update pull requests, minor and patch updates grouped into one per ecosystem; a major update gets its own.
+version: 2
+updates:
+  # The actions in .github/workflows, pinned to commit SHAs: Dependabot moves the SHA and its version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  # ClearShotKit's Package.swift and Package.resolved (libwebp). The app's own dependency, KeyboardShortcuts, is declared
+  # in project.yml for XcodeGen, where Dependabot doesn't look.
+  - package-ecosystem: swift
+    directory: /ClearShotKit
+    schedule:
+      interval: weekly
+    groups:
+      swift-minor-and-patch:
+        update-types: [minor, patch]

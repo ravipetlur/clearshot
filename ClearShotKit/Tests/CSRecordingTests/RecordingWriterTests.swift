@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreMedia
+import CSTestSupport
 import Foundation
 import Synchronization
 import Testing
@@ -8,6 +9,7 @@ import Testing
 extension MediaTests {
     /// The recording writer, fed synthetic 320 × 180 frames at 30 fps and sine tones with host-like times from 1000 s, in a
     /// temporary folder.
+    @Suite(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
     final class RecordingWriterTests {
         typealias Media = SyntheticMedia
 

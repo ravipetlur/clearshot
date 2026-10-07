@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreMedia
+import CSTestSupport
 import Foundation
 import Synchronization
 import Testing
@@ -43,7 +44,8 @@ extension MediaTests {
             try await AVURLAsset(url: url).load(.duration).seconds
         }
 
-        @Test func aPassthroughTrimIsFrameAccurate() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func aPassthroughTrimIsFrameAccurate() async throws {
             let info = try await makeSource()
             let trim = TrimRange(start: 1.37, end: 4.21, duration: info.duration, framesPerSecond: info.framesPerSecond)
             let plan = plan(info) { $0.trim = trim }
@@ -59,7 +61,8 @@ extension MediaTests {
             #expect(abs(first.time) < 0.001)
         }
 
-        @Test func muteLeavesNoAudioTrack() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func muteLeavesNoAudioTrack() async throws {
             let info = try await makeSource()
             try await RecordingExporter.export(source, to: output, plan: .mute(info))
 
@@ -69,7 +72,8 @@ extension MediaTests {
             #expect(abs((video.first?.duration.seconds ?? 0) - 6) <= 0.001)
         }
 
-        @Test func mergingGivesOneTrack() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func mergingGivesOneTrack() async throws {
             let info = try await makeSource()
             let plan = plan(info) { $0.trackVolumes = [1, 1] }
             #expect(plan.path == .audioRemix)
@@ -82,7 +86,8 @@ extension MediaTests {
             #expect(abs(audio.duration.seconds - 6) <= 0.05)
         }
 
-        @Test func monoGivesOneChannel() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func monoGivesOneChannel() async throws {
             let info = try await makeSource()
             let plan = plan(info) { $0.mono = true }
             #expect(plan.path == .audioRemix)
@@ -93,7 +98,8 @@ extension MediaTests {
             #expect(try await Media.trackRanges(output, .video).count == 1)
         }
 
-        @Test func volumeTwoDoublesTheRMS() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func volumeTwoDoublesTheRMS() async throws {
             let info = try await makeSource()
             let plan = plan(info) { $0.volume = 2 }
             #expect(plan.trackVolumes == [2, 2])
@@ -105,7 +111,8 @@ extension MediaTests {
             }
         }
 
-        @Test func aLeftOnlyVoiceLandsInTheCentreInMono() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func aLeftOnlyVoiceLandsInTheCentreInMono() async throws {
             // A voice on the left channel only (0.177 RMS there), mixed to mono at −3 dB.
             let info = try await makeSource(systemTone: .leftOnly, microphone: false)
             try await RecordingExporter.export(source, to: output, plan: plan(info) { $0.mono = true })
@@ -115,7 +122,8 @@ extension MediaTests {
             #expect(abs(level - 0.125) <= 0.125 * 0.05)
         }
 
-        @Test func reencodingToHalfSizeGivesEvenHalfDimensions() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func reencodingToHalfSizeGivesEvenHalfDimensions() async throws {
             // 480p's 854 is half of 1710 × 962 rounded down to even sides: 854 × 480.
             let info = try await makeSource(seconds: 2, width: 1710, height: 962)
             let plan = plan(info) { $0.resolution = .res480p }
@@ -153,7 +161,8 @@ extension MediaTests {
         /// Every path that reports progress: the reader-writer paths (remix, re-encode) report as their pumps go; the
         /// passthrough (trim) reports the session's states every 0.1 s, but its export of even a 30 s source took 14 ms
         /// (measured), so it ends before its first update and reports only its ends.
-        @Test func progressReachesOne() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func progressReachesOne() async throws {
             let info = try await makeSource()
             let trim = TrimRange(start: 1, end: 5, duration: info.duration, framesPerSecond: info.framesPerSecond)
             let plans = [("remix", plan(info) { $0.volume = 0.5 }), ("reencode", plan(info) { $0.quality = .low }),
@@ -175,7 +184,8 @@ extension MediaTests {
         }
 
         /// A trim plus a volume change, the common editor edit: the reader-writer path over the trimmed range.
-        @Test func aRemixWithATrimKeepsTheRangeAtTheNewVolume() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func aRemixWithATrimKeepsTheRangeAtTheNewVolume() async throws {
             let info = try await makeSource()
             let plan = plan(info) {
                 $0.trim = TrimRange(start: 1, end: 4, duration: info.duration, framesPerSecond: info.framesPerSecond)
@@ -202,7 +212,8 @@ extension MediaTests {
 
         /// An opened phone video is stored on its side with a rotation for display; every path keeps that rotation, so
         /// the edit isn't shown sideways.
-        @Test func everyPathKeepsTheVideosRotation() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func everyPathKeepsTheVideosRotation() async throws {
             _ = try await makeSource(seconds: 2, microphone: false)
             let quarterTurn = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 360, ty: 0)
             // The source turned a quarter, as a phone writes a portrait video.
@@ -238,7 +249,8 @@ extension MediaTests {
 
         /// A file with three audio tracks (not one ClearShot writes): a remix merges them into one, as its plan says; a
         /// trim copies all three.
-        @Test func moreThanTwoAudioTracksAreMergedWhenRewrittenAndKeptOnATrim() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func moreThanTwoAudioTracksAreMergedWhenRewrittenAndKeptOnATrim() async throws {
             _ = try await makeSource(seconds: 2)
             // The source's system track, its microphone track, and the system track again.
             let threeTracks = folder.appending(path: "three-tracks.mp4")

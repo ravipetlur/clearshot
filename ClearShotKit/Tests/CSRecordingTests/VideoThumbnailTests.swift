@@ -1,10 +1,12 @@
 import CoreGraphics
+import CSTestSupport
 import Foundation
 import Testing
 @testable import CSRecording
 
 extension MediaTests {
     /// A video's facts and its thumbnail, from synthetic recordings in a temporary folder.
+    @Suite(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
     final class VideoThumbnailTests {
         typealias Media = SyntheticMedia
 

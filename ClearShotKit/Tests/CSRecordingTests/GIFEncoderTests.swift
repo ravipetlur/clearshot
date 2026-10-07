@@ -1,4 +1,5 @@
 import CoreGraphics
+import CSTestSupport
 import Foundation
 import ImageIO
 import Synchronization
@@ -43,7 +44,8 @@ extension MediaTests {
             return Media.index(red: decoded.rgba[center], green: decoded.rgba[center + 1], blue: decoded.rgba[center + 2])
         }
 
-        @Test func anIntermediateBecomesAGIFWithTheScheduledTiming() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func anIntermediateBecomesAGIFWithTheScheduledTiming() async throws {
             try await makeIntermediate(seconds: 2)
             let result = try await StreamingGIFEncoder().convert(source, to: gif, settings: settings) { _ in }
             let data = try Data(contentsOf: gif)
@@ -65,7 +67,8 @@ extension MediaTests {
             #expect(frameIndex(gifSource, at: 59) == 59)
         }
 
-        @Test func aTrimmedConversionCoversOnlyTheRange() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func aTrimmedConversionCoversOnlyTheRange() async throws {
             try await makeIntermediate(seconds: 2)
             var trimmed = settings
             trimmed.trim = TrimRange(start: 0.5, end: 1.5, duration: 2, framesPerSecond: 30)
@@ -78,7 +81,8 @@ extension MediaTests {
             #expect(frameIndex(gifSource, at: result.frameCount - 1) == 44)
         }
 
-        @Test func cancellingRemovesThePartialFile() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func cancellingRemovesThePartialFile() async throws {
             try await makeIntermediate(seconds: 6, width: 640, height: 360)
             let (reports, continuation) = AsyncStream<Void>.makeStream()
             let (source, gif, settings) = (source, gif, settings)
@@ -94,7 +98,8 @@ extension MediaTests {
             #expect(!FileManager.default.fileExists(atPath: gif.path(percentEncoded: false)))
         }
 
-        @Test func progressReachesOne() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func progressReachesOne() async throws {
             try await makeIntermediate(seconds: 2)
             let reports = Mutex<[GIFProgress]>([])
             let result = try await StreamingGIFEncoder().convert(source, to: gif, settings: settings) { progress in

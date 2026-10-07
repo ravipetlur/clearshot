@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import CSCapture
+import CSTestSupport
 import Foundation
 import Testing
 @testable import CSRecording
@@ -47,7 +48,8 @@ extension MediaTests {
 
         // MARK: Recovery
 
-        @Test func anInterruptedFileIsRecoveredToTheLastFragment() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func anInterruptedFileIsRecoveredToTheLastFragment() async throws {
             let folder = try RecordingFolders(root: root).create(journal())
             let writer = try Media.writer(folder.movieURL, systemAudio: true)
             writer.start(at: t(origin))
@@ -81,7 +83,8 @@ extension MediaTests {
 
         // MARK: The Recordings folder
 
-        @Test func scanReportsJournalsDurationsAndAges() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func scanReportsJournalsDurationsAndAges() async throws {
             let folders = RecordingFolders(root: root)
             let recorded = try folders.create(journal(focusTurnedOn: true))
             try await record(recorded.movieURL, seconds: 1.5)
@@ -107,7 +110,8 @@ extension MediaTests {
             #expect(abs(second.age - now.timeIntervalSince(try creationDate(unwritten.url))) < 0.001)
         }
 
-        @Test func aFolderWithoutAJournalIsScannedWithNone() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func aFolderWithoutAJournalIsScannedWithNone() async throws {
             let orphan = RecordingFolder(url: root.appending(path: UUID().uuidString, directoryHint: .isDirectory))
             try FileManager.default.createDirectory(at: orphan.url, withIntermediateDirectories: true)
             try await record(orphan.movieURL, seconds: 1)
@@ -147,7 +151,8 @@ extension MediaTests {
         }
 
         /// A folder set aside keeps its files, under the root's "Not Recovered" folder, and the scan no longer lists it.
-        @Test func aFolderSetAsideKeepsItsFilesAndLeavesTheScan() async throws {
+        @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
+        func aFolderSetAsideKeepsItsFilesAndLeavesTheScan() async throws {
             let folders = RecordingFolders(root: root)
             let folder = try folders.create(journal())
             try await record(folder.movieURL, seconds: 1)

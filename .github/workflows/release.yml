@@ -15,9 +15,11 @@
 # SIGNING
 # With none of the secrets below, the app is signed ad hoc with the hardened runtime and no team, as a local build is
 # (Config/Defaults.xcconfig), and the release notes say the build is unsigned. With all six, set as secrets of the
-# release environment, the app is signed with a Developer ID (hardened runtime, secure timestamp), the DMG is signed,
-# notarized and stapled, and Gatekeeper must accept both before anything is published. Some but not all of them fails
-# the run, rather than publish a build that is half set up.
+# release environment, the app is signed with a Developer ID (hardened runtime, secure timestamp), notarized and stapled,
+# so its first launch needs no network; then it is packed, and the DMG is signed, notarized and stapled too (each
+# notarization's time is in the log and the run's summary, from scripts/notarize.sh). Gatekeeper must accept the app and
+# the DMG before anything is published. Some but not all of the secrets fails the run, rather than publish a build that
+# is half set up.
 #
 #   MACOS_CERTIFICATE_P12_BASE64  the Developer ID Application certificate with its private key, exported from Keychain
 #                                 Access as a .p12 and base64-encoded
@@ -34,7 +36,8 @@
 # com.example.clearshot.
 #
 # The secrets reach only the steps that need them, through env, and are never printed. The files made from them (the
-# .p12, the .p8, the temporary keychain, Config/Local.xcconfig) are deleted at the end however the run ends.
+# .p12, the .p8, the temporary keychain, Config/Local.xcconfig, the app's zip) are deleted at the end however the run
+# ends.
 name: Release
 
 on:
@@ -255,13 +258,38 @@ jobs:
           [ "$short" = "${VERSION%%-*}" ] || fail "CFBundleShortVersionString is $short, not ${VERSION%%-*}."
           [ "$build" = "$BUILD_NUMBER" ] || fail "CFBundleVersion is $build, not $BUILD_NUMBER."
 
+      - name: Write the notary key
+        if: steps.signing.outputs.developer-id == 'true'
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+        run: |
+          key="$RUNNER_TEMP/notary-key.p8"
+          (umask 077 && printf '%s' "$NOTARY_KEY" | base64 --decode > "$key")
+          echo "NOTARY_KEY_FILE=$key" >> "$GITHUB_ENV"
+
+      # The app is notarized and stapled on its own before it's packed, so a copy dragged out of the DMG carries its
+      # ticket and its first launch needs no network.
+      - name: Notarize and staple the app
+        if: steps.signing.outputs.developer-id == 'true'
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          zip="$RUNNER_TEMP/ClearShot.zip"
+          ditto -c -k --keepParent "$APP" "$zip"
+          scripts/notarize.sh "$zip"
+          rm -f "$zip"
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl -a -vvv "$APP"
+
       - name: Pack the DMG
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: scripts/make-dmg.sh "$APP" "$VERSION" build
 
-      # The app inside is signed already; the image is signed too, then notarized (which covers the app in it) and
-      # stapled, so Gatekeeper can check it offline.
+      # The app inside is signed, notarized and stapled already; the image is signed too, then notarized and stapled,
+      # so Gatekeeper can check it offline.
       - name: Sign the DMG
         if: steps.signing.outputs.developer-id == 'true'
         env:
@@ -275,26 +303,10 @@ jobs:
         if: steps.signing.outputs.developer-id == 'true'
         env:
           DMG: ${{ steps.version.outputs.dmg }}
-          NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
-          key="$RUNNER_TEMP/notary-key.p8"
-          printf '%s' "$NOTARY_KEY" | base64 --decode > "$key"
-          xcrun notarytool submit "$DMG" --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
-            --wait --timeout 1h --output-format json > "$RUNNER_TEMP/notarization.json" || true
-          status=$(plutil -extract status raw "$RUNNER_TEMP/notarization.json" 2>/dev/null || echo "no answer")
-          submission=$(plutil -extract id raw "$RUNNER_TEMP/notarization.json" 2>/dev/null || true)
-          echo "Notarization: $status ${submission:+(submission $submission)}"
-          if [ "$status" != Accepted ]; then
-            if [ -n "$submission" ]; then
-              xcrun notarytool log "$submission" --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" || true
-            fi
-            rm -f "$key"
-            echo "::error::Notarization didn't accept the DMG ($status)."
-            exit 1
-          fi
-          rm -f "$key"
+          scripts/notarize.sh "$DMG"
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
 
@@ -308,6 +320,8 @@ jobs:
           hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mount" "$DMG" > /dev/null
           trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
           spctl -a -vvv "$mount/ClearShot.app"
+          # The app's own ticket made it into the image.
+          xcrun stapler validate "$mount/ClearShot.app"
 
       - name: Verify the DMG and write its checksum
         env:
@@ -402,4 +416,5 @@ jobs:
         if: always()
         run: |
           if [ -n "${KEYCHAIN:-}" ] && [ -f "$KEYCHAIN" ]; then security delete-keychain "$KEYCHAIN" || true; fi
-          rm -f "${KEYCHAIN:-}" "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8" Config/Local.xcconfig
+          rm -f "${KEYCHAIN:-}" "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8" "$RUNNER_TEMP/ClearShot.zip" \
+            Config/Local.xcconfig

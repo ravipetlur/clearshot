@@ -10,8 +10,8 @@ updates:
       actions-minor-and-patch:
         update-types: [minor, patch]
 
-  # ClearShotKit's Package.swift and Package.resolved (libwebp). The app's own dependency, KeyboardShortcuts, is declared
-  # in project.yml for XcodeGen, where Dependabot doesn't look.
+  # ClearShotKit's Package.swift and Package.resolved (libwebp). The app's own dependency, KeyboardShortcuts, is pinned
+  # to an exact version in project.yml for XcodeGen, where Dependabot doesn't look: it's bumped by hand.
   - package-ecosystem: swift
     directory: /ClearShotKit
     schedule:

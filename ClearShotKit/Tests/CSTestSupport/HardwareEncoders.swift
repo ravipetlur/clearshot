@@ -4,8 +4,9 @@ import VideoToolbox
 
 /// Whether this Mac has hardware H.264 and HEVC encoders, for the tests that need one: the recording writer requires
 /// hardware encoding, as the app does (`kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder`), and its
-/// failure tests rely on the hardware H.264 encoder refusing a side over 4096 pixels. Every Apple Silicon Mac has both.
-/// A virtual Mac, such as a hosted CI runner, has neither, so those tests are skipped there:
+/// failure tests rely on the hardware H.264 encoder refusing a side over 4096 pixels. Every Apple Silicon Mac has both,
+/// and so does GitHub's hosted xcode-27 runner, a virtual Mac (the tests ran and passed there). On a Mac without them,
+/// those tests are skipped:
 ///
 ///     @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
 ///

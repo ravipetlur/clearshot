@@ -1,4 +1,5 @@
 import CoreGraphics
+import CSTestSupport
 import Foundation
 import Testing
 @testable import CSOCR
@@ -8,11 +9,13 @@ import Testing
 /// read, none twice, in order. Exact text across cuts is held by `TileReadingReplayTests`, on captured readings. The
 /// first recognition after the test target is rebuilt takes about half a minute while Vision loads its models: slow,
 /// not hung.
+/// The tests that run recognition are skipped on a Mac where Vision's text recognition throws (see
+/// `VisionTextRecognition`); the two that don't run it run everywhere.
 @Suite(.serialized, .timeLimit(.minutes(3)))
 struct TextRecognizerTests {
     private let options = TextRecognitionOptions(automaticallyDetectsLanguage: true, primaryLanguage: "en-US")
 
-    @Test func aPageWithColumnsHyphensALinkAndAQRCodeIsRead() async throws {
+    @Test(.needsVisionTextRecognition) func aPageWithColumnsHyphensALinkAndAQRCodeIsRead() async throws {
         let page = OCRPage(width: 2400, height: 1400)
         let left = ["Text recognition reads every line", "of a page in the order it is laid", "out, and puts back words that",
                     "were split by a hyphen. The", "Infor-", "mation here is joined again."]
@@ -38,7 +41,7 @@ struct TextRecognizerTests {
         #expect(abs(link.box.minX - 1300) < 12 && abs(link.box.minY - 240) < 12)
     }
 
-    @Test func aFullScreenSizedCaptureIsTiledAndReadCompletely() async throws {
+    @Test(.needsVisionTextRecognition) func aFullScreenSizedCaptureIsTiledAndReadCompletely() async throws {
         let page = OCRPage(width: 6720, height: 3780)
         var count = 0
         for column in 0..<6 {
@@ -62,7 +65,7 @@ struct TextRecognizerTests {
         #expect(strayStarts.count <= 2, "lines with a stray start: \(strayStarts)")
     }
 
-    @Test func aTallScrollingCaptureIsReadOnceAndInOrder() async throws {
+    @Test(.needsVisionTextRecognition) func aTallScrollingCaptureIsReadOnceAndInOrder() async throws {
         let page = OCRPage(width: 3200, height: 12_000)
         let count = 250
         for number in 1...count {
@@ -77,7 +80,7 @@ struct TextRecognizerTests {
         #expect(numbers == numbers.sorted(), "out of order: \(numbers)")
     }
 
-    @Test func aLongLineAcrossAColumnCutIsReadWhole() async throws {
+    @Test(.needsVisionTextRecognition) func aLongLineAcrossAColumnCutIsReadWhole() async throws {
         // 2 600 px lines (a 1 300 pt column on a 6K display) cross the cuts near 2 688 and 4 032; each row starts a
         // little further right and with other words, so the cuts fall at every point of a word.
         let page = OCRPage(width: 6720, height: 3780)
@@ -95,7 +98,7 @@ struct TextRecognizerTests {
         #expect(rows.doubled.isEmpty, "a word read twice: \(rows.doubled)")
     }
 
-    @Test func aFullWidthLineIsReadWhole() async throws {
+    @Test(.needsVisionTextRecognition) func aFullWidthLineIsReadWhole() async throws {
         // The floor of 25 of 50 rows only guards against catastrophe (the bug it guards against read 0 of 50): Vision
         // intermittently drops whole lines inside a tile, and exact seam behaviour is covered by TileReadingReplayTests.
         let page = OCRPage(width: 6720, height: 3780)
@@ -113,7 +116,7 @@ struct TextRecognizerTests {
         #expect(rows.doubled.isEmpty, "a word read twice: \(rows.doubled)")
     }
 
-    @Test func noWordIsReadTwiceAcrossACut() async throws {
+    @Test(.needsVisionTextRecognition) func noWordIsReadTwiceAcrossACut() async throws {
         // Full-width rows, each shifted 9 px further than the last: over 50 rows the four cuts pass through every
         // part of the words beside them, including words centred on a cut, which both tiles claim. The floor of 25 of
         // 50 rows is low because Vision intermittently drops whole lines inside a tile; exactness is covered by the
@@ -140,7 +143,7 @@ struct TextRecognizerTests {
         return tiles[0].rect.maxX - CGFloat(OCRTiling.horizontalOverlap / 2)
     }
 
-    @Test func aLongPathAcrossACutIsReadWhole() async throws {
+    @Test(.needsVisionTextRecognition) func aLongPathAcrossACutIsReadWhole() async throws {
         // Terminal lines with a 1 250 px path, each a little further right, so the band's one cut falls at a different
         // character of each path.
         let path = "/Volumes/Work/src/projects/clearshot/ClearShotKit/Sources/CSOCR/OCRTiling.swift:42:13:"
@@ -175,7 +178,7 @@ struct TextRecognizerTests {
         }
     }
 
-    @Test func largeHeadingsAcrossACutReadExactly() async throws {
+    @Test(.needsVisionTextRecognition) func largeHeadingsAcrossACutReadExactly() async throws {
         // At 64–72 px the 400 px both tiles read holds only a dozen characters or so.
         let headings = ["Quarterly results exceeded every expectation we set for this year",
                         "Install the update before restarting your computer tonight please"]
@@ -196,7 +199,7 @@ struct TextRecognizerTests {
         }
     }
 
-    @Test func aURLAcrossACutKeepsItsLine() async throws {
+    @Test(.needsVisionTextRecognition) func aURLAcrossACutKeepsItsLine() async throws {
         let url = "https://github.com/the-author/mac-apps/blob/main/ClearShot/README.md"
         let lines = ["A paragraph of ordinary text runs across the width of the page here,",
                      "Ordinary words come first here \(url) and then more words",
@@ -227,7 +230,7 @@ struct TextRecognizerTests {
         }
     }
 
-    @Test func aTallTwoColumnPageReadsColumnByColumn() async throws {
+    @Test(.needsVisionTextRecognition) func aTallTwoColumnPageReadsColumnByColumn() async throws {
         // Two columns over three rows of tiles: read band by band, they would interleave.
         let page = OCRPage(width: 3000, height: 4000)
         for number in 1...60 {
@@ -244,7 +247,7 @@ struct TextRecognizerTests {
         #expect(left == left.sorted() && right == right.sorted())
     }
 
-    @Test func aSidebarAndContentReadSeparately() async throws {
+    @Test(.needsVisionTextRecognition) func aSidebarAndContentReadSeparately() async throws {
         // A sidebar of short items beside content lines at another spacing, on a 6K page cut into 3 × 5 tiles.
         let page = OCRPage(width: 6720, height: 3780)
         for number in 1...40 { page.text("Sidebar \(number)", x: 60, top: 60 + 90 * (number - 1)) }
@@ -263,7 +266,7 @@ struct TextRecognizerTests {
         #expect(Set(content).count == content.count, "content lines read in pieces or twice")
     }
 
-    @Test func aPageWithoutGuttersKeepsRowOrder() async throws {
+    @Test(.needsVisionTextRecognition) func aPageWithoutGuttersKeepsRowOrder() async throws {
         // A form: labels and values in two columns, with a heading reaching across both every fourth row, so no gutter
         // runs the height of the page. It is read row by row.
         let page = OCRPage(width: 3000, height: 4000)
@@ -324,7 +327,7 @@ struct TextRecognizerTests {
         return previous[b.count]
     }
 
-    @Test func aBlankImageGivesNothing() async throws {
+    @Test(.needsVisionTextRecognition) func aBlankImageGivesNothing() async throws {
         let result = try await TextRecognizer.recognize(OCRPage(width: 1200, height: 800).image(), options: options)
         #expect(result.isEmpty)
         #expect(TextOutput.text(for: result, keepLineBreaks: true).isEmpty)
@@ -360,5 +363,14 @@ private extension Array where Element: Hashable {
     func duplicates() -> [Element] {
         var seen = Set<Element>()
         return filter { !seen.insert($0).inserted }
+    }
+}
+
+private extension Trait where Self == ConditionTrait {
+    /// Skips a test that runs Vision's text recognition on a Mac where it can't run.
+    static var needsVisionTextRecognition: Self {
+        .enabled("Vision text recognition isn't available on this Mac (a virtual Mac has no Neural Engine)") {
+            await VisionTextRecognition.available
+        }
     }
 }

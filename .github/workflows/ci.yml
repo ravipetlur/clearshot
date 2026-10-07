@@ -109,7 +109,34 @@ jobs:
             exit 1
           fi
 
-      # The media tests that need a hardware video encoder (a virtual Mac has none) are skipped here, with a note in
-      # the log; see ClearShotKit/Tests/CSTestSupport/HardwareEncoders.swift. They run on every Apple Silicon Mac.
+      # Tests that need what a Mac may lack skip themselves with a reason (CSTestSupport: HardwareEncoders,
+      # VisionTextRecognition); on this runner, Vision's text recognition can't run. swift-testing logs each skip as
+      # `➜ Test name() skipped: "reason"`, and the run's total counts skipped tests too, so the count and the reasons go
+      # to the job summary, with a warning, where a whole suite skipped can't go unnoticed.
       - name: Test ClearShotKit
-        run: swift test --package-path ClearShotKit
+        run: |
+          status=0
+          swift test --package-path ClearShotKit 2>&1 | tee "$RUNNER_TEMP/test.log" || status=$?
+          skipped=$(grep -E '^[^ ]+ Test .+ skipped: ' "$RUNNER_TEMP/test.log" || true)
+          count=$(printf '%s' "$skipped" | grep -c '^' || true)
+          {
+            echo "### ClearShotKit tests"
+            if [ "$count" -eq 0 ]; then
+              echo "No tests skipped."
+            else
+              echo "**$count skipped**, by reason:"
+              echo
+              printf '%s\n' "$skipped" | sed -E 's/^.* skipped: "(.*)"$/\1/' | sort | uniq -c |
+                sed -E 's/^ *([0-9]+) (.*)$/- \1: \2/'
+              echo
+              echo "<details><summary>The skipped tests</summary>"
+              echo
+              printf '%s\n' "$skipped" | sed -E 's/^[^ ]+ Test (.+) skipped: .*$/- `\1`/'
+              echo
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$count" -gt 0 ]; then
+            echo "::warning title=Skipped tests::$count tests skipped on this runner; the job summary lists them and why."
+          fi
+          exit "$status"

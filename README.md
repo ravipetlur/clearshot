@@ -1,5 +1,7 @@
 # ClearShot
 
+[![CI](https://github.com/ravipetlur/clearshot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ravipetlur/clearshot/actions/workflows/ci.yml)
+
 A screenshot and screen recording app for macOS that lives in the menu bar. It was inspired by popular macOS screenshot tools, and it works entirely on your Mac: nothing is uploaded, and there is no account or cloud service.
 
 ## Features
@@ -14,7 +16,31 @@ A screenshot and screen recording app for macOS that lives in the menu bar. It w
 - **Capture History:** every capture kept for a set time, to restore, reopen or drag out.
 - **Hide Desktop Icons,** global hotkeys for every action, and `clearshot://` URL commands for scripts, Shortcuts and launchers.
 
-## Requirements
+## Install
+
+Download `ClearShot-<version>.dmg` from the [latest release](https://github.com/ravipetlur/clearshot/releases/latest), open it and drag ClearShot to Applications. ClearShot needs macOS 27 on Apple Silicon.
+
+Each release's notes say whether it is signed. A build signed with a Developer ID and notarized by Apple opens like any other app. An unsigned build (signed ad hoc, without a Developer ID) needs one more step the first time:
+
+1. Open ClearShot from Applications. macOS says it can't be opened; click Done.
+2. Open System Settings › Privacy & Security, scroll down to Security, click **Open Anyway** beside the message about ClearShot, and confirm with your password or Touch ID. ClearShot opens, and from then on opens normally.
+
+As an option, you can remove the quarantine flag in Terminal instead: `xattr -dr com.apple.quarantine /Applications/ClearShot.app`. Either way skips Gatekeeper's check for that copy, so [verify the download](#verifying-a-download) first.
+
+### Updating an unsigned build
+
+macOS keeps the Screen Recording, Microphone and Accessibility permissions for an app's code signature. An ad hoc signature is different in every build, so to macOS each new version of an unsigned build is a different app: after updating, it asks for the permissions again, and System Settings › Privacy & Security may list ClearShot twice (remove the old entry). A build signed with a Developer ID keeps them across updates, as does a build of your own signed with your certificate (see [Signing](#signing)).
+
+### Verifying a download
+
+Each release has the DMG's SHA-256 checksum beside it, and an attestation of where the DMG was built. In the folder you downloaded both files to:
+
+    shasum -a 256 -c ClearShot-<version>.dmg.sha256
+    gh attestation verify ClearShot-<version>.dmg --repo ravipetlur/clearshot
+
+The first checks the DMG against the published checksum (it prints `OK`). The second, with the [GitHub CLI](https://cli.github.com), checks that this repository's release workflow built that exact file, and shows the commit it was built from.
+
+## Requirements for building
 
 - macOS 27 on Apple Silicon
 - Xcode 27
@@ -28,6 +54,7 @@ Swift Package Manager fetches the two dependencies, [KeyboardShortcuts](https://
     make build      # build the Debug app into build/DerivedData
     make run        # build the Debug app and launch it
     make install    # build the Release app, copy it to /Applications and launch it
+    make dmg        # build the Release app and pack it into build/ClearShot-<version>.dmg (VERSION=1.2.0 to choose)
     make test       # run ClearShotKit's unit tests
 
 The Xcode project is generated from `project.yml` (`make generate`), so edit `project.yml` rather than `ClearShot.xcodeproj`. Most of the logic lives in the `ClearShotKit` Swift package, which builds and tests on its own (`swift test --package-path ClearShotKit`).
@@ -275,6 +302,17 @@ Launchers, Shortcuts and scripts can drive ClearShot with `clearshot://` URLs:
 ## Logs
 
 `~/Library/Logs/ClearShot/clearshot.log`, or Console.app with the app's bundle identifier as the subsystem (`com.example.clearshot` by default). URL commands log under the `api` category, with the app that sent each one.
+
+## Releasing
+
+For maintainers: tag a commit on main with its version, and push the tag.
+
+    git tag v1.2.0
+    git push origin v1.2.0
+
+The Release workflow (`.github/workflows/release.yml`) then runs the CI build and tests, waits for approval in the `release` environment, builds the Release app as 1.2.0 with the workflow's run number as its build number, and packs `ClearShot-1.2.0.dmg` (what `make dmg VERSION=1.2.0` does locally). With the Developer ID secrets in the `release` environment, it signs the app and the DMG, notarizes and staples the DMG, and checks that Gatekeeper accepts both; without them the build is signed ad hoc and its notes say it's unsigned. It writes the DMG's checksum, attests where it was built, and publishes a GitHub Release with generated notes, the install steps, the DMG and the checksum. A tag such as `v1.2.0-beta.1` publishes a pre-release.
+
+Actions › Release › Run workflow, with a version, is a dry run: the DMG and its checksum come back as a workflow artifact, and nothing is published. The secrets and the `RELEASE_BUNDLE_ID` variable are described at the top of the workflow.
 
 ## License
 

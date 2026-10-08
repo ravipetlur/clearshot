@@ -317,3 +317,5 @@ Actions › Release › Run workflow, with a version, is a dry run: the DMG and 
 ## License
 
 ClearShot is licensed under the [Apache License 2.0](LICENSE). Copyright © The ClearShot Authors.
+
+ClearShot includes two open-source components, KeyboardShortcuts and libwebp, under their own licenses: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which also ships inside the app and in the DMG.

@@ -43,6 +43,10 @@ targets:
     platform: macOS
     sources:
       - path: ClearShot
+      # The open-source components' licenses, the repository's one copy, in Contents/Resources so the app carries them
+      # wherever it's copied. scripts/make-dmg.sh puts the same file beside the app in the DMG.
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
     info:
       path: ClearShot/Info.plist
       properties:

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Packs ClearShot.app into ClearShot-<version>.dmg: a compressed (UDZO), read-only disk image named "ClearShot" holding
-# the app and an Applications shortcut to drag it onto. Uses only macOS's own tools (ditto, hdiutil, codesign).
+# the app, an Applications shortcut to drag it onto, and THIRD_PARTY_NOTICES.md, the licenses of the open-source
+# components in the app. Uses only macOS's own tools (ditto, hdiutil, codesign, cmp).
 #
 #   scripts/make-dmg.sh <path to ClearShot.app> <version> [output folder, default build]
 #
@@ -28,6 +29,15 @@ fi
 # A broken or partial signature would only show once someone opens the app.
 codesign --verify --strict --deep "$app"
 
+# The notices come from the repository's one copy, which the build bundles into the app: the app's copy must be there
+# and match it, so the DMG's copy (taken from the app) can't differ from either.
+notices="$(cd "$(dirname "$0")/.." && pwd)/THIRD_PARTY_NOTICES.md"
+bundled="$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+if [ ! -f "$bundled" ] || ! cmp -s "$bundled" "$notices"; then
+    echo "error: the app's THIRD_PARTY_NOTICES.md is missing or differs from the repository's; rebuild the app" >&2
+    exit 67
+fi
+
 mkdir -p "$output"
 dmg="$output/ClearShot-$version.dmg"
 staging=$(mktemp -d "${TMPDIR:-/tmp}/clearshot-dmg.XXXXXX")
@@ -38,6 +48,14 @@ chmod 755 "$staging"
 # ditto keeps the bundle exactly as built: its signature, extended attributes and symlinks.
 ditto "$app" "$staging/ClearShot.app"
 ln -s /Applications "$staging/Applications"
+cp "$bundled" "$staging/THIRD_PARTY_NOTICES.md"
+chmod 644 "$staging/THIRD_PARTY_NOTICES.md"
+# Exactly these three, nothing else.
+contents=$(cd "$staging" && LC_ALL=C ls -A | tr '\n' ' ')
+if [ "$contents" != "Applications ClearShot.app THIRD_PARTY_NOTICES.md " ]; then
+    echo "error: the image would hold: $contents" >&2
+    exit 70
+fi
 
 # macOS 27 marks `hdiutil create` and `attach` deprecated in favour of `diskutil image`; they still work as before.
 rm -f "$dmg"

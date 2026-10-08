@@ -203,6 +203,11 @@ jobs:
           identities=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep '"Developer ID Application: ' || true)
           if [ "$(printf '%s' "$identities" | grep -c '^')" -ne 1 ]; then
             echo "::error::The certificate must hold exactly one Developer ID Application identity."
+            # What it holds instead, by kind and validity only: the names would put the holder's name in a public log.
+            echo "The .p12 holds these code-signing identities (kind, and why macOS rejects it, if it does):"
+            security find-identity -p codesigning "$KEYCHAIN" |
+              awk '/Valid identities only/ { exit } /^ *[0-9]+\) / { print }' |
+              sed -E 's/^ *[0-9]+\) [0-9A-F]+ "([^:"]*)[^"]*"(.*)$/\1\2/' | sort | uniq -c || true
             exit 1
           fi
           hash=$(printf '%s\n' "$identities" | awk '{ print $2 }')

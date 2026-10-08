@@ -14,9 +14,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch or pull request cancels the run still going.
+# A newer push to the same branch or pull request cancels the run still going. The workflow's name is in the group
+# because the release workflow runs this one as its gate, and a called workflow sees the caller's context: without it,
+# a release dry run on main and a push to main would share a group and one would cancel the other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:

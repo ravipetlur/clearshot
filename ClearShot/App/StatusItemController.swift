@@ -1,10 +1,9 @@
 import AppKit
 import CSCore
 import CSRecording
-import KeyboardShortcuts
 
 /// The menu bar icon and its menu. The layout's items are made once, each action's with its shortcut, which then
-/// follows Settings by itself; every open puts them back, renames Hide/Show Desktop Icons, and adds Show Hidden
+/// follows the shortcut store by itself; every open puts them back, renames Hide/Show Desktop Icons, and adds Show Hidden
 /// Overlays and Show Hidden Pins while there is something hidden. While a recording runs the icon is its Stop button
 /// instead (`apply`).
 final class StatusItemController: NSObject, NSMenuDelegate {
@@ -16,6 +15,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var layoutItems: [NSMenuItem] = []
     /// The one item whose title changes: Hide or Show Desktop Icons.
     private var desktopIconsItem: NSMenuItem?
+    /// Each action's item, to put its key equivalent right when the action's shortcut changes.
+    private var actionItems: [ClearShotAction: NSMenuItem] = [:]
     /// "Show menu bar icon"; a recording shows the icon whatever it says.
     private var prefersVisible = true
     /// What `apply` last showed; at first the plain icon with its menu.
@@ -40,6 +41,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         layoutItems = makeLayoutItems()
         menu.delegate = self
         statusItem.menu = menu
+        // The notification center keeps the observer for good, so it captures the controller weakly.
+        NotificationCenter.default.addObserver(forName: ShortcutStore.didChange, object: ShortcutStore.app,
+                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshKeyEquivalents() }
+        }
     }
 
     /// The "Show menu bar icon" setting. While a recording forces the icon visible it stays, and goes once the recording
@@ -125,6 +131,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func conversionClicked() { onConversionClicked?() }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        // The keys follow the keyboard layout in use now, which a switch since the last change of a shortcut may have
+        // altered.
+        refreshKeyEquivalents()
         menu.removeAllItems()
         // Only while thumbnails or pins are hidden, so there is a visible way back to them besides the hotkeys.
         let hiddenOverlays = coordinator.quickAccess.hasHiddenOverlays
@@ -178,16 +187,37 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return items
     }
 
-    /// An action's item. `setShortcut` keeps its key equivalent in step with the action's shortcut from now on, so it is
-    /// called once per item.
+    /// An action's item, showing the action's shortcut as its key equivalent; `refreshKeyEquivalents` keeps that in step.
     private func item(for action: ClearShotAction) -> NSMenuItem {
         let title = action.menuTitle(desktopIconsHidden: coordinator.desktopIcons.isHidden)
         let item = NSMenuItem(title: title, action: #selector(performAction(_:)), keyEquivalent: "")
         item.target = self
         item.representedObject = action.rawValue
         item.image = NSImage(systemSymbolName: action.symbolName, accessibilityDescription: nil)
-        item.setShortcut(for: .for(action))
+        actionItems[action] = item
+        applyKeyEquivalent(to: item, for: action)
         return item
+    }
+
+    /// Every action's key equivalent from the shortcut store now: after any change there, whichever action it was.
+    private func refreshKeyEquivalents() {
+        for (action, item) in actionItems {
+            applyKeyEquivalent(to: item, for: action)
+        }
+    }
+
+    /// `item`'s key equivalent and modifiers from `action`'s shortcut; none when it has no shortcut, or one that a menu
+    /// can't show (a keypad key).
+    private func applyKeyEquivalent(to item: NSMenuItem, for action: ClearShotAction) {
+        guard let shortcut = ShortcutStore.app.shortcut(for: action),
+              let equivalent = MenuKeyEquivalent.make(for: shortcut, character: { KeyboardLayout.character(for: $0) }) else {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+            return
+        }
+        item.keyEquivalent = equivalent.key
+        item.keyEquivalentModifierMask = NSEvent.ModifierFlags(
+            rawValue: CarbonModifiers.eventFlags(from: equivalent.carbonModifiers))
     }
 
     @objc private func performAction(_ sender: NSMenuItem) {

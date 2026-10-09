@@ -151,7 +151,7 @@ private struct ShortcutsStep: View {
         .task {
             while !Task.isCancelled {
                 systemShortcutsOn = !SystemShortcutCheck.actionsTakenBySystem().isEmpty
-                shortcutsInUseElsewhere = !HotkeyController.actionsWithUnregisteredShortcuts().isEmpty
+                shortcutsInUseElsewhere = !HotkeyCenter.shared.unregisteredActions.isEmpty
                 try? await Task.sleep(for: .seconds(1))
             }
         }

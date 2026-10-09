@@ -39,7 +39,7 @@ final class AppCoordinator {
     private(set) var urlCommands: URLCommandRouter?
     /// The URL scheme API's consent, in the Keychain: the router and Settings › Advanced read and write it.
     let consentStore = KeychainConsentStore()
-    private let hotkeys = HotkeyController()
+    private let hotkeys = HotkeyCenter.shared
     private var settingsWindow: SettingsWindowController?
     private var historyWindow: HistoryWindowController?
     private var onboardingWindow: OnboardingWindowController?
@@ -128,6 +128,9 @@ final class AppCoordinator {
 
     /// `activation` hands the activation back before URL commands that capture (`ActivationHandBack`).
     func start(activation: ActivationHandBack) {
+        // First of all: what v1.0.0 saved moves into the shortcut store before anything reads or registers a shortcut (the
+        // status menu, the hot keys) or can open Settings.
+        LegacyShortcutMigration.run(defaults: .standard, store: .app)
         urlCommands = URLCommandRouter(coordinator: self, activation: activation)
         let statusItem = StatusItemController(coordinator: self)
         statusItem.isVisible = preferences[Prefs.showMenuBarIcon]
@@ -142,13 +145,15 @@ final class AppCoordinator {
         annotate.onQuitCancelled = { [weak self] in self?.captureFlow.quitWasCancelled() }
         videoEditor.onQuitCancelled = { [weak self] in self?.captureFlow.quitWasCancelled() }
         captureFlow.openSettings = { [weak self] pane in self?.showSettings(pane) }
-        hotkeys.register { [weak self] action in self?.perform(action) }
+        hotkeys.start { [weak self] action in self?.perform(action) }
         let taken = SystemShortcutCheck.actionsTakenBySystem()
         if !taken.isEmpty {
             Log.hotkeys.warning("macOS also uses \(SystemShortcutCheck.describe(taken))")
         }
-        // A shortcut another app already holds can't be registered, and would otherwise never fire without a word.
-        let unregistered = HotkeyController.actionsWithUnregisteredShortcuts()
+        // Hot keys are registered non-exclusively, so macOS never refuses keys another app holds; it refuses a duplicate
+        // of one of ClearShot's own, and registering can fail for other reasons. Such a shortcut would otherwise never
+        // fire without a word.
+        let unregistered = hotkeys.unregisteredActions
         if !unregistered.isEmpty {
             shortcutsInUseElsewhere(unregistered)
         }
@@ -210,8 +215,9 @@ final class AppCoordinator {
     /// What macOS posts, with the object "BackgroundChanged", when a desktop picture changes.
     private static let desktopNotification = Notification.Name("com.apple.desktop")
 
-    /// Some shortcuts couldn't be registered, because another app holds them: they won't fire until that app lets them
-    /// go and ClearShot registers them again (at its next launch, or when the shortcut is set again in Settings).
+    /// Some shortcuts couldn't be registered (macOS refused them, or registering failed): they won't fire until a later
+    /// registration succeeds. The registry tries every such action again on each change to a shortcut, and a launch
+    /// registers all of them afresh. The messages keep v1.0.0's wording.
     private func shortcutsInUseElsewhere(_ actions: [ClearShotAction]) {
         Log.hotkeys.warning("Couldn't register \(SystemShortcutCheck.describe(actions)); another app is using them")
         hud.show("Another app is using some of ClearShot's shortcuts", symbol: "exclamationmark.triangle.fill",

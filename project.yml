@@ -32,21 +32,12 @@ settings:
 packages:
   ClearShotKit:
     path: ClearShotKit
-  # An exact version, so every build (a release's included) gets the same code: the generated project and its resolved
-  # pins aren't committed. Bump it by hand; Dependabot reads Package.swift files, not XcodeGen package specs.
-  KeyboardShortcuts:
-    url: https://github.com/sindresorhus/KeyboardShortcuts
-    exactVersion: "3.1.0"
 targets:
   ClearShot:
     type: application
     platform: macOS
     sources:
       - path: ClearShot
-      # The open-source components' licenses, the repository's one copy, in Contents/Resources so the app carries them
-      # wherever it's copied. scripts/make-dmg.sh puts the same file beside the app in the DMG.
-      - path: THIRD_PARTY_NOTICES.md
-        buildPhase: resources
     info:
       path: ClearShot/Info.plist
       properties:
@@ -112,7 +103,6 @@ targets:
         product: CSRecording
       - package: ClearShotKit
         product: CSAPI
-      - package: KeyboardShortcuts
 schemes:
   ClearShot:
     build:

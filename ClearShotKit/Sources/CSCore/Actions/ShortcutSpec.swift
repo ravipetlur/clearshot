@@ -1,5 +1,4 @@
-/// A keyboard shortcut in Carbon terms (virtual key code + Carbon modifier mask), the format
-/// KeyboardShortcuts uses.
+/// A keyboard shortcut in Carbon terms (virtual key code and Carbon modifier mask).
 public struct ShortcutSpec: Sendable, Equatable, Hashable {
     public static let command = 256
     public static let shift = 512

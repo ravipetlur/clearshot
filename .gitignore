@@ -13,7 +13,3 @@ xcuserdata/
 
 # Your own build identity (see Config/Local.example.xcconfig)
 Config/Local.xcconfig
-
-# Tool workspaces
-.superpowers/
-.claude/

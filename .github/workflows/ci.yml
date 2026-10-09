@@ -87,18 +87,17 @@ jobs:
           echo "$HOME/xcodegen-$XCODEGEN_VERSION/xcodegen/bin" >> "$GITHUB_PATH"
           "$HOME/xcodegen-$XCODEGEN_VERSION/xcodegen/bin/xcodegen" --version
 
-      # ClearShotKit's own build folder (its dependencies' checkouts and their build products), SwiftPM's shared caches
-      # and the app build's package checkouts. Keyed on the package's pins and the toolchain.
-      - name: Cache Swift packages
+      # ClearShotKit's own build folder. ClearShot has no third-party packages, so there are no checkouts or pins to
+      # cache. The key names the package manifest, the toolchain and the commit, so every run saves a fresh cache (a
+      # cache is never rewritten under its key); a run restores the newest one saved for the same manifest and toolchain,
+      # or, when the manifest changed, the newest for the toolchain.
+      - name: Cache ClearShotKit's build folder
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ClearShotKit/.build
-            build/DerivedData/SourcePackages
-            ~/Library/Caches/org.swift.swiftpm
-            ~/Library/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-${{ hashFiles('ClearShotKit/Package.resolved') }}
+          path: ClearShotKit/.build
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-${{ hashFiles('ClearShotKit/Package.swift') }}-${{ github.sha }}
           restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-${{ hashFiles('ClearShotKit/Package.swift') }}-
             swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-
 
       # make build runs xcodebuild -quiet, which prints only problems: any warning: or error: line fails the job.

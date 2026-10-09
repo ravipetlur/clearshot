@@ -21,4 +21,4 @@ Only the latest release gets security fixes.
 - **The documented same-user limitation of the URL commands.** The consent prompt keeps sandboxed apps and web pages out until you allow them, but a program you run yourself, as your user and outside the sandbox, can plant the keychain item and then run commands, screen captures included, without asking. That program already runs with your rights; the README says so under [URL commands](README.md#url-commands).
 - Attacks that need root, physical access to an unlocked Mac, or permissions you granted to another app.
 - Gatekeeper's warning on an unsigned (ad hoc) build, and permissions asked again after updating one; both are expected and described in the README.
-- Problems in macOS itself or in a dependency, unless ClearShot's use of it makes them exploitable: report those upstream as well.
+- Problems in macOS itself, or in the actions and services the workflows use, unless ClearShot's use of them makes them exploitable: report those upstream as well.

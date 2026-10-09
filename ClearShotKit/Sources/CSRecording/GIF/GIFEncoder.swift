@@ -62,7 +62,7 @@ public struct GIFConversionResult: Sendable, Equatable {
     }
 }
 
-/// Converts a video to a GIF. `StreamingGIFEncoder` is ClearShot's; another (gifski, say) could stand behind it.
+/// Converts a video to a GIF. `StreamingGIFEncoder` is ClearShot's own; another encoder could stand behind the protocol.
 public protocol GIFEncoder: Sendable {
     /// Writes `source`'s trimmed range as a GIF at `destination` (replacing any file there), reporting progress from
     /// any thread. Cancelling the task stops it with `CancellationError` and removes the partial file; any other error

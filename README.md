@@ -46,7 +46,7 @@ The first checks the DMG against the published checksum (it prints `OK`). The se
 - Xcode 27
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
-Swift Package Manager fetches the two dependencies, [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) and [libwebp](https://github.com/SDWebImage/libwebp-Xcode). GIFs come from ClearShot's own encoder, so nothing else is needed.
+ClearShot has no third-party dependencies, so there is nothing to fetch. The GIF and WebP encoders and the global shortcuts are ClearShot's own.
 
 ## Building
 
@@ -84,11 +84,12 @@ Debug builds have **Run Capture Self-Test** in the menu bar menu. It captures ev
 
 Settings › Shortcuts lists every action that can have a global hotkey, in groups (General, Screenshots, Screen Recording, Scrolling Capture, Text Recognition, Quick Access Overlay, Pin), with a search field that also finds keywords ("pixelate", "marker", "window"). Only ⇧⌘3 (Fullscreen), ⇧⌘4 (Capture Area) and ⇧⌘5 (All-In-One) have defaults. macOS's own screenshot shortcuts use the same keys, so turn those off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots (onboarding offers the link).
 
+- **Recording:** click a field (or press Space or Return on it) and press the keys; the field shows "Type Shortcut". A shortcut needs ⌘ or ⌃ (a plain key, or one with only ⇧, beeps), and function keys F1–F20 can have any modifiers or none. Shortcuts whose only modifiers are ⌥ or ⌥⇧ are refused, except on function keys, because macOS ignores them; so are keys ClearShot's own menus use (⌘W, ⌘Q, ⌘S and so on), because a global shortcut would take that command from every app. The reason shows in the field. Esc cancels, Delete clears the shortcut, and Tab moves on to the next control. ClearShot's own shortcuts are paused while you record, so a key it already uses is recorded instead of run.
 - **Reset:** the small arrow button beside a shortcut, or Reset to default in the row's right-click menu, puts its default back; it is dimmed at the default. Restore Defaults resets every shortcut and the Annotate tool letters.
-- **Conflicts:** a shortcut another action already has says "Shortcut is used for another action" ("⇧⌘4 is assigned to “Capture Area”."), and the action keeps its old shortcut; "Use old shortcut" closes the alert. Shortcuts macOS reserves are refused too.
+- **Conflicts:** a shortcut another action already has says "Shortcut is used for another action" ("⇧⌘4 is assigned to “Capture Area”."), and the action keeps its old shortcut; "Use old shortcut" closes the alert. A shortcut macOS also uses (its own ⇧⌘4, say) is accepted, and the pane then shows "macOS also uses …" with a link to System Settings › Keyboard, so you can turn the macOS one off or pick another.
 - **Annotate tools,** the last section, lists the editor's tool letters, the same ones as Settings › Annotate › Tool shortcuts, each with its reset button. Annotate's menu commands (Copy, Duplicate, Save and the rest) follow System Settings › Keyboard › Keyboard Shortcuts › App Shortcuts.
 - **Record Window** (Screen Recording; no default key, and not in the menu bar menu) opens the recorder picking a window: hover highlights one, a click gives Ready on it, and Space switches to areas.
-- **Shortcuts another app holds** can't be registered, and don't work: at launch, a HUD says "Another app is using some of ClearShot's shortcuts", and the log names them. Choose others, or quit that app and restart ClearShot.
+- **Shortcuts macOS won't register:** if macOS refuses one, a HUD at launch says "Another app is using some of ClearShot's shortcuts" and the log names them; choose others. macOS doesn't report a shortcut another app also uses, so if one never fires, choose another.
 
 ## All-In-One
 
@@ -220,7 +221,7 @@ Every capture has a lossless copy in `~/Library/Application Support/ClearShot/Hi
 
 - **Opening:** Finder's Open With › ClearShot, Open… (the menu bar or its hotkey), Open from Clipboard and `clearshot://add-quick-access-overlay` load images (PNG, JPEG, HEIC, WebP), videos and GIFs into the Quick Access Overlay, as thumbnails and Capture History items; ClearShot works on a copy and never changes the original. A double-click opens Annotate, or the Video Editor for a video. A `.clearshot` project opens in Annotate. A second copy of ClearShot (the Debug build, say) hands what it was given to the running one.
 - **GIFs** become GIF items, told by their contents, so a PNG named `.gif` opens as an image: the thumbnail animates on hover and shows its length and size, and Save writes a `.gif`. Only a GIF recorded in ClearShot has the pencil, Trim and the Video Editor; any other says "This GIF wasn't recorded in ClearShot, so it can't be trimmed". Frames stored with no delay count as 0.1 s, as browsers play them.
-- **Save As…** on a screenshot's thumbnail or pin offers PNG, JPEG, HEIC and WebP, starting on the format Save would use (PNG for a transparent capture), and writes the one you choose. A video keeps its own type (an opened `.mov` stays `.mov`), a GIF `.gif`. Annotate's Save As adds ClearShot Project.
+- **Save As…** on a screenshot's thumbnail or pin offers PNG, JPEG, HEIC and WebP, starting on the format Save would use (PNG for a transparent capture), and writes the one you choose. WebP is always lossless, so a photo comes out larger than as JPEG or HEIC; Settings › Screenshots › Quality applies to JPEG and HEIC only. A video keeps its own type (an opened `.mov` stays `.mov`), a GIF `.gif`. Annotate's Save As adds ClearShot Project.
 - **Screenshot metadata:** captured screenshots are tagged as macOS screenshots (`kMDItemIsScreenCapture`, the capture type and its rect), their unsaved copies, drags and Annotate's copies included, so Finder and Spotlight treat them like native screenshots. Opened and pasted images, videos and GIFs aren't tagged.
 
 ## Pins
@@ -240,7 +241,7 @@ Hide Desktop Icons (menu bar, or its hotkey) covers every display with the wallp
 Open a capture in the editor from its thumbnail (the pencil button, ⌘E or a double-click), with "Capture Area & Annotate", the "Open Annotate" after-capture action, or the "Annotate Last Screenshot" hotkey.
 
 - **Done** (⌘↩) applies the edits to the capture: its thumbnail, its history copy and, if ClearShot saved it and nothing has changed it since, its saved file. Reopening an annotated capture shows every object still editable.
-- **Save** (⌘S) also gives the capture a saved file; **Save As** (⇧⌘S) writes PNG, JPEG, HEIC, WebP or a ClearShot project. Hold ⌥ to skip the dialog.
+- **Save** (⌘S) also gives the capture a saved file; **Save As** (⇧⌘S) writes PNG, JPEG, HEIC, WebP (always lossless) or a ClearShot project. Hold ⌥ to skip the dialog.
 - **Projects** are `.clearshot` packages: `document.json`, `original.png` and `images/`, with Finder previews in `QuickLook/`. Double-click one to edit it again.
 - Settings › Annotate holds the editor's options (arrows, smoothing, shadows, colour names, window behaviour) and the tool letters (Tool shortcuts).
 - **Crop & Resize** (`C`): aspect ratios, snapping to edges (hold ⌘ to turn it off), dragging past the picture to expand the canvas (filled Auto, Transparent or a colour), Rotate Left/Right (⌥⌘L/⌥⌘R), flips, Resize Image… (⌥⌘I; annotations scale with the picture and stay editable) and Revert to original. Flips and Revert have menu items but no shortcuts: plain letters would catch typing and the ⌘ combinations are taken.
@@ -318,4 +319,4 @@ Actions › Release › Run workflow, with a version, is a dry run: the DMG and 
 
 ClearShot is licensed under the [Apache License 2.0](LICENSE). Copyright © The ClearShot Authors.
 
-ClearShot includes two open-source components, KeyboardShortcuts and libwebp, under their own licenses: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which also ships inside the app and in the DMG.
+ClearShot has no third-party dependencies.

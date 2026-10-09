@@ -1,9 +1,9 @@
 import Accelerate
 import CoreGraphics
 import CSCore
+import CSWebP
 import Foundation
 import ImageIO
-import libwebp
 
 public enum ImageEncoderError: Error, LocalizedError, Equatable {
     case encodingFailed(ImageFormat)
@@ -16,14 +16,14 @@ public enum ImageEncoderError: Error, LocalizedError, Equatable {
 }
 
 public enum ImageEncoder {
-    /// Encodes an image. `quality` (0…1) applies to JPEG, HEIC and WebP; 1.0 makes WebP lossless. `pixelsPerPoint`, the
-    /// image's own scale (2 for a Retina screenshot), is recorded as its density, 72 dpi per pixel per point, as macOS
-    /// records its screenshots': Preview then shows the file at its point size, and an editor it is dropped or pasted into
-    /// reads it back at its scale (`ImagePlacement.scale(forDPI:)`). Nil, or a scale that isn't a positive number, records
-    /// none, and so does WebP, which has nowhere to keep one.
+    /// Encodes an image. `quality` (0…1) applies to JPEG and HEIC; PNG and WebP are always lossless and ignore it.
+    /// `pixelsPerPoint`, the image's own scale (2 for a Retina screenshot), is recorded as its density, 72 dpi per pixel
+    /// per point, as macOS records its screenshots': Preview then shows the file at its point size, and an editor it is
+    /// dropped or pasted into reads it back at its scale (`ImagePlacement.scale(forDPI:)`). Nil, or a scale that isn't a
+    /// positive number, records none, and so does WebP, which has nowhere to keep one.
     public static func encode(_ image: CGImage, as format: ImageFormat, quality: Double, pixelsPerPoint: Double? = nil) throws -> Data {
         switch format {
-        case .webp: try encodeWebP(image, quality: quality)
+        case .webp: try encodeWebP(image)
         default: try encodeWithImageIO(image, format: format, quality: quality, pixelsPerPoint: pixelsPerPoint)
         }
     }
@@ -62,10 +62,17 @@ public enum ImageEncoder {
         return data as Data
     }
 
-    /// ImageIO can't write WebP (macOS 27), so libwebp encodes straight from un-premultiplied sRGB RGBA.
-    private static func encodeWebP(_ image: CGImage, quality: Double) throws -> Data {
+    /// ImageIO can't write WebP (macOS 27), so `WebPLosslessEncoder` encodes from un-premultiplied sRGB RGBA. The image is
+    /// drawn into an 8-bit sRGB bitmap first, which is also what turns an HDR (float extended sRGB) or wide-gamut source
+    /// into the 8-bit sRGB the encoder takes. The file is always lossless, so there is no quality here, and a side beyond
+    /// the encoder's limit (16 383, what macOS can decode) fails.
+    private static func encodeWebP(_ image: CGImage) throws -> Data {
         let width = image.width
         let height = image.height
+        // Before a bitmap of gigabytes is made for an image the encoder would refuse.
+        guard width <= WebPLosslessEncoder.maxSide, height <= WebPLosslessEncoder.maxSide else {
+            throw ImageEncoderError.encodingFailed(.webp)
+        }
         let stride = width * 4
         var pixels = [UInt8](repeating: 0, count: stride * height)
         let drawn = pixels.withUnsafeMutableBytes { raw -> Bool in
@@ -80,12 +87,10 @@ public enum ImageEncoder {
         }
         guard drawn else { throw ImageEncoderError.encodingFailed(.webp) }
 
-        var output: UnsafeMutablePointer<UInt8>?
-        let size = quality >= 1
-            ? WebPEncodeLosslessRGBA(pixels, Int32(width), Int32(height), Int32(stride), &output)
-            : WebPEncodeRGBA(pixels, Int32(width), Int32(height), Int32(stride), Float(min(max(quality, 0), 1) * 100), &output)
-        guard size > 0, let output else { throw ImageEncoderError.encodingFailed(.webp) }
-        defer { WebPFree(output) }
-        return Data(bytes: output, count: size)
+        do {
+            return try WebPLosslessEncoder.encode(rgba: pixels, width: width, height: height)
+        } catch {
+            throw ImageEncoderError.encodingFailed(.webp)
+        }
     }
 }

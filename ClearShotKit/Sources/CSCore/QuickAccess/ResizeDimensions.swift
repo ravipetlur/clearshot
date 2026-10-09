@@ -2,7 +2,8 @@ import CoreGraphics
 
 /// Arithmetic for the Resize… dialog, in pixels.
 public enum ResizeDimensions {
-    /// The largest side every format ClearShot writes can encode: libwebp's limit (the ImageIO formats go higher).
+    /// The largest side every format ClearShot writes can encode: WebP's limit (the encoder's 16 383, which is what
+    /// macOS can decode); the ImageIO formats go higher.
     public static let maxPixels = 16_383
 
     public static func height(forWidth width: Int, original: CGSize) -> Int {

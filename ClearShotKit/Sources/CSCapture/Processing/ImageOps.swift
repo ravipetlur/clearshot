@@ -14,9 +14,10 @@ public enum ImageTransform: Sendable, Equatable {
 /// Pixel operations for thumbnails, history and the Quick Access menu. Results are 8-bit premultiplied RGBA in the
 /// source's RGB color space (sRGB when the source has none, or one an 8-bit bitmap can't hold, like extended-range).
 public enum ImageOps {
-    /// The longest side `loadUpright` decodes a picture at: the output limit, the largest side every format ClearShot writes
-    /// can hold (`AnnotationDocument.maximumOutputSide`, libwebp's limit). A larger picture is decoded scaled down to it,
-    /// so it never takes a full decode of many gigabytes first.
+    /// The longest side `loadUpright` decodes a picture at: the output limit, the largest side every format ClearShot
+    /// writes can hold (`AnnotationDocument.maximumOutputSide`, WebP's limit: the encoder's 16 383, which is what macOS
+    /// can decode). A larger picture is decoded scaled down to it, so it never takes a full decode of many gigabytes
+    /// first.
     public static let maximumLoadedSide = 16_383
 
     /// The first image in a file, or nil if it can't be read.

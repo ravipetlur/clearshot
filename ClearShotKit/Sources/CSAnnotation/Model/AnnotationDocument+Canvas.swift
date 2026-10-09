@@ -5,7 +5,8 @@ import Foundation
 /// auto-expanding canvas.
 extension AnnotationDocument {
     /// The longest side, in pixels, the editor gives a picture or canvas (resize, crop, auto-expand, combining), an
-    /// inserted bitmap or a background's frame: what every format ClearShot writes can hold.
+    /// inserted bitmap or a background's frame: what every format ClearShot writes can hold, WebP's limit (the encoder's
+    /// 16 383, which is what macOS can decode) being the lowest.
     public static let maximumOutputSide = 16_383.0
 
     /// How far past an object the auto-expanding canvas reaches, in output pixels.

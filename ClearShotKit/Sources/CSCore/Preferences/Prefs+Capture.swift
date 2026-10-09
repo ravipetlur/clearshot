@@ -44,7 +44,8 @@ public enum ImageFormat: String, CaseIterable, Sendable, Identifiable, PrefValue
         }
     }
 
-    public var supportsQuality: Bool { self != .png }
+    /// Whether the format is lossy, so a quality setting means something: JPEG and HEIC. PNG and WebP are always lossless.
+    public var supportsQuality: Bool { self != .png && self != .webp }
     public var supportsTransparency: Bool { self != .jpeg }
 }
 

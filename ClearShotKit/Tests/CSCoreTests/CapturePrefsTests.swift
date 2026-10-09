@@ -82,6 +82,15 @@ final class CapturePrefsTests {
         #expect(!ImageFormat.png.supportsQuality)
     }
 
+    /// PNG and WebP are always lossless, so only JPEG and HEIC have a quality to set (Settings hides the slider otherwise).
+    @Test func onlyTheLossyFormatsOfferQuality() {
+        #expect(ImageFormat.jpeg.supportsQuality)
+        #expect(ImageFormat.heic.supportsQuality)
+        #expect(!ImageFormat.png.supportsQuality)
+        #expect(!ImageFormat.webp.supportsQuality)
+        #expect(ImageFormat.allCases.filter(\.supportsQuality) == [.jpeg, .heic])
+    }
+
     @Test func shutterSoundsPointAtSystemFiles() {
         for sound in ShutterSound.allCases {
             #expect(FileManager.default.fileExists(atPath: sound.fileURL.path(percentEncoded: false)), "\(sound)")

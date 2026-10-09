@@ -58,7 +58,7 @@ struct ExporterTests {
     }
 
     @Test func encoderFailureIsNotReportedAsALocationProblem() {
-        // libwebp rejects images wider than 16383 pixels.
+        // The WebP encoder rejects images wider than 16383 pixels (what macOS can decode).
         let tooWide = TestImages.solid(width: 16384, height: 1, color: TestImages.red)
         var request = request(format: .webp)
         request.image = tooWide

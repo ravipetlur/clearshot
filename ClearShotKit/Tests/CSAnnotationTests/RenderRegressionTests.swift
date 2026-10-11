@@ -75,6 +75,8 @@ struct RenderRegressionTests {
     static func drawnAtTwoX(_ document: AnnotationDocument, _ images: ImageStore) -> CGImage? {
         let canvas = document.canvasBounds.integral
         let context = TestBitmaps.flippedContext(Int(canvas.width) * 2, Int(canvas.height) * 2)
+        // As the renderer's own bitmaps: smoothing on, whatever this Mac's setting is (`Renderer.pinTextSmoothing`).
+        Renderer.pinTextSmoothing(context)
         context.scaleBy(x: 2, y: 2)
         context.translateBy(x: -canvas.minX, y: -canvas.minY)
         Renderer.draw(document, images: images, in: context, deviceScale: 2)

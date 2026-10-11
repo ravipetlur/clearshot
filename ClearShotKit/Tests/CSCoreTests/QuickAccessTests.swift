@@ -350,3 +350,173 @@ struct ResizeDimensionsTests {
         #expect(ResizeDimensions.width(forHeight: 5, original: .zero) >= 1)
     }
 }
+
+/// Where the hover controls and the possible-secrets pill sit inside a thumbnail's picture area (y up, origin bottom-left).
+struct QuickAccessControlFramesTests {
+    /// Every thumbnail the three sizes can make: the width, and each height from half the width to 1.25 times it.
+    private var shapes: [CGSize] {
+        QuickAccessSize.allCases.flatMap { size in
+            Array(stride(from: (size.width * 0.5).rounded(), through: (size.width * 1.25).rounded(), by: 1))
+                .map { CGSize(width: size.width, height: $0) }
+        }
+    }
+
+    private func circles(_ frames: QuickAccessLayout.ThumbnailControls) -> [(String, CGRect)] {
+        [("close", frames.close), ("annotate", frames.annotate), ("trim", frames.trim), ("trash", frames.trash), ("pin", frames.pin)]
+    }
+
+    @Test func theExistingControlsAreWhereTheyWere() {
+        // 216 x 135: the numbers the view computed inline before the pill, now from one place.
+        let frames = QuickAccessLayout.controls(in: CGSize(width: 216, height: 135))
+        #expect(frames.copy == CGRect(x: 52, y: 70.5, width: 112, height: 26))
+        #expect(frames.save == CGRect(x: 52, y: 38.5, width: 112, height: 26))
+        #expect(frames.close == CGRect(x: 6, y: 107, width: 22, height: 22))
+        #expect(frames.annotate == CGRect(x: 188, y: 107, width: 22, height: 22))
+        #expect(frames.trim == CGRect(x: 162, y: 107, width: 22, height: 22))
+        #expect(frames.trash == CGRect(x: 6, y: 6, width: 22, height: 22))
+        #expect(frames.pin == CGRect(x: 188, y: 6, width: 22, height: 22))
+        // A narrow picture area leaves the Copy and Save pills 12 pt either side.
+        #expect(QuickAccessLayout.controls(in: CGSize(width: 100, height: 150)).copy.width == 76)
+    }
+
+    @Test func thePillSitsRightOfTheTrashSlotAtOneFixedSize() {
+        let frames = QuickAccessLayout.controls(in: CGSize(width: 216, height: 135))
+        #expect(frames.sensitiveBadge == CGRect(x: 34, y: 6, width: 54, height: 18))
+        #expect(frames.sensitiveBadge.minX == frames.trash.maxX + QuickAccessLayout.controlInset)
+        // Flush with the corner buttons' lower edge, which keeps it as low as it can be, away from Copy and Save.
+        #expect(frames.sensitiveBadge.minY == frames.trash.minY)
+        #expect(QuickAccessLayout.sensitiveBadgeSize == CGSize(width: 54, height: 18))
+    }
+
+    @Test func thePillNeverMovesWhateverTheThumbnailsShape() {
+        let first = QuickAccessLayout.controls(in: shapes[0]).sensitiveBadge
+        for shape in shapes {
+            #expect(QuickAccessLayout.controls(in: shape).sensitiveBadge == first, "\(shape)")
+        }
+    }
+
+    @Test func thePillIsNeverOnATrashPinCloseOrAnnotateButton() {
+        for shape in shapes {
+            let frames = QuickAccessLayout.controls(in: shape)
+            for (name, button) in circles(frames) {
+                #expect(!frames.sensitiveBadge.intersects(button), "\(name) at \(shape)")
+            }
+        }
+    }
+
+    @Test func thePillKeepsAGapFromTrashAndPinAtEverySize() {
+        for shape in shapes {
+            let frames = QuickAccessLayout.controls(in: shape)
+            #expect(frames.sensitiveBadge.minX - frames.trash.maxX >= QuickAccessLayout.controlInset, "\(shape)")
+            #expect(frames.pin.minX - frames.sensitiveBadge.maxX >= QuickAccessLayout.controlInset, "\(shape)")
+            #expect(CGRect(origin: .zero, size: shape).contains(frames.sensitiveBadge), "\(shape)")
+        }
+    }
+
+    /// Whether two frames share any area (frames that only touch don't).
+    private func overlap(_ a: CGRect, _ b: CGRect) -> Bool {
+        let shared = a.intersection(b)
+        return !shared.isNull && shared.width > 0 && shared.height > 0
+    }
+
+    @Test func nothingCoversThePillAndCopyAndSaveNeverCoverEachOther() {
+        // Every thumbnail the three sizes can make, from the widest strip to the tallest.
+        for shape in shapes {
+            let frames = QuickAccessLayout.controls(in: shape)
+            let badge = frames.sensitiveBadge
+            for (name, frame) in [("copy", frames.copy), ("save", frames.save)] + circles(frames) {
+                #expect(!overlap(badge, frame), "\(name) over the pill at \(shape)")
+            }
+            #expect(!overlap(frames.copy, frames.save), "copy over save at \(shape)")
+            for (name, button) in circles(frames) where name != "trim" {
+                #expect(!overlap(frames.copy, button), "copy over \(name) at \(shape)")
+                #expect(!overlap(frames.save, button), "save over \(name) at \(shape)")
+            }
+            // Trim is only on a video's or GIF's thumbnail. In a stacked layout just over the 106 pt limit (106 to 113 pt on
+            // a small or medium thumbnail) the Copy pill's top reaches it by up to 4 pt: it did before the pill, and a
+            // screenshot, which is what has a pill, never has Trim.
+            let stackedUnderTrim = !frames.copyAndSaveShareARow && shape.width < 220 && shape.height < 114
+            if !stackedUnderTrim {
+                #expect(!overlap(frames.copy, frames.trim), "copy over trim at \(shape)")
+                #expect(!overlap(frames.save, frames.trim), "save over trim at \(shape)")
+            }
+        }
+    }
+
+    @Test func aShortThumbnailPutsCopyAndSaveSideBySideInOneRowOnTheMiddle() {
+        // 168 x 84: the widest strip the small size makes. The row spans y 29 to 55: 5 pt above the pill, 1 pt under Trim.
+        let frames = QuickAccessLayout.controls(in: CGSize(width: 168, height: 84))
+        #expect(frames.copyAndSaveShareARow)
+        #expect(frames.copy == CGRect(x: 28, y: 29, width: 54, height: 26))
+        #expect(frames.save == CGRect(x: 86, y: 29, width: 54, height: 26))
+        #expect(frames.sensitiveBadge.minY == 6 && frames.copy.minY - frames.sensitiveBadge.maxY == 5)
+        #expect(frames.trim.minY - frames.copy.maxY == 1)
+        for shape in shapes where shape.height < QuickAccessLayout.stackedPillsMinimumHeight {
+            let row = QuickAccessLayout.controls(in: shape)
+            #expect(row.copyAndSaveShareARow, "\(shape)")
+            #expect(row.copy.midY == shape.height / 2 && row.save.midY == shape.height / 2, "\(shape)")
+            #expect(row.copy.width == row.save.width && row.copy.width == (min(112, shape.width - 24) - 4) / 2, "\(shape)")
+            #expect(row.save.minX - row.copy.maxX == 4, "\(shape)")
+            #expect(row.copy.minX == (shape.width - (row.save.maxX - row.copy.minX)) / 2, "centred at \(shape)")
+        }
+    }
+
+    @Test func aThumbnailOf106ptOrMoreKeepsCopyAboveSave() {
+        #expect(QuickAccessLayout.stackedPillsMinimumHeight == 106)
+        #expect(!QuickAccessLayout.controls(in: CGSize(width: 168, height: 105)).copy.isEmpty)
+        #expect(QuickAccessLayout.controls(in: CGSize(width: 168, height: 105)).copyAndSaveShareARow)
+        let frames = QuickAccessLayout.controls(in: CGSize(width: 168, height: 106))
+        #expect(!frames.copyAndSaveShareARow)
+        #expect(frames.copy == CGRect(x: 28, y: 56, width: 112, height: 26))
+        #expect(frames.save == CGRect(x: 28, y: 24, width: 112, height: 26))
+        for shape in shapes where shape.height >= 106 {
+            let stacked = QuickAccessLayout.controls(in: shape)
+            #expect(!stacked.copyAndSaveShareARow, "\(shape)")
+            #expect(stacked.copy.width == min(112, shape.width - 24) && stacked.copy.width == stacked.save.width, "\(shape)")
+            #expect(stacked.copy.minY - stacked.save.maxY == 6, "\(shape)")
+        }
+    }
+
+    @Test func theWidestTextFitsTheFixedWidth() {
+        // "Masked" is 38.7 pt wide in the pill's 10 pt semibold type and "⚠︎ 99+" 32.7 pt (measured), with 7 pt either side.
+        #expect(QuickAccessLayout.sensitiveBadgeSize.width >= 38.7 + 14)
+    }
+
+    // MARK: Clicks
+
+    @Test func thePillTakesClicksInsideItsCapsuleOnly() {
+        let size = QuickAccessLayout.sensitiveBadgeSize
+        #expect(QuickAccessLayout.capsuleContains(CGPoint(x: 27, y: 9), in: size))
+        #expect(QuickAccessLayout.capsuleContains(CGPoint(x: 2, y: 9), in: size))
+        #expect(QuickAccessLayout.capsuleContains(CGPoint(x: 52, y: 9), in: size))
+        #expect(QuickAccessLayout.capsuleContains(CGPoint(x: 27, y: 0.5), in: size))
+        #expect(QuickAccessLayout.capsuleContains(CGPoint(x: 27, y: 17.5), in: size))
+        // The four corners of its rectangle are outside the capsule.
+        for corner in [CGPoint(x: 0, y: 0), CGPoint(x: 54, y: 0), CGPoint(x: 0, y: 18), CGPoint(x: 54, y: 18), CGPoint(x: 1, y: 1)] {
+            #expect(!QuickAccessLayout.capsuleContains(corner, in: size), "\(corner)")
+        }
+        // And so is anything outside the rectangle.
+        for point in [CGPoint(x: -1, y: 9), CGPoint(x: 55, y: 9), CGPoint(x: 27, y: -1), CGPoint(x: 27, y: 19)] {
+            #expect(!QuickAccessLayout.capsuleContains(point, in: size), "\(point)")
+        }
+        #expect(!QuickAccessLayout.capsuleContains(.zero, in: .zero))
+    }
+}
+
+/// What the Save button says, which in a short thumbnail has to fit a pill half as wide.
+struct QuickAccessSaveTitleTests {
+    @Test func theTitlesAreWhatTheViewHadAlways() {
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: false, compact: false) == "Save")
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: true, compact: false) == "Save As\u{2026}")
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: false, compact: false) == "Show in Finder")
+        // A saved capture shows where it is, whatever the setting says Save would do.
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: true, compact: false) == "Show in Finder")
+    }
+
+    @Test func aHalfWidthPillGetsTheShorterTitlesThatFitIt() {
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: false, compact: true) == "Save")
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: true, compact: true) == "Save\u{2026}")
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: false, compact: true) == "Finder")
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: true, compact: true) == "Finder")
+    }
+}

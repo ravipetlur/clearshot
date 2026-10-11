@@ -14,6 +14,13 @@ public struct ClipboardOwnership: Equatable, Sendable {
     /// Whether deleting `itemID` clears the clipboard: only when this is that item's copy and the clipboard's change
     /// count is still the recorded one, so nothing (from ClearShot or any other app) has been written to it since.
     public func clears(deleting itemID: UUID, changeCount current: Int) -> Bool {
+        stillHolds(itemID, changeCount: current)
+    }
+
+    /// Whether the clipboard still holds ClearShot's copy of `itemID`: this is that item's copy and the change count is the
+    /// recorded one. Deleting the capture clears it then, and Mask All puts the masked picture there then (and only then:
+    /// anything copied since is the person's, and stays).
+    public func stillHolds(_ itemID: UUID, changeCount current: Int) -> Bool {
         self.itemID == itemID && changeCount == current
     }
 }

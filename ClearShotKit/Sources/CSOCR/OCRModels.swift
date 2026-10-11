@@ -1,14 +1,40 @@
 import CoreGraphics
 
+/// A stretch of a recognized line that the caller asked to have boxed (`TextRecognizer.recognize(_:options:marking:)`).
+public struct OCRMark: Equatable, Sendable {
+    /// The stretch's text as the tile that boxed it read it.
+    public var text: String
+    /// Vision's box for exactly that stretch, in image pixels with a top-left origin.
+    public var box: CGRect
+    /// What the caller said the stretch is: the tag it gave the range, handed back as it was.
+    public var tag: Int
+    /// Whether the box comes up to an inner left or right edge of the tile that read it: the line may go on past the edge, so
+    /// the stretch may be longer than that tile saw, whatever its text (an edge cuts a line mid-word). Vision's boxes stop a
+    /// few pixels short of the edge (`OCRTiling.touchesInnerSide`).
+    public var isCut: Bool
+
+    public init(text: String, box: CGRect, tag: Int, isCut: Bool = false) {
+        self.text = text
+        self.box = box
+        self.tag = tag
+        self.isCut = isCut
+    }
+}
+
 /// One line of recognized text.
 public struct OCRLine: Equatable, Sendable {
     public var text: String
     /// Where the line is, in image pixels with a top-left origin.
     public var box: CGRect
+    /// The stretches of the line the caller asked to have boxed, if it asked (`TextRecognizer.recognize(_:options:
+    /// marking:)`). Each was boxed in the tile that read it, so where two tiles read the same stretch of a line, a line put
+    /// together from them lists it for each (and a stretch only one of them read, once).
+    public var marks: [OCRMark]
 
-    public init(text: String, box: CGRect) {
+    public init(text: String, box: CGRect, marks: [OCRMark] = []) {
         self.text = text
         self.box = box
+        self.marks = marks
     }
 }
 

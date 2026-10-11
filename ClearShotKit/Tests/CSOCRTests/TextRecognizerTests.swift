@@ -365,12 +365,3 @@ private extension Array where Element: Hashable {
         return filter { !seen.insert($0).inserted }
     }
 }
-
-private extension Trait where Self == ConditionTrait {
-    /// Skips a test that runs Vision's text recognition on a Mac where it can't run.
-    static var needsVisionTextRecognition: Self {
-        .enabled("Vision text recognition isn't available on this Mac (a virtual Mac has no Neural Engine)") {
-            await VisionTextRecognition.available
-        }
-    }
-}

@@ -129,15 +129,42 @@ public struct TextObject: Codable, Equatable, Sendable {
 }
 
 /// `intensity` runs from 1 to 10.
+///
+/// `isSecretsMask` marks the redactions the secrets check made (`AnnotationObject.pixelateMask`): the ones the sensitive-info
+/// button takes out again. A redaction the person draws never has it. It is written only when set, so a document with none is
+/// written exactly as before, and a document without the key reads as having none; an older build ignores the key it doesn't
+/// know (and drops it if it saves the document, which makes the masks ordinary redactions there).
 public struct RedactObject: Codable, Equatable, Sendable {
     public var rect: CGRect
     public var style: RedactStyle
     public var intensity: Int
+    public var isSecretsMask: Bool
 
-    public init(rect: CGRect, style: RedactStyle, intensity: Int) {
+    public init(rect: CGRect, style: RedactStyle, intensity: Int, isSecretsMask: Bool = false) {
         self.rect = rect
         self.style = style
         self.intensity = intensity
+        self.isSecretsMask = isSecretsMask
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rect, style, intensity, isSecretsMask
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rect = try container.decode(CGRect.self, forKey: .rect)
+        style = try container.decode(RedactStyle.self, forKey: .style)
+        intensity = try container.decode(Int.self, forKey: .intensity)
+        isSecretsMask = try container.decodeIfPresent(Bool.self, forKey: .isSecretsMask) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(rect, forKey: .rect)
+        try container.encode(style, forKey: .style)
+        try container.encode(intensity, forKey: .intensity)
+        if isSecretsMask { try container.encode(true, forKey: .isSecretsMask) }
     }
 }
 

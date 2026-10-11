@@ -23,6 +23,7 @@ struct OCRPiece: Equatable, Sendable {
     func offsetBy(dx: CGFloat, dy: CGFloat) -> OCRPiece {
         var moved = self
         moved.line.box = line.box.offsetBy(dx: dx, dy: dy)
+        moved.line.marks = line.marks.map { OCRMark(text: $0.text, box: $0.box.offsetBy(dx: dx, dy: dy), tag: $0.tag, isCut: $0.isCut) }
         moved.words = words?.map { OCRWord(start: $0.start, count: $0.count, box: $0.box.offsetBy(dx: dx, dy: dy)) }
         return moved
     }
@@ -44,6 +45,9 @@ struct OCRPiece: Equatable, Sendable {
     ///
     /// Within two characters of where a reading's tile ends, it is cut off and partly misread, so the other reading
     /// is taken there.
+    ///
+    /// The marks of both readings are kept: each was boxed by Vision in the reading's own text, which the stitched text
+    /// may differ from, so they stay as they were (`OCRLine.marks`).
     static func stitched(_ left: OCRPiece, _ right: OCRPiece) -> OCRPiece {
         let a = Letters(left.line.text), b = Letters(right.line.text)
         guard a.nonSpaceCount > 0, b.nonSpaceCount > 0 else { return joined(left, right) }
@@ -106,7 +110,8 @@ struct OCRPiece: Equatable, Sendable {
         let words = (left.words?.filter { $0.start + $0.count <= a.nonSpaceIndex(aStart) } ?? [])
             + (right.words?.filter { $0.start >= b.nonSpaceIndex(bEnd) }.map { OCRWord(start: $0.start + shift, count: $0.count, box: $0.box) } ?? [])
         let text = String(characters).split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
-        return OCRPiece(line: OCRLine(text: text, box: left.line.box.union(right.line.box)), words: words.isEmpty ? nil : words)
+        return OCRPiece(line: OCRLine(text: text, box: left.line.box.union(right.line.box), marks: left.line.marks + right.line.marks),
+                        words: words.isEmpty ? nil : words)
     }
 
     /// How many characters past the shared stretch's estimated ends the alignment takes in: the estimate spreads a
@@ -181,7 +186,8 @@ struct OCRPiece: Equatable, Sendable {
         let shift = Letters(left.line.text).nonSpaceCount
         let words = (left.words ?? []) + (right.words?.map { OCRWord(start: $0.start + shift, count: $0.count, box: $0.box) } ?? [])
         return OCRPiece(line: OCRLine(text: left.line.text + (spaced ? " " : "") + right.line.text,
-                                      box: left.line.box.union(right.line.box)),
+                                      box: left.line.box.union(right.line.box),
+                                      marks: left.line.marks + right.line.marks),
                         words: words.isEmpty ? nil : words)
     }
 

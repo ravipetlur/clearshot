@@ -159,7 +159,8 @@ struct StitchTraceTests {
             == "vertical: top 0, bottom 0, band 1000, estimate none, still by pieces (only a small part changed in place)")
     }
 
-    @Test func theSessionTracesSkippedFramesAndTheTimeTaken() async throws {
+    @Test(.timeLimit(.minutes(10)))
+    func theSessionTracesSkippedFramesAndTheTimeTaken() async throws {
         let gate = HoldingEstimator()
         let (deliveries, continuation) = AsyncStream.makeStream(of: StitchUpdate.self)
         let session = StitchSession(stitcher: Stitcher(configuration: StitchConfiguration(pixelsPerPoint: 2, axis: .vertical),
@@ -169,8 +170,9 @@ struct StitchTraceTests {
         session.submit(page.frame(at: 0, length: 1000))
         #expect(await updates.next()?.trace?.framesSkipped == 0)
         // The queue is held in the next frame's estimate while three more arrive: two are replaced unseen.
+        defer { gate.letGo() }
         session.submit(page.frame(at: 100, length: 1000))
-        #expect(gate.waitUntilHeld())
+        try #require(await gate.waitUntilHeld())
         for position in [200, 300, 400] { session.submit(page.frame(at: position, length: 1000)) }
         gate.letGo()
         let held = try #require(await updates.next()?.trace)
@@ -193,12 +195,14 @@ private struct FixedEstimate: OffsetEstimator {
 /// Holds the stitching queue inside its first estimate until released (a few milliseconds at least); passes every later
 /// one through.
 private final class HoldingEstimator: OffsetEstimator, @unchecked Sendable {
-    private let entered = DispatchSemaphore(value: 0)
     private let release = DispatchSemaphore(value: 0)
     private let isFirst = Mutex(true)
+    private let held = HeldSignal()
 
-    func waitUntilHeld() -> Bool {
-        entered.wait(timeout: .now() + 20) == .success
+    /// Whether the queue got into the first estimate: true once it is held there, false if it isn't within the timeout
+    /// or the test's task is cancelled (a slow queue is waited for; one that never starts fails the test).
+    func waitUntilHeld() async -> Bool {
+        await held.wait()
     }
 
     func letGo() {
@@ -211,7 +215,7 @@ private final class HoldingEstimator: OffsetEstimator, @unchecked Sendable {
             return isFirst
         }
         if first {
-            entered.signal()
+            held.give()
             release.wait()
         }
         return nil

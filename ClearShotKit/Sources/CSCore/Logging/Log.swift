@@ -44,4 +44,5 @@ public enum Log {
     public static let annotate = AppLogger(category: "annotate")
     public static let history = AppLogger(category: "history")
     public static let api = AppLogger(category: "api")
+    public static let update = AppLogger(category: "update")
 }

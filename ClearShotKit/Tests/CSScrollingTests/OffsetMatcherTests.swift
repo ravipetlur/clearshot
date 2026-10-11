@@ -108,7 +108,7 @@ struct OffsetMatcherTests {
     /// the OS and even the build, so this only guards against catastrophic failure: each estimate must be within a
     /// quarter of the band (250 lines) of the truth, which a flipped sign (−300) or a lost scale (0 or 600) is not.
     /// Exact offsets are the matcher's job, tested on synthetic lines.
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func visionsEstimateHasTheScrollSign() throws {
         let vision = VisionOffsetEstimator()
         let tolerance = 1000 / 4

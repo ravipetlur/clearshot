@@ -304,9 +304,8 @@ public final class AnnotationEditor {
     public func duplicateSelection() {
         let offset = baseVector(fromPoints: CGVector(dx: 10, dy: 10))
         let copies = selectedObjects.map { object in
-            var copy = ObjectGeometry.translated(object, by: offset)
-            copy.id = UUID()
-            return copy
+            // A copy of one of the secrets check's masks is the person's own: not marked (`copied`).
+            ObjectGeometry.translated(object, by: offset).copied()
         }
         guard !copies.isEmpty else { return }
         change("Duplicate") { $0.objects.append(contentsOf: copies) }
@@ -361,8 +360,8 @@ public final class AnnotationEditor {
                 picture.image = renamed[picture.image] ?? picture.image
                 copy.kind = .image(picture)
             }
-            copy.id = UUID()
-            return copy
+            // A paste is a copy: the person's own, not marked as one of the secrets check's masks (`copied`).
+            return copy.copied()
         }
         guard !copies.isEmpty else { return }
         let placed = document.clampedIntoCanvas(copies)

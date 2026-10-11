@@ -29,13 +29,7 @@ public enum AnnotationStorage {
     public static func open(_ item: HistoryItem, root: URL) throws
         -> (document: AnnotationDocument, images: ImageStore, recovered: Bool) {
         let folder = item.folder(in: root)
-        if item.hasDocument == true, var document = try? DocumentPackage.readDocument(from: folder) {
-            let images = ImageStore.load(for: document, from: folder)
-            if let base = images[document.base] {
-                document.baseSize = CGSize(width: base.width, height: base.height)
-                if document.isWellFormed { return (document, images, false) }
-            }
-        }
+        if let read = openReadOnly(item, root: root) { return (read.document, read.images, false) }
         let fileManager = FileManager.default
         let original = folder.appending(path: historyBase.name)
         if item.hasDocument != true || !fileManager.fileExists(atPath: original.path(percentEncoded: false)) {
@@ -47,6 +41,22 @@ public enum AnnotationStorage {
                                           base: historyBase)
         document.isWindowShot = item.captureKind == .window
         return (document, ImageStore([historyBase.name: base]), item.hasDocument == true)
+    }
+
+    /// The item's saved document and its images, **read only**: nothing in its folder is written, copied or removed. Nil when
+    /// the item has no document, or its document can't be used: it can't be read, its base image is gone, or its numbers aren't
+    /// well formed (`AnnotationDocument.isWellFormed`). It is the first branch of `open` and nothing more, so a caller that only
+    /// wants to look (the secrets check's scan, which runs in the background) never reaches `open`'s recovery, which copies the
+    /// working copy over the base. The base's size is the image's own, as in `open`.
+    public static func openReadOnly(_ item: HistoryItem, root: URL) -> (document: AnnotationDocument, images: ImageStore)? {
+        guard item.hasDocument == true else { return nil }
+        let folder = item.folder(in: root)
+        guard var document = try? DocumentPackage.readDocument(from: folder) else { return nil }
+        let images = ImageStore.load(for: document, from: folder)
+        guard let base = images[document.base] else { return nil }
+        document.baseSize = CGSize(width: base.width, height: base.height)
+        guard document.isWellFormed else { return nil }
+        return (document, images)
     }
 
     /// For an annotated item whose document couldn't be read (`open` reported `recovered`): makes `image`, its working copy

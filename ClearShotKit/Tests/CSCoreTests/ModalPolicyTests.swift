@@ -46,6 +46,25 @@ struct ModalPolicyTests {
         #expect(ModalPolicy.decide(ModalPolicy.closingRecording(retention: .oneWeek), flow: .capturing) == .skip)
     }
 
+    /// The update's relaunch ends the process, so it waits for what a report waits for, and for more: reports already
+    /// queued (they would be lost with it, or open after it was asked for) and an app-modal alert or panel (a question
+    /// the person is answering, which a quit would cancel for them).
+    @Test(arguments: [Flow.idle, .capturing, .finishing])
+    func theRelaunchWaitsForWhatAReportWaitsFor(flow: Flow) {
+        #expect(ModalPolicy.relaunchMustWait(flow: flow, reportsQueued: false, appModalIsUp: false)
+            == (ModalPolicy.decide(.report, flow: flow) == .wait))
+    }
+
+    @Test func theRelaunchAlsoWaitsForQueuedReportsAndAnAppModalWindow() {
+        #expect(!ModalPolicy.relaunchMustWait(flow: .idle, reportsQueued: false, appModalIsUp: false))
+        #expect(ModalPolicy.relaunchMustWait(flow: .idle, reportsQueued: true, appModalIsUp: false))
+        #expect(ModalPolicy.relaunchMustWait(flow: .idle, reportsQueued: false, appModalIsUp: true))
+        #expect(ModalPolicy.relaunchMustWait(flow: .idle, reportsQueued: true, appModalIsUp: true))
+        for flow in [Flow.capturing, .finishing] {
+            #expect(ModalPolicy.relaunchMustWait(flow: flow, reportsQueued: true, appModalIsUp: true))
+        }
+    }
+
     /// The other direction: a capture's overlay never opens over an app-modal session it couldn't take events over.
     @Test func aCaptureDoesntStartWhileOneRunsOrAModalSessionIsUp() {
         #expect(!ModalPolicy.refusesCapture(isRunning: false, tailIsModal: false, appModalIsUp: false))

@@ -4,10 +4,34 @@ import Vision
 
 /// Reads the text and QR codes in an image with Vision.
 public enum TextRecognizer {
+    /// What a caller picks out of a recognized line to have boxed: ranges of the line's text, each with a tag the caller
+    /// chooses.
+    public typealias Marking = @Sendable (String) -> [(range: Range<String.Index>, tag: Int)]
+
     /// Recognizes `image` tile by tile (`OCRTiling`), one tile at a time and in order, reading text and QR codes in one
     /// pass over each. Never runs on the caller's actor.
     @concurrent
     public static func recognize(_ image: CGImage, options: TextRecognitionOptions) async throws -> OCRResult {
+        try await recognize(image, options: options, readsQRCodes: true) { _ in [] }
+    }
+
+    /// As `recognize(_:options:)`, and for every line it keeps, `marking` is given the line's text and says which ranges
+    /// of it to box: each comes back as one of the line's `marks`, with Vision's own box for exactly that range
+    /// (`RecognizedText.boundingBox(for:)`), in image pixels, and the tag it was given. The tiles are cut and put together
+    /// as in `recognize(_:options:)`, so lines and their order are the same, and a mark goes with its line wherever
+    /// the merge moves it. Each tile's lines are marked on their own text, which is why a line put together from two
+    /// readings lists the marks of both (`OCRLine.marks`). A range Vision has no box for gives no mark.
+    ///
+    /// QR codes aren't read: `qrPayloads` is empty.
+    @concurrent
+    public static func recognize(_ image: CGImage, options: TextRecognitionOptions,
+                                 marking: Marking) async throws -> OCRResult {
+        try await recognize(image, options: options, readsQRCodes: false, marking: marking)
+    }
+
+    @concurrent
+    private static func recognize(_ image: CGImage, options: TextRecognitionOptions, readsQRCodes: Bool,
+                                  marking: Marking) async throws -> OCRResult {
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         var ink: ColumnInk?
         let tiles = OCRTiling.tiles(width: image.width, height: image.height) { rows in
@@ -15,14 +39,14 @@ public enum TextRecognizer {
             ink = columns
             return columns.counts(rows: rows)
         }
-        let requests = Requests(options)
+        let requests = Requests(options, readsQRCodes: readsQRCodes)
         var parts: [(tile: OCRTile, pieces: [OCRPiece], qrPayloads: [String])] = []
         for tile in tiles {
             try Task.checkCancellation()
             guard let piece = tile.rect == bounds ? image : image.cropping(to: tile.rect) else {
                 throw TileUnavailable(rect: tile.rect)
             }
-            let read = try await requests.read(piece, in: tile)
+            let read = try await requests.read(piece, in: tile, marking: marking)
             parts.append((tile: tile, pieces: read.pieces, qrPayloads: read.qrPayloads))
         }
         return OCRTiling.merge(pieces: parts)
@@ -47,14 +71,16 @@ public enum TextRecognizer {
         return request.supportedRecognitionLanguages
     }
 
-    /// The two requests every tile is read with.
+    /// The requests every tile is read with.
     private struct Requests {
         var text = RecognizeTextRequest()
         var barcodes = DetectBarcodesRequest()
+        let readsQRCodes: Bool
 
-        init(_ options: TextRecognitionOptions) {
+        init(_ options: TextRecognitionOptions, readsQRCodes: Bool) {
+            self.readsQRCodes = readsQRCodes
             text.recognitionLevel = .accurate
-            text.usesLanguageCorrection = true
+            text.usesLanguageCorrection = options.usesLanguageCorrection
             text.automaticallyDetectsLanguage = options.automaticallyDetectsLanguage
             if !options.automaticallyDetectsLanguage {
                 text.recognitionLanguages = [Locale.Language(identifier: options.primaryLanguage)]
@@ -63,16 +89,33 @@ public enum TextRecognizer {
         }
 
         /// What Vision finds in `image`, the picture of `tile`: its text lines as the tile contributes them
-        /// (`OCRTiling.ownedPart`, in the tile's pixels with a top-left origin) and its QR payloads.
-        func read(_ image: CGImage, in tile: OCRTile) async throws -> (pieces: [OCRPiece], qrPayloads: [String]) {
-            let (observations, codes) = try await ImageRequestHandler(image).perform(text, barcodes)
+        /// (`OCRTiling.ownedPart`, in the tile's pixels with a top-left origin) with the marks `marking` asks for, and its
+        /// QR payloads (none, unless the requests read them).
+        func read(_ image: CGImage, in tile: OCRTile, marking: Marking) async throws -> (pieces: [OCRPiece], qrPayloads: [String]) {
+            let handler = ImageRequestHandler(image)
+            let observations: [RecognizedTextObservation]
+            let codes: [BarcodeObservation]
+            if readsQRCodes {
+                (observations, codes) = try await handler.perform(text, barcodes)
+            } else {
+                observations = try await handler.perform(text)
+                codes = []
+            }
             let size = CGSize(width: image.width, height: image.height)
             let pieces = observations.compactMap { observation -> OCRPiece? in
                 guard let candidate = observation.topCandidates(1).first, !candidate.string.isEmpty else { return nil }
                 let box = observation.boundingBox.toImageCoordinates(size, origin: .upperLeft)
-                return OCRTiling.ownedPart(of: candidate.string, box: box, in: tile) { range in
+                guard var piece = OCRTiling.ownedPart(of: candidate.string, box: box, in: tile, boxFor: { range in
                     candidate.boundingBox(for: range)?.boundingBox.toImageCoordinates(size, origin: .upperLeft)
+                }) else { return nil }
+                piece.line.marks = marking(candidate.string).compactMap { request in
+                    candidate.boundingBox(for: request.range).map {
+                        let box = $0.boundingBox.toImageCoordinates(size, origin: .upperLeft)
+                        return OCRMark(text: String(candidate.string[request.range]), box: box, tag: request.tag,
+                                       isCut: OCRTiling.touchesInnerSide(box, of: tile))
+                    }
                 }
+                return piece
             }
             let payloads = codes.compactMap(\.payloadString).filter { !$0.isEmpty }
             return (pieces, payloads)

@@ -21,6 +21,7 @@ public enum Renderer {
               output.height <= AnnotationDocument.maximumSide,
               let context = ImageOps.bitmapContext(width: Int(output.width), height: Int(output.height), preferring: base.colorSpace)
         else { return nil }
+        pinTextSmoothing(context)
         context.translateBy(x: 0, y: output.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -output.minX, y: -output.minY)
@@ -203,6 +204,7 @@ public enum Renderer {
               let context = CGContext(data: nil, width: Int(bounds.width), height: Int(bounds.height), bitsPerComponent: 8,
                                       bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
+        pinTextSmoothing(context)
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -bounds.minX, y: -bounds.minY)
@@ -214,6 +216,16 @@ public enum Renderer {
             draw(object, pixelScale: document.pixelScale, base: base, images: images, in: context)
         }
         return context.makeImage()
+    }
+
+    /// Makes a bitmap that is to hold an export (the render, the objects copied, the content a blur is made from) draw text with
+    /// font smoothing on, whatever this Mac's own setting is. A Mac whose "font smoothing" default is 0 (it can be turned off
+    /// since macOS 26) otherwise draws unsmoothed text into a bitmap, and the same document would export different pixels on
+    /// two Macs, or on one after a change in System Settings. The canvas on screen is the person's own window context and
+    /// keeps their setting; the bitmaps the renderer makes for itself don't.
+    static func pinTextSmoothing(_ context: CGContext) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
     }
 
     /// Draws a CGImage right side up in a y-down context.

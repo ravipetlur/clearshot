@@ -13,6 +13,8 @@ let package = Package(
         .library(name: "CSScrolling", targets: ["CSScrolling"]),
         .library(name: "CSRecording", targets: ["CSRecording"]),
         .library(name: "CSAPI", targets: ["CSAPI"]),
+        .library(name: "CSUpdate", targets: ["CSUpdate"]),
+        .library(name: "CSSensitive", targets: ["CSSensitive"]),
     ],
     targets: [
         .target(name: "CSCore"),
@@ -28,6 +30,14 @@ let package = Package(
         // The clearshot:// URL API: the parser, areas and display numbers, file checks, sender naming, consent and the
         // launch inbox. Pure; nothing in the package depends on it, the app imports it.
         .target(name: "CSAPI", dependencies: ["CSCore"]),
+        // The updater's rules: version numbers, the release feed, the update decision, the schedule, the checksum file
+        // and the install flow's state machine. Pure; the networking, the verifying and the installing are the app's.
+        // Nothing in the package depends on it, the app imports it.
+        .target(name: "CSUpdate", dependencies: ["CSCore"]),
+        // The secrets check on screenshots: the detector (emails, phone numbers, keys and tokens, card numbers and IP
+        // addresses in a line of text), the scanner that finds them in an image, and the mask sizing. Nothing in the
+        // package depends on it, the app imports it.
+        .target(name: "CSSensitive", dependencies: ["CSCore", "CSOCR"]),
         // Our own lossless WebP encoder, written from RFC 9649. Depends on nothing: RGBA bytes in, a .webp file out.
         .target(name: "CSWebP"),
         // What every test target shares: throwaway preferences.
@@ -41,6 +51,8 @@ let package = Package(
         .testTarget(name: "CSScrollingTests", dependencies: ["CSScrolling"]),
         .testTarget(name: "CSRecordingTests", dependencies: ["CSRecording", "CSCore", "CSCapture", "CSTestSupport"]),
         .testTarget(name: "CSAPITests", dependencies: ["CSAPI", "CSCore", "CSTestSupport"]),
+        .testTarget(name: "CSUpdateTests", dependencies: ["CSUpdate", "CSTestSupport"]),
+        .testTarget(name: "CSSensitiveTests", dependencies: ["CSSensitive", "CSTestSupport"]),
         // Decodes the encoder's files with ImageIO and compares the pixels.
         .testTarget(name: "CSWebPTests", dependencies: ["CSWebP"]),
     ]

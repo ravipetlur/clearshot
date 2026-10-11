@@ -232,6 +232,13 @@ public enum OCRTiling {
         box.minX >= other.minX - containTolerance && box.maxX <= other.maxX + containTolerance
     }
 
+    /// Whether `box` (in the tile's pixels) comes within `innerEdgeMargin` of one of the tile's inner left or right edges, past
+    /// which a line it holds may go on: a stretch of a line boxed there may be cut by the edge.
+    static func touchesInnerSide(_ box: CGRect, of tile: OCRTile) -> Bool {
+        (tile.innerEdges.contains(.left) && box.minX <= innerEdgeMargin)
+            || (tile.innerEdges.contains(.right) && tile.rect.width - box.maxX <= innerEdgeMargin)
+    }
+
     /// Whether `box` comes within `innerEdgeMargin` of the tile's inner edges: the top and bottom ones, and with
     /// `sides`, the left and right ones.
     private static func touchesInnerEdge(_ box: CGRect, of tile: OCRTile, sides: Bool) -> Bool {

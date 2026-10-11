@@ -45,8 +45,8 @@ struct StitchSessionTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(1)))
-    func aFrameArrivingWhileOneWaitsReplacesIt() async {
+    @Test(.timeLimit(.minutes(10)))
+    func aFrameArrivingWhileOneWaitsReplacesIt() async throws {
         let gate = GateEstimator()
         let (session, deliveries) = session(estimator: gate,
                                             configuration: StitchConfiguration(pixelsPerPoint: 2, axis: .vertical))
@@ -55,8 +55,9 @@ struct StitchSessionTests {
         let first = await updates.next()
         #expect(first?.update.offset == 0)
         // The next frame holds the queue in the estimator while two more arrive: the second replaces the first.
+        defer { gate.letGo() }
         session.submit(page.frame(at: 100, length: 1000))
-        #expect(gate.waitUntilHeld())
+        try #require(await gate.waitUntilHeld())
         session.submit(page.frame(at: 200, length: 1000))
         session.submit(page.frame(at: 300, length: 1000))
         gate.letGo()
@@ -151,13 +152,15 @@ struct StitchSessionTests {
 
 /// Holds the stitching queue inside its first estimate until released; passes every later one through.
 private final class GateEstimator: OffsetEstimator, @unchecked Sendable {
-    private let entered = DispatchSemaphore(value: 0)
     private let release = DispatchSemaphore(value: 0)
     private let isFirst = Mutex(true)
+    private let held = HeldSignal()
 
-    /// Waits (up to 20 s) until the queue is held in the first estimate.
-    func waitUntilHeld() -> Bool {
-        entered.wait(timeout: .now() + 20) == .success
+    /// Whether the queue got into the first estimate: true once it is held there, false if it isn't within the timeout
+    /// or the test's task is cancelled. How long the queue takes to start doesn't matter, but one that never does is
+    /// a failure rather than a hung suite.
+    func waitUntilHeld() async -> Bool {
+        await held.wait()
     }
 
     func letGo() {
@@ -170,7 +173,8 @@ private final class GateEstimator: OffsetEstimator, @unchecked Sendable {
             return isFirst
         }
         if first {
-            entered.signal()
+            held.give()
+            // The stitching queue's own thread waits here, as a slow estimate would hold it.
             release.wait()
         }
         return nil

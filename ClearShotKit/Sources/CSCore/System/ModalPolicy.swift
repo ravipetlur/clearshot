@@ -83,6 +83,14 @@ public enum ModalPolicy {
         }
     }
 
+    /// Whether the update's relaunch must hold off. It ends the process, so it waits for what a report waits for (a
+    /// capture, a recording or a recording's tail), and also while reports are queued at the gate (they would be lost
+    /// with it) and while an app-modal alert or panel is up (a question the person is answering, which a quit would
+    /// cancel for them).
+    public static func relaunchMustWait(flow: FlowState, reportsQueued: Bool, appModalIsUp: Bool) -> Bool {
+        decide(.report, flow: flow) == .wait || reportsQueued || appModalIsUp
+    }
+
     /// What a refused question says: the open dialog first, since it is what has to close; then a recording or its
     /// countdown on screen; otherwise the capture under way.
     public static func refusal(appModalIsUp: Bool, recordingOnScreen: Bool) -> Refusal {

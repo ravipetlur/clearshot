@@ -17,6 +17,16 @@ public enum QuickAccessRules {
         askByDefault != optionHeld
     }
 
+    /// What the Save button says: "Show in Finder" once the capture is saved, else "Save As…" when Save asks where, else
+    /// "Save". `compact` (Copy and Save sharing a row, each half as wide: 54 pt on the small size) shortens the long ones to
+    /// "Finder" and "Save…", which fit it in the pill's 12 pt semibold type (37.4 and 39.0 pt; "Show in Finder" is 86.6 and
+    /// "Save As…" 57.2).
+    public static func saveButtonTitle(isSaved: Bool, asksForLocation: Bool, compact: Bool) -> String {
+        if isSaved { return compact ? "Finder" : "Show in Finder" }
+        if asksForLocation { return compact ? "Save\u{2026}" : "Save As\u{2026}" }
+        return "Save"
+    }
+
     /// Whether a thumbnail's auto-close countdown runs: not while the pointer is over it, the stack is hidden, Quick
     /// Look shows it, or anything holds it (a Save panel, the print dialog, an alert, the Resize dialog).
     public static func clockRuns(hovering: Bool, hidden: Bool, previewing: Bool, holds: Int) -> Bool {

@@ -99,6 +99,7 @@ extension Renderer {
               let context = ImageOps.bitmapContext(width: Int(canvas.width), height: Int(canvas.height), preferring: base.colorSpace)
         else { return nil }
         // As `render` sets it up: output pixels with y down, from the canvas's origin.
+        pinTextSmoothing(context)
         context.translateBy(x: 0, y: canvas.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -canvas.minX, y: -canvas.minY)

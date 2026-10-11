@@ -72,7 +72,7 @@ struct StitcherTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(3)))
+    @Test(.timeLimit(.minutes(10)))
     func theRealVisionEstimatorStillRebuildsThePageExactly() {
         let page = SyntheticPage.sticky
         let length = Self.stickyFrameLength

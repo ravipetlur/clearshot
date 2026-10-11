@@ -15,6 +15,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var layoutItems: [NSMenuItem] = []
     /// The one item whose title changes: Hide or Show Desktop Icons.
     private var desktopIconsItem: NSMenuItem?
+    /// "Check for Updates…", or "Update to X.Y.Z…" while a release is known; nil in a build without an updater.
+    private var updateItem: NSMenuItem?
     /// Each action's item, to put its key equivalent right when the action's shortcut changes.
     private var actionItems: [ClearShotAction: NSMenuItem] = [:]
     /// "Show menu bar icon"; a recording shows the icon whatever it says.
@@ -153,6 +155,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if hiddenOverlays || hiddenPins { menu.addItem(.separator()) }
         desktopIconsItem?.title = ClearShotAction.toggleDesktopIcons
             .menuTitle(desktopIconsHidden: coordinator.desktopIcons.isHidden)
+        if let updates = coordinator.updates { updateItem?.title = updates.menuTitle }
         layoutItems.forEach(menu.addItem)
     }
 
@@ -180,6 +183,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 let item = NSMenuItem(title: "About ClearShot", action: #selector(openAbout), keyEquivalent: "")
                 item.target = self
                 items.append(item)
+                // Only a build with an updater has this item.
+                if let updates = coordinator.updates {
+                    let update = NSMenuItem(title: updates.menuTitle, action: #selector(checkForUpdates), keyEquivalent: "")
+                    update.target = self
+                    updateItem = update
+                    items.append(update)
+                }
             case .quit:
                 items.append(NSMenuItem(title: "Quit ClearShot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
             }
@@ -229,6 +239,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func showHiddenPins() { coordinator.pins.toggleVisibility() }
     @objc private func openSettings() { coordinator.showSettings() }
     @objc private func openAbout() { coordinator.showAbout() }
+    @objc private func checkForUpdates() { coordinator.updates?.menuItemChosen() }
 
     #if DEBUG
     @objc private func runSelfTest() { coordinator.runCaptureSelfTest() }

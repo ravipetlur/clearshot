@@ -99,6 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    /// The quit is going ahead. An update that is still downloading or verifying is cancelled, and the disk image it
+    /// mounted is ejected now (also after a Cancel whose own eject hasn't finished), so it isn't left mounted until a later
+    /// launch finds it.
+    func applicationWillTerminate(_ notification: Notification) {
+        coordinator?.updates?.prepareForQuit()
+    }
+
     /// Annotate's reply, which goes on to the Video Editor's once its own edits are settled.
     private func editorsTerminateReply(_ coordinator: AppCoordinator) -> NSApplication.TerminateReply {
         coordinator.annotate.terminateReply(then: { [videoEditor = coordinator.videoEditor] in videoEditor.terminateReply() })

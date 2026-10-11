@@ -34,6 +34,8 @@ struct EditorActions {
     var removeBackgroundPicture: (UUID) -> Void
     /// The desktop picture file of the screen the editor's window is on, for the Background panel's Desktop tiles.
     var desktopPictureURL: () -> URL?
+    /// Mask Sensitive Info: the Edit menu's command, which the tool strip's sensitive-info button runs too.
+    var maskSensitiveInfo: () -> Void
 }
 
 /// The editor window's content: tools on top, the canvas with the Background panel beside it while that is open, and
@@ -42,10 +44,11 @@ struct EditorView: View {
     @Bindable var editor: AnnotationEditor
     let canvas: CanvasController
     let actions: EditorActions
+    let sensitive: AnnotateSensitiveCheck
 
     var body: some View {
         VStack(spacing: 0) {
-            ToolStrip(editor: editor, actions: actions)
+            ToolStrip(editor: editor, actions: actions, sensitive: sensitive)
             Divider()
             PropertyBar(editor: editor, actions: actions)
             Divider()
@@ -66,6 +69,7 @@ struct EditorView: View {
 struct ToolStrip: View {
     @Bindable var editor: AnnotationEditor
     let actions: EditorActions
+    let sensitive: AnnotateSensitiveCheck
 
     var body: some View {
         let keys = editor.preferences[Prefs.annotateToolKeys].resolved
@@ -90,6 +94,8 @@ struct ToolStrip: View {
                 .frame(height: 16)
             AddImageMenu(actions: actions, isEnabled: editor.crop == nil)
             Spacer()
+            // The strip's one button at the trailing edge, at a fixed width in every state, so nothing moves when it changes.
+            SensitiveInfoButton(check: sensitive, action: actions.maskSensitiveInfo)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)

@@ -46,12 +46,18 @@ protocol QuickAccessViewDelegate: AnyObject {
     func quickAccessViewDragFiles(_ view: QuickAccessView) -> QuickAccessDragFiles?
     func quickAccessView(_ view: QuickAccessView, dragEndedWith operation: NSDragOperation, optionHeld: Bool)
     func quickAccessViewMenu(_ view: QuickAccessView) -> NSMenu?
+    /// The menu of the possible-secrets badge (Mask All or Undo Mask, Review in Annotate…, Dismiss); nil when the
+    /// thumbnail has no badge to show.
+    func quickAccessViewSensitiveMenu(_ view: QuickAccessView) -> NSMenu?
+    /// The badge's menu is open or closed, so the auto-close countdown can wait while it is.
+    func quickAccessView(_ view: QuickAccessView, sensitiveMenuIsOpen isOpen: Bool)
 }
 
 /// One Quick Access thumbnail: the image, the hover buttons, the name strip, drag-out, swipe gestures and the
 /// right-click menu. A video or GIF also has its badge, a Trim button beside the pencil (which opens the Video Editor;
 /// a GIF opened from a file has neither), no Pin, and a looping preview (a video muted, a GIF as itself) while the
-/// pointer is over it.
+/// pointer is over it. A screenshot whose scan found possible secrets shows a pill at the bottom-left (`SensitiveBadgeView`)
+/// that opens a menu.
 final class QuickAccessView: NSView, NSDraggingSource {
     weak var delegate: QuickAccessViewDelegate?
     /// The "Save button" setting: Save asks where to save unless ⌥ is held. The manager keeps it current.
@@ -60,12 +66,13 @@ final class QuickAccessView: NSView, NSDraggingSource {
     }
 
     /// The corner buttons' side; the badge is centred on the trash button's row.
-    private static let circleSize: CGFloat = 22
+    private static let circleSize = QuickAccessLayout.circleSize
 
     private let thumbnailView = ThumbnailView()
     private let previewView = HoverPreviewView()
     private let dimView = PassthroughView()
     private let badgeView = MediaBadgeView()
+    private let sensitiveBadge = SensitiveBadgeView()
     private let controls = PassthroughView()
     private let copyButton = PillButton(label: "Copy")
     private let saveButton = PillButton(label: "Save")
@@ -91,6 +98,9 @@ final class QuickAccessView: NSView, NSDraggingSource {
     private var dragOptionHeld = false
     /// True from the start of a drag-out until it ends: the pointer leaving the thumbnail then isn't a hover change.
     private var isDragging = false
+    /// Copy and Save share a row in a short thumbnail (`QuickAccessLayout.controls`), each half as wide, and Save's longer
+    /// titles are shortened to fit.
+    private var pillsShareARow = false
     /// Kept for the drag's lifetime: a drop target may ask for the PNG after the drag image is gone.
     private var dragProvider: DragImageProvider?
 
@@ -182,6 +192,13 @@ final class QuickAccessView: NSView, NSDraggingSource {
         nameField.currentEditor()?.selectAll(nil)
     }
 
+    /// Shows the possible-secrets badge, or hides it with nil.
+    func setSensitiveBadge(_ content: SensitiveBadgeContent?) {
+        guard content != sensitiveBadge.content else { return }
+        sensitiveBadge.content = content
+        needsLayout = true
+    }
+
     // MARK: Layout
 
     override func layout() {
@@ -197,6 +214,7 @@ final class QuickAccessView: NSView, NSDraggingSource {
         nameStrip.isHidden = !isNaming
         layoutControls(in: controls.bounds)
         layoutBadge(in: imageRect)
+        layoutSensitiveBadge(in: imageRect)
         layoutNameStrip(in: nameStrip.bounds)
     }
 
@@ -210,18 +228,26 @@ final class QuickAccessView: NSView, NSDraggingSource {
                                  height: size.height)
     }
 
+    /// The possible-secrets pill: one place and one size, hover buttons or not (`QuickAccessLayout.controls`). It is right
+    /// of the Trash slot and short of the Pin one, so no hover button ever appears where it is.
+    private func layoutSensitiveBadge(in rect: NSRect) {
+        guard !sensitiveBadge.isHidden else { return }
+        sensitiveBadge.frame = QuickAccessLayout.controls(in: rect.size).sensitiveBadge.offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+
     private func layoutControls(in rect: NSRect) {
-        let pill = NSSize(width: min(112, rect.width - 24), height: 26)
-        let x = rect.midX - pill.width / 2
-        copyButton.frame = NSRect(x: x, y: rect.midY + 3, width: pill.width, height: pill.height)
-        saveButton.frame = NSRect(x: x, y: rect.midY - 3 - pill.height, width: pill.width, height: pill.height)
-        let size = Self.circleSize
-        let inset: CGFloat = 6
-        closeButton.frame = NSRect(x: rect.minX + inset, y: rect.maxY - inset - size, width: size, height: size)
-        annotateButton.frame = NSRect(x: rect.maxX - inset - size, y: rect.maxY - inset - size, width: size, height: size)
-        trimButton.frame = annotateButton.frame.offsetBy(dx: -(size + 4), dy: 0)
-        trashButton.frame = NSRect(x: rect.minX + inset, y: rect.minY + inset, width: size, height: size)
-        pinButton.frame = NSRect(x: rect.maxX - inset - size, y: rect.minY + inset, width: size, height: size)
+        let frames = QuickAccessLayout.controls(in: rect.size)
+        if frames.copyAndSaveShareARow != pillsShareARow {
+            pillsShareARow = frames.copyAndSaveShareARow
+            refreshSaveTitle()
+        }
+        copyButton.frame = frames.copy.offsetBy(dx: rect.minX, dy: rect.minY)
+        saveButton.frame = frames.save.offsetBy(dx: rect.minX, dy: rect.minY)
+        closeButton.frame = frames.close.offsetBy(dx: rect.minX, dy: rect.minY)
+        annotateButton.frame = frames.annotate.offsetBy(dx: rect.minX, dy: rect.minY)
+        trimButton.frame = frames.trim.offsetBy(dx: rect.minX, dy: rect.minY)
+        trashButton.frame = frames.trash.offsetBy(dx: rect.minX, dy: rect.minY)
+        pinButton.frame = frames.pin.offsetBy(dx: rect.minX, dy: rect.minY)
     }
 
     private func layoutNameStrip(in rect: NSRect) {
@@ -235,9 +261,12 @@ final class QuickAccessView: NSView, NSDraggingSource {
     }
 
     private func buildControls() {
-        for view in [thumbnailView, previewView, dimView, badgeView, controls, nameStrip] as [NSView] {
+        // The possible-secrets badge is under the hover buttons, which therefore keep every click they have.
+        for view in [thumbnailView, previewView, dimView, badgeView, sensitiveBadge, controls, nameStrip] as [NSView] {
             addSubview(view)
         }
+        sensitiveBadge.target = self
+        sensitiveBadge.action = #selector(sensitiveBadgePressed)
         dimView.wantsLayer = true
         dimView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
         dimView.alphaValue = 0
@@ -351,7 +380,8 @@ final class QuickAccessView: NSView, NSDraggingSource {
     private func refreshSaveTitle() {
         let asks = QuickAccessRules.saveAsksForLocation(optionHeld: NSEvent.modifierFlags.contains(.option),
                                                         askByDefault: saveAsksByDefault)
-        saveButton.setLabel(isSaved ? "Show in Finder" : asks ? "Save As…" : "Save")
+        saveButton.setLabel(QuickAccessRules.saveButtonTitle(isSaved: isSaved, asksForLocation: asks, compact: false),
+                            shownAs: QuickAccessRules.saveButtonTitle(isSaved: isSaved, asksForLocation: asks, compact: pillsShareARow))
     }
 
     // MARK: Buttons
@@ -380,6 +410,15 @@ final class QuickAccessView: NSView, NSDraggingSource {
             return
         }
         delegate?.quickAccessView(self, perform: command, optionHeld: NSEvent.modifierFlags.contains(.option))
+    }
+
+    /// Opens the badge's menu just under the pill, which the screen's edge moves up if it doesn't fit. The countdown waits
+    /// while the menu is open.
+    @objc private func sensitiveBadgePressed() {
+        guard let menu = delegate?.quickAccessViewSensitiveMenu(self) else { return }
+        delegate?.quickAccessView(self, sensitiveMenuIsOpen: true)
+        menu.popUp(positioning: nil, at: NSPoint(x: sensitiveBadge.frame.minX, y: sensitiveBadge.frame.minY - 2), in: self)
+        delegate?.quickAccessView(self, sensitiveMenuIsOpen: false)
     }
 
     // MARK: Mouse: click, double-click, drag-out

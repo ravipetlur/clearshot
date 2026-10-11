@@ -3,6 +3,7 @@ import CSAnnotation
 import CSCapture
 import CSCore
 import CSHistory
+import CSSensitive
 
 /// Opens and closes Annotate windows and applies their edits (Done). Its windows count towards the Dock icon
 /// (`DocumentWindows`).
@@ -190,6 +191,14 @@ final class AnnotateManager {
     /// has been replaced the outcome is a success even if the saved file then couldn't be updated; that is reported in
     /// an alert, as `HistoryItemActions.transform` does. A written document with a background leaves its style as its
     /// kind's Previous Settings.
+    ///
+    /// **The clipboard.** When the edits only added coverage to the last applied document (`onlyAddsCoverage`: every redaction it
+    /// had is still there, the same, over at least the same place, and one is new or bigger: masks from the sensitive-info button
+    /// or the command, or a Pixelate or blur the person drew), ClearShot's own copy of the capture is replaced, if it is still what
+    /// the clipboard holds (the after-capture copy by default): it was made before the redactions and would paste what they hide.
+    /// Nothing else is copied. A clipboard that is the person's stays, and so does one when the edits added no coverage, or took
+    /// any away (a mask moved, shrunk, restyled or deleted, or Unmask): a masked copy is never overwritten with a picture that
+    /// shows more. Done, Save, Pin and a quit that keeps the edits all come through here, and each leaves the clipboard right.
     func apply(_ editor: AnnotationEditor) async -> Bool {
         guard !editor.isApplying else { return false }
         guard editor.hasUnappliedChanges else { return true }
@@ -198,6 +207,8 @@ final class AnnotateManager {
         // What is written is this snapshot; the person may keep drawing while it is.
         let document = editor.document
         let images = editor.images
+        // Read before the write: the first apply compares with the document the editor opened with.
+        let addsCoverage = document.onlyAddsCoverage(since: editor.appliedDocument)
         switch editor.source {
         case .history(let item):
             // The item as it is now: a save or rename made while the editor was open must not be overwritten by the
@@ -210,39 +221,19 @@ final class AnnotateManager {
             let root = history.root
             let quality = preferences[Prefs.imageQuality]
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<(item: HistoryItem, savedFileError: (any Error)?), any Error> in
-                Result {
-                    guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
-                    var updated = try AnnotationStorage.save(document, images: images, rendered: rendered, to: current, root: root)
-                    let savedFileError = HistoryItemActions.rewriteSavedFile(of: current, with: rendered, quality: quality,
-                                                                             updating: &updated)
-                    return (updated, savedFileError)
-                }
+                Result { try HistoryItemActions.writeDocument(document, images: images, to: current, root: root, quality: quality) }
             }.value
             switch outcome {
             case .success(let (updated, savedFileError)):
                 // The history copy now shows the edits, so from here this is a success whatever happened to the saved file.
                 // Recording it in the store refreshes the thumbnail (the store's `.updated`).
-                do {
-                    try history.update(updated)
-                } catch {
-                    Log.annotate.error("Couldn't record the change to \(updated.displayName) in history: \(error)")
-                    // Keep memory in step with the working copy, unless the item was removed during the write.
-                    if history.item(id: updated.id) != nil { history.add(updated) }
+                quickAccess.actions.recordDocumentWrite(updated, savedFileError: savedFileError, as: .done) {
+                    editor.source = .history(updated)
+                    editor.markApplied(document)
+                    BackgroundPresets.recordPrevious(document, in: preferences)
                 }
-                editor.source = .history(updated)
-                editor.markApplied(document)
-                BackgroundPresets.recordPrevious(document, in: preferences)
-                if let savedFileError {
-                    let message: String
-                    if savedFileError is SavedFileEditedElsewhere {
-                        Log.annotate.info("Left the saved file for \(updated.displayName) alone: it was edited in another app")
-                        message = "Your edits are applied to the screenshot in ClearShot, but the saved file was edited in another app, so ClearShot left it alone."
-                    } else {
-                        Log.annotate.error("Couldn't rewrite the saved file for \(updated.displayName): \(savedFileError)")
-                        message = "Your edits are applied to the screenshot in ClearShot, but the saved file wasn't updated"
-                    }
-                    // After this returns, so the thumbnail shows the edits before the alert blocks.
-                    Task { showAlert(message: message, error: savedFileError) }
+                if addsCoverage, quickAccess.actions.replaceCopyIfStillOnClipboard(updated) == .replaced {
+                    hud.show(MaskCommandText.clipboardUpdated, symbol: "doc.on.clipboard")
                 }
                 return true
             case .failure(let error):
@@ -395,13 +386,6 @@ final class AnnotateManager {
     func showAlert(for error: any Error) {
         runAlert(message: (error as? LocalizedError)?.errorDescription ?? "Something went wrong",
                  detail: (error as? LocalizedError)?.recoverySuggestion ?? error.localizedDescription)
-    }
-
-    /// An alert headed `message`, with the error's own description and suggestion beneath it.
-    private func showAlert(message: String, error: any Error) {
-        let localized = error as? LocalizedError
-        let detail = [localized?.errorDescription, localized?.recoverySuggestion].compactMap { $0 }.joined(separator: "\n")
-        runAlert(message: message, detail: detail.isEmpty ? error.localizedDescription : detail)
     }
 
     private func showAlert(message: String) {

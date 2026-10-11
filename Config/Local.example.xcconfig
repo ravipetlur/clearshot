@@ -17,3 +17,6 @@
 
 // The default save folder, relative to the home folder, until a folder is picked in Settings › General.
 // CLEARSHOT_DEFAULT_SAVE_FOLDER = Pictures/Screenshots
+
+// The GitHub repository the app checks for updates, as owner/repo. Leave it unset to turn update checks off.
+// CLEARSHOT_UPDATE_REPO = owner/repo

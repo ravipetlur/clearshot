@@ -96,11 +96,8 @@ final class SelectTool: ToolController {
         editor.beginLiveChange()
         if flags.contains(.option) {
             // ⌥-drag duplicates: drag copies, leave the originals.
-            let copies = editor.selectedObjects.map { object -> AnnotationObject in
-                var copy = object
-                copy.id = UUID()
-                return copy
-            }
+            // A copy of one of the secrets check's masks is the person's own: not marked (`copied`).
+            let copies = editor.selectedObjects.map { $0.copied() }
             editor.updateLive { $0.objects.append(contentsOf: copies) }
             selectionBeforeDuplicating = editor.selection
             editor.selection = Set(copies.map(\.id))

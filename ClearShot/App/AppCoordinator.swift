@@ -35,6 +35,9 @@ final class AppCoordinator {
     private let wallpapers: WallpaperProvider
     private var historyPurge: Task<Void, Never>?
     private(set) var statusItem: StatusItemController?
+    /// The updater: daily checks, the offer and its window. Nil unless the build names an update repository, and then there
+    /// is no update item, no Settings rows and no network. Made in `start(activation:)`, before the status menu reads it.
+    private(set) var updates: UpdateCenter?
     /// Runs `clearshot://` commands; made in `start(activation:)`, before the receiver hands any over.
     private(set) var urlCommands: URLCommandRouter?
     /// The URL scheme API's consent, in the Keychain: the router and Settings › Advanced read and write it.
@@ -132,6 +135,14 @@ final class AppCoordinator {
         // status menu, the hot keys) or can open Settings.
         LegacyShortcutMigration.run(defaults: .standard, store: .app)
         urlCommands = URLCommandRouter(coordinator: self, activation: activation)
+        if let configuration = UpdateConfiguration.current() {
+            // The install's relaunch waits for a capture or recording that began after Install was clicked.
+            let installer = LiveUpdateInstaller(configuration: configuration, waitUntilQuiet: { [gate] in
+                if await gate.waitUntilIdle() { Log.update.info("The relaunch waited for a capture or recording to finish") }
+            })
+            updates = UpdateCenter(configuration: configuration, preferences: preferences, hud: hud, gate: gate,
+                                   installer: installer)
+        }
         let statusItem = StatusItemController(coordinator: self)
         statusItem.isVisible = preferences[Prefs.showMenuBarIcon]
         self.statusItem = statusItem
@@ -204,6 +215,8 @@ final class AppCoordinator {
                 self?.purgeHistory()
             }
         }
+        // The first check comes five minutes after launch, once launch has settled.
+        updates?.start()
         // The first text recognition in a new build loads Vision's models, about half a minute; do it in the background
         // shortly after launch rather than on the first Capture Text.
         Task(priority: .utility) {

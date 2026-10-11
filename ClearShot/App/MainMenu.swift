@@ -2,8 +2,8 @@ import AppKit
 
 /// The app's main menu. ClearShot usually has no Dock icon, but its windows still need standard key equivalents
 /// (⌘C/⌘V in text fields, ⌘W, ⌘Q). Actions with a nil target go through the responder chain: the app's to the app
-/// delegate, the editor's (File, View, Duplicate, Crop & Resize, Background Tool, Add Image) to the key editor's window controller and canvas. With no editor open,
-/// nothing answers those, so they are disabled.
+/// delegate, the editor's (File, View, Duplicate, Crop & Resize, Background Tool, Add Image, Mask Sensitive Info) to the key
+/// editor's window controller and canvas. With no editor open, nothing answers those, so they are disabled.
 enum MainMenu {
     static func make() -> NSMenu {
         let main = NSMenu()
@@ -29,6 +29,10 @@ enum MainMenu {
         editMenu.addItem(NSMenuItem(title: "Duplicate", action: #selector(AnnotationCanvasView.duplicate(_:)), keyEquivalent: "d"))
         // No shortcut: the canvas's own Delete key deletes the selection.
         editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
+        // Scans the picture for emails, keys, card numbers and the like and pixelates them. No key equivalent, so the shortcut
+        // recorder's "used by ClearShot's menu" check, which lists the items that have one, is unchanged.
+        editMenu.addItem(.separator())
+        editMenu.addItem(item("Mask Sensitive Info", #selector(EditorWindowController.maskSensitiveInfo(_:)), ""))
         // Crop & Resize. Rotate and Resize Image… take ⌥⌘ shortcuts (⌘R alone is Send to Raycast AI Chat). Crop &
         // Resize and Background Tool (checked while the panel is open) have their letters instead, since a plain letter
         // would catch typing; Flip and Revert to Original have none.

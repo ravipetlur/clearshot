@@ -74,6 +74,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ClearShotDefaultSaveFolder</key>
 	<string>$(CLEARSHOT_DEFAULT_SAVE_FOLDER)</string>
+	<key>ClearShotUpdateRepository</key>
+	<string>$(CLEARSHOT_UPDATE_REPO)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>

@@ -410,11 +410,13 @@ enum CaptureSelfTest {
         "rgb(\(rgba[0]), \(rgba[1]), \(rgba[2]))"
     }
 
-    /// `string` in black Helvetica 48 pt on an 800 × 200 white picture.
+    /// `string` in black Helvetica 48 pt on an 800 × 200 white picture, with font smoothing on whatever this Mac's setting is
+    /// (as the renderer's bitmaps, `Renderer.pinTextSmoothing`), so the same text is read on every Mac.
     private static func textPage(_ string: String) -> CGImage? {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: 800, height: 200, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.setAllowsFontSmoothing(true); context.setShouldSmoothFonts(true)
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 800, height: 200))
         let font = CTFontCreateWithName("Helvetica" as CFString, 48, nil)

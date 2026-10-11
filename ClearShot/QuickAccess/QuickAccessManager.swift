@@ -13,6 +13,9 @@ final class QuickAccessManager: QuickAccessViewDelegate {
     let hud: HUDController
     /// The one modal policy: a thumbnail's question or panel isn't shown while a capture or recording is under way.
     let gate: ModalGate
+    /// The secrets check of each screenshot thumbnail: its scan, its badge and the badge's commands. Internal rather than
+    /// private so QuickAccessManager+Sensitive.swift can use it.
+    let scans: SensitiveScanCoordinator
     /// Newest first.
     private var controllers: [QuickAccessItemController] = []
     private(set) var isHidden = false
@@ -44,6 +47,8 @@ final class QuickAccessManager: QuickAccessViewDelegate {
         self.actions = actions
         self.hud = hud
         self.gate = gate
+        scans = SensitiveScanCoordinator(preferences: preferences, history: history, actions: actions, hud: hud)
+        scans.onBadgeChange = { [weak self] itemID in self?.showBadge(for: itemID) }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,
                                                queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.layout(animated: false) }
@@ -104,6 +109,8 @@ final class QuickAccessManager: QuickAccessViewDelegate {
         layout(animated: true, presenting: controller)
         if naming { controller.view.beginEditingName() }
         startTicking()
+        // After the thumbnail is up: the scan runs in the background and never delays it.
+        scans.start(item)
     }
 
     /// Saves a capture again after its first save failed. With a thumbnail open, the save goes through it, so a Save
@@ -155,6 +162,15 @@ final class QuickAccessManager: QuickAccessViewDelegate {
         }
         controller.update(item, thumbnail: ImageOps.load(item.thumbnailURL(in: history.root)))
         layout(animated: true)
+        // What the scan found lies on the old picture.
+        scans.pictureChanged(item)
+    }
+
+    /// Shows the thumbnail's possible-secrets badge as its check has it now, or none.
+    private func showBadge(for itemID: UUID) {
+        guard let controller = controllers.first(where: { $0.id == itemID }) else { return }
+        let content = scans.badge(for: itemID).flatMap { SensitiveBadgeContent($0, masksAdded: scans.masksAdded(for: itemID)) }
+        controller.view.setSensitiveBadge(content)
     }
 
     /// Closes the item's thumbnail, if it has one open: for an item leaving history.
@@ -350,6 +366,8 @@ final class QuickAccessManager: QuickAccessViewDelegate {
     /// comes last, once the thumbnail is out of `controllers`: under retention "Never" it purges the item at once
     /// (unless an editor or a running save still holds it), and the `.removed` that follows finds no thumbnail.
     private func finishClosing(_ controller: QuickAccessItemController) {
+        // A scan still running goes with the thumbnail.
+        scans.cancel(controller.id)
         controller.close()
         recordClosed(controller.id)
         history.holds.release(controller.id)
@@ -598,5 +616,14 @@ final class QuickAccessManager: QuickAccessViewDelegate {
 
     func quickAccessViewMenu(_ view: QuickAccessView) -> NSMenu? {
         controller(for: view).map(menu(for:))
+    }
+
+    func quickAccessViewSensitiveMenu(_ view: QuickAccessView) -> NSMenu? {
+        controller(for: view).flatMap(sensitiveMenu(for:))
+    }
+
+    func quickAccessView(_ view: QuickAccessView, sensitiveMenuIsOpen isOpen: Bool) {
+        guard let controller = controller(for: view) else { return }
+        if isOpen { hold(controller) } else { release(controller) }
     }
 }

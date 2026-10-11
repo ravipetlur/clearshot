@@ -49,6 +49,7 @@ targets:
         NSHumanReadableCopyright: Copyright © The ClearShot Authors. Apache License 2.0.
         NSMicrophoneUsageDescription: ClearShot uses the microphone only while recording, to record your voice.
         ClearShotDefaultSaveFolder: $(CLEARSHOT_DEFAULT_SAVE_FOLDER)
+        ClearShotUpdateRepository: $(CLEARSHOT_UPDATE_REPO)
         CFBundleDocumentTypes:
           - CFBundleTypeName: ClearShot Project
             CFBundleTypeRole: Editor
@@ -103,6 +104,10 @@ targets:
         product: CSRecording
       - package: ClearShotKit
         product: CSAPI
+      - package: ClearShotKit
+        product: CSUpdate
+      - package: ClearShotKit
+        product: CSSensitive
 schemes:
   ClearShot:
     build:

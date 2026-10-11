@@ -44,6 +44,8 @@ final class PillButton: NSButton {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
         layer?.cornerCurve = .continuous
+        // A title too long for the pill ends in an ellipsis instead of wrapping onto a second line.
+        cell?.lineBreakMode = .byTruncatingTail
         setLabel(label)
     }
 
@@ -53,12 +55,16 @@ final class PillButton: NSButton {
     /// The thumbnail's panel never activates ClearShot, so without this the first click only brings the panel forward.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    func setLabel(_ text: String) {
-        attributedTitle = NSAttributedString(string: text, attributes: [
+    /// `text` is what the button does, for VoiceOver; `shown` is what the pill says when it is too narrow for that (Copy and
+    /// Save sharing a row), which then also shows `text` as its tooltip.
+    func setLabel(_ text: String, shownAs shown: String? = nil) {
+        let title = shown ?? text
+        attributedTitle = NSAttributedString(string: title, attributes: [
             .foregroundColor: NSColor.white,
             .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
         ])
         setAccessibilityLabel(text)
+        toolTip = title == text ? nil : text
     }
 
     override func layout() {

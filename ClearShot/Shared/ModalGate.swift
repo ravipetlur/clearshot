@@ -14,6 +14,9 @@ final class ModalGate {
     /// Whether a recording or its countdown is on screen, so a refusal says "recording" rather than "capture"; set once
     /// the flow exists (`AppCoordinator`).
     var recordingOnScreen: () -> Bool = { false }
+    /// Told when the relaunch starts waiting and when it stops (`waitUntilIdle`); the update center sets it, to say so in
+    /// its window.
+    var relaunchWaitChanged: (Bool) -> Void = { _ in }
     /// The last report waiting for the flow to be idle, and how many are waiting: they show one after another, in order,
     /// not stacked on each other.
     private var waiting: Task<Void, Never>?
@@ -46,6 +49,29 @@ final class ModalGate {
     /// refused, which the HUD has said unless `saysRefusal` is false (`decide`).
     func allowsQuestion(saysRefusal: Bool = true) -> Bool {
         decide(.question(undoable: false), saysRefusal: saysRefusal) == .ask
+    }
+
+    /// Returns once nothing is in the relaunch's way (`ModalPolicy.relaunchMustWait`): no capture, recording or recording's
+    /// tail is under way, by the same rule and the same once-a-second check as `report`; no report is queued behind them;
+    /// and no app-modal alert or panel is up. For work that must not cut one of those off (the update's relaunch). True
+    /// when it had to wait; `relaunchWaitChanged` hears when the wait begins and ends. A cancelled wait returns at once, so
+    /// what is stopping the work (the app is quitting) isn't held up by it.
+    func waitUntilIdle() async -> Bool {
+        var waited = false
+        defer { if waited { relaunchWaitChanged(false) } }
+        while ModalPolicy.relaunchMustWait(flow: flowState(), reportsQueued: waitingCount > 0,
+                                           appModalIsUp: NSApp.modalWindow != nil) {
+            if !waited {
+                waited = true
+                relaunchWaitChanged(true)
+            }
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return waited
+            }
+        }
+        return waited
     }
 
     /// Shows `alert`, which ClearShot raises by itself or which reports earlier work (a failed save, Mute's outcome, the

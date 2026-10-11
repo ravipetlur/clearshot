@@ -29,7 +29,7 @@ struct SettingsView: View {
         case .annotate: AnnotatePane()
         case .shortcuts: ShortcutsPane()
         case .advanced: AdvancedPane(coordinator: coordinator)
-        case .about: AboutPane()
+        case .about: AboutPane(updates: coordinator.updates)
         }
     }
 }

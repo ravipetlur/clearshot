@@ -1,6 +1,7 @@
 import AppKit
 import CSAnnotation
 import CSCore
+import CSSensitive
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -20,12 +21,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var hasPresented = false
     /// The window has closed: a Take Screenshot still running has nowhere to come back to.
     private var isClosed = false
+    /// The scan a Mask Sensitive Info is running, nil when none is. While it runs the command is off, so it can't run twice
+    /// (the tool strip's button follows: `AnnotateSensitiveCheck.isMasking`); closing the window cancels it.
+    private var maskScan: Task<Void, Never>? {
+        didSet { sensitiveCheck.isMasking = maskScan != nil }
+    }
+    /// The "Checking for sensitive info…" HUD that scan has up, so that closing the window takes it down (`HUDController.hide`)
+    /// instead of leaving it for its 30 seconds. Nil when the command had a scan's result already and showed none.
+    private var maskProgress: Int?
+    /// What the tool strip's sensitive-info button shows, and the background scan behind it. It sits beside the command: a click
+    /// on the button is the command.
+    let sensitiveCheck: AnnotateSensitiveCheck
 
     init(editor: AnnotationEditor, manager: AnnotateManager, alwaysOnTop: Bool,
          onClose: @escaping (EditorWindowController) -> Void) {
         self.editor = editor
         self.manager = manager
         self.onClose = onClose
+        sensitiveCheck = AnnotateSensitiveCheck(editor: editor, preferences: manager.preferences)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = editor.title
@@ -35,7 +48,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.tabbingMode = .disallowed
         super.init(window: window)
         window.delegate = self
-        let hosting = NSHostingController(rootView: EditorView(editor: editor, canvas: canvas, actions: makeActions()))
+        let hosting = NSHostingController(rootView: EditorView(editor: editor, canvas: canvas, actions: makeActions(),
+                                                               sensitive: sensitiveCheck))
         hosting.sizingOptions = []
         window.contentViewController = hosting
         window.setContentSize(Self.initialSize(for: editor))
@@ -43,6 +57,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         canvas.imageProblem = { [weak self] problem in self?.showImageProblem(problem) }
         canvas.toggleBackgroundPanel = { [weak self] in self?.toggleBackgroundTool(nil) }
         observeEdits()
+        // Scans the picture the editor opened with, and again whenever it changes.
+        sensitiveCheck.start()
     }
 
     /// The close button's dot shows edits not yet applied.
@@ -143,7 +159,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             desktopPictureURL: { [weak self] in
                 guard let screen = self?.window?.screen ?? NSScreen.main else { return nil }
                 return NSWorkspace.shared.desktopImageURL(for: screen)
-            }
+            },
+            maskSensitiveInfo: { [weak self] in self?.maskSensitiveInfo(nil) }
         )
     }
 
@@ -288,6 +305,127 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.beginSheet(sheet)
     }
 
+    // MARK: Mask Sensitive Info
+
+    /// Edit › Mask Sensitive Info (or Unmask Sensitive Info), and the tool strip's sensitive-info button, which runs this same
+    /// method. It is a toggle (`SensitiveButtonState.action`):
+    /// - **Masked look** (the document holds masks the secrets check made, and no unmasked finding is known): takes every one of
+    ///   those masks out as one undo step, and says "Unmasked N items". The person's own redactions stay.
+    /// - **Otherwise** scans the picture as it is now for the kinds switched on in Settings › Quick Access, and adds a Pixelate mask
+    ///   over each finding, all as one undo step (`SensitiveInfoScan` says what is scanned and how the masks are placed). It is an
+    ///   explicit request, so the switch that turns the automatic checks off doesn't apply to it, only the four kinds do; with none
+    ///   on there is nothing to look for, and the item and the button are off (unless there are masks to take out).
+    ///
+    /// Both refuse the same way (a crop or a drag begun meanwhile) and never run twice at once.
+    ///
+    /// The button's own background scan (`AnnotateSensitiveCheck`) reads the same picture the same way. When it has read exactly
+    /// this picture for these kinds, its masks are the ones a scan would make now, and are used instead of scanning again; the
+    /// rest, the refusals and the one-run-at-a-time rule included, is the same either way, and the button is told what the run
+    /// found, so it shows the outcome at once.
+    ///
+    /// Nothing is logged but counts and the time it took.
+    @objc func maskSensitiveInfo(_ sender: Any?) {
+        let kinds = manager.preferences[Prefs.sensitiveKinds]
+        guard maskScan == nil, !isClosed, window?.attachedSheet == nil else { return }
+        // Nothing to look for and nothing to take out.
+        guard !kinds.isEmpty || editor.document.secretsMaskCount > 0 else { return }
+        // Text being typed and a pending crop are part of the picture: finish them first, as an output does.
+        canvas.canvas?.finishEditing()
+        // The state catches up with the document before it says what a click does.
+        sensitiveCheck.refresh()
+        if sensitiveCheck.state.action == .unmask {
+            unmaskSensitiveInfo()
+            return
+        }
+        guard !kinds.isEmpty else { return }
+        let document = editor.document
+        let images = editor.images
+        let picture = document.pictureIdentity
+        let ready = sensitiveCheck.takeFound(for: picture, kinds: kinds)
+        let hud = manager.hud
+        // Long enough that it can't fade while a big picture is read in tiles; the result replaces it. A scan that is ready
+        // needs no message.
+        let progress = ready == nil ? hud.show(MaskCommandText.checking, symbol: "magnifyingglass", duration: .seconds(30)) : nil
+        maskProgress = progress
+        maskScan = Task { [weak self] in
+            let outcome: Result<SensitiveInfoScan.Found, any Error>
+            if let ready {
+                outcome = .success(ready)
+            } else {
+                do {
+                    outcome = .success(try await SensitiveInfoScan.run(document, images: images, kinds: kinds))
+                } catch {
+                    outcome = .failure(error)
+                }
+            }
+            // The scan can return normally when the cancel came after its last check, so a result is dropped here too: a window
+            // that has closed has nowhere to show it, and nothing is added to its document.
+            guard let self, !Task.isCancelled, !isClosed else {
+                if let progress { hud.hide(progress) }
+                return
+            }
+            maskScan = nil
+            maskProgress = nil
+            finishMaskScan(outcome, of: picture, kinds: kinds, wasReady: ready != nil)
+        }
+    }
+
+    /// The masked look's click: takes out every mask the secrets check made, as one undo step of its own, and says how many.
+    /// Nothing is scanned, so there is nothing to wait for or to run twice: the removal takes every marked mask, and a second one
+    /// that comes before the first has landed finds none and does nothing.
+    private func unmaskSensitiveInfo() {
+        let hud = manager.hud
+        editor.asOneUndoStep { [weak self] in
+            guard let self, !isClosed else { return }
+            guard let removed = editor.removeSecretsMasks(actionName: MaskCommandText.unmaskCommandName) else {
+                // A crop, a drag or text being typed began: not interrupted, nothing removed.
+                hud.show(MaskCommandText.unmaskEditInProgress, symbol: "exclamationmark.triangle.fill")
+                return
+            }
+            guard removed > 0 else { return }
+            Log.annotate.info("Unmask Sensitive Info: \(MaskCommandText.unmaskLogSummary(masksRemoved: removed))")
+            // The document is the picture it was before the masks (or one nobody has read): the button shows the warning again, with
+            // a scan only when it has to.
+            sensitiveCheck.refresh()
+            hud.show(MaskCommandText.unmaskResult(masksRemoved: removed), symbol: "eye")
+        }
+    }
+
+    /// The command's result: the HUD says what was masked, and the button is told what the run found or masked. `picture` is
+    /// the one that was scanned, which an undo of the masks makes again.
+    private func finishMaskScan(_ outcome: Result<SensitiveInfoScan.Found, any Error>, of picture: PictureIdentity,
+                                kinds: SensitiveKinds, wasReady: Bool) {
+        let hud = manager.hud
+        switch outcome {
+        case .failure(let error):
+            Log.annotate.error("Mask Sensitive Info couldn't check the image: \(error)")
+            sensitiveCheck.failed(of: picture, kinds: kinds)
+            hud.show(MaskCommandText.couldntCheck, symbol: "exclamationmark.triangle.fill")
+        case .success(let found):
+            let summary = MaskCommandText.logSummary(findings: found.findings, masksAdded: found.masks.count)
+            // A ready scan's time is the background check's, made earlier.
+            Log.annotate.info("Mask Sensitive Info: \(summary)" + (wasReady ? ", from the check made earlier" : " in \(BadgeText.seconds(found.duration)) s"))
+            guard !found.masks.isEmpty else {
+                sensitiveCheck.checked(found, of: picture, kinds: kinds)
+                hud.show(MaskCommandText.result(masksAdded: 0), symbol: "checkmark.circle")
+                return
+            }
+            // Masks are in the document's own pixels (base pixels), so a turn, crop or resize made while the scan ran doesn't
+            // misplace them. They are one undo step of their own, apart from anything recorded in the same event.
+            editor.asOneUndoStep { [weak self] in
+                guard let self, !isClosed else { return }
+                if editor.addMasks(found.masks, actionName: MaskCommandText.commandName) {
+                    sensitiveCheck.masked(found, of: picture, kinds: kinds)
+                    hud.show(MaskCommandText.result(masksAdded: found.masks.count), symbol: "eye.slash")
+                } else {
+                    // A crop, a drag or text being typed began while the scan ran: not interrupted, nothing added.
+                    sensitiveCheck.checked(found, of: picture, kinds: kinds)
+                    hud.show(MaskCommandText.editInProgress, symbol: "exclamationmark.triangle.fill")
+                }
+            }
+        }
+    }
+
     // MARK: The Background tool
 
     /// Edit › Background Tool, the tool strip's button and the panel's letter: shows or hides the Background panel. Text
@@ -422,6 +560,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if menuItem.action == #selector(toggleBackgroundTool(_:)) {
             menuItem.state = editor.isBackgroundPanelOpen ? .on : .off
         }
+        // "Mask Sensitive Info" or "Unmask Sensitive Info", as the button's state says a click does.
+        if menuItem.action == #selector(maskSensitiveInfo(_:)) {
+            menuItem.title = SensitiveButtonText.menuTitle(for: sensitiveCheck.state.phase)
+        }
         return switch menuItem.action {
         case #selector(copyImage(_:)), #selector(sendToRaycast(_:)):
             !isTyping
@@ -440,6 +582,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         // Images stay out of Crop & Resize, and out from under the Resize sheet.
         case #selector(takeScreenshot(_:)), #selector(pasteImageFromClipboard(_:)), #selector(chooseImage(_:)):
             editor.crop == nil && window?.attachedSheet == nil
+        // One scan at a time, nothing to look for with every kind switched off, and nothing under the Resize sheet. (The tool
+        // strip's button is off for the first two, and a sheet blocks its window's clicks.)
+        case #selector(maskSensitiveInfo(_:)):
+            sensitiveCheck.isEnabled && window?.attachedSheet == nil
         default:
             true
         }
@@ -485,8 +631,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
     }
 
+    /// The Edit menu's mask item keeps the title an editor last gave it, which with no editor answering (a History or Settings
+    /// window in front, or the last editor closed) would say "Unmask" on a disabled item: it goes back to its own. An editor
+    /// that becomes key again sets it when the menu opens (`validateMenuItem`). Called when an editor window resigns key and when
+    /// it closes.
+    private static func resetMaskMenuTitle() {
+        func visit(_ menu: NSMenu) {
+            for item in menu.items {
+                if item.action == #selector(maskSensitiveInfo(_:)) { item.title = SensitiveButtonText.menuTitleWithNoEditor }
+                if let submenu = item.submenu { visit(submenu) }
+            }
+        }
+        if let main = NSApp.mainMenu { visit(main) }
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         canvas.canvas?.endSpaceHold()
+        // Another window is key now: if it is no editor the item is disabled, and mustn't read "Unmask".
+        Self.resetMaskMenuTitle()
     }
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
@@ -497,6 +659,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// with.
     func windowWillClose(_ notification: Notification) {
         isClosed = true
+        // Any scan for the button is cancelled, and a result that arrives later does nothing.
+        sensitiveCheck.stop()
+        Self.resetMaskMenuTitle()
+        maskScan?.cancel()
+        maskScan = nil
+        // The scan stops at its next check; the message that says it is working goes now.
+        if let progress = maskProgress { manager.hud.hide(progress) }
+        maskProgress = nil
         manager.preferences[Prefs.annotateBackgroundToolWasOpen] = editor.isBackgroundPanelOpen
         onClose(self)
     }

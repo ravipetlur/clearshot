@@ -17,4 +17,7 @@ ENABLE_DEBUG_DYLIB = NO
 // Where captures are saved until the person picks a folder in Settings › General: a path relative to the home folder.
 CLEARSHOT_DEFAULT_SAVE_FOLDER = Desktop
 
+// The GitHub repository (owner/repo) the app checks for updates. Empty, it doesn't check: release builds set it.
+CLEARSHOT_UPDATE_REPO =
+
 #include? "Local.xcconfig"

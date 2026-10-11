@@ -100,9 +100,10 @@ final class HistoryItemActions {
     }
 
     /// Puts the item on the clipboard in the chosen format; a video or GIF as its file whatever the format, a GIF with
-    /// its data too, so it pastes animated.
+    /// its data too, so it pastes animated. Says "Copied to clipboard" unless `confirms` is off (a caller with a message of
+    /// its own to give); a copy that failed always says so.
     @discardableResult
-    func copy(_ item: HistoryItem) -> Bool {
+    func copy(_ item: HistoryItem, confirms: Bool = true) -> Bool {
         let mode = preferences[Prefs.clipboardMode]
         let fileURL = file(for: item)
         let copied: Bool
@@ -115,7 +116,7 @@ final class HistoryItemActions {
         }
         if copied {
             noteCopied(item.id)
-            hud.show("Copied to clipboard", symbol: "doc.on.clipboard")
+            if confirms { hud.show("Copied to clipboard", symbol: "doc.on.clipboard") }
         } else {
             Log.capture.error("Couldn't copy \(item.displayName) to the clipboard")
             hud.show("Couldn't copy to the clipboard", symbol: "exclamationmark.triangle.fill")
@@ -267,6 +268,100 @@ final class HistoryItemActions {
                          fitOnOnePage: true)
     }
 
+    /// Writes a changed document of a capture: renders it, records it as the item's document and replaces the working copy
+    /// and thumbnail with the render (`AnnotationStorage.save`), then rewrites the saved file with it as `rewriteSavedFile`
+    /// does. The one path every change to an annotated capture's document goes through: Annotate's Done, an image change
+    /// from the thumbnail's menu, and the secrets check's Mask All and Undo Mask.
+    ///
+    /// Throws when the render or the save fails. Once the working copy has been replaced the outcome is a success, even when
+    /// the saved file then couldn't be rewritten: that is `savedFileError`, for the caller to report, and the returned item
+    /// is for the caller to record in the store. Runs off the main actor, like everything it calls.
+    nonisolated static func writeDocument(_ document: AnnotationDocument, images: ImageStore, to item: HistoryItem, root: URL,
+                                          quality: Double) throws -> (item: HistoryItem, savedFileError: (any Error)?) {
+        guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
+        var updated = try AnnotationStorage.save(document, images: images, rendered: rendered, to: item, root: root)
+        let savedFileError = rewriteSavedFile(of: item, with: rendered, quality: quality, updating: &updated)
+        return (updated, savedFileError)
+    }
+
+    /// How a document write is told to the store and the person: the words of the alert for a saved file that wasn't
+    /// brought along (`SavedFileNotice`), and where the lines go in the log. Done, a thumbnail's image change and the secrets
+    /// check's masks each have their own.
+    struct DocumentWriteReport {
+        /// What changed, as the alert starts: "Your edits are applied to the screenshot in ClearShot".
+        var change: String
+        /// One more sentence for the alert, or none.
+        var note: String?
+        /// The saved file's lines in the log.
+        var log: AppLogger
+        /// The line for the store not recording the change.
+        var storeLog: AppLogger
+        /// Whether an item the store couldn't update is put back in memory (unless it was removed meanwhile), so memory
+        /// stays in step with the working copy that was written. An image change from the thumbnail leaves it.
+        var addsWhenUpdateFails: Bool
+
+        /// Annotate's Done.
+        static let done = DocumentWriteReport(change: "Your edits are applied to the screenshot in ClearShot", note: nil,
+                                              log: Log.annotate, storeLog: Log.annotate, addsWhenUpdateFails: true)
+        /// Rotate, Flip and Resize from the thumbnail.
+        static let imageChange = DocumentWriteReport(change: "The image changed", note: nil, log: Log.capture,
+                                                     storeLog: Log.history, addsWhenUpdateFails: false)
+        /// Mask All. A saved file that wasn't brought along is the one place the unmasked picture is still what a drag or a
+        /// copy of the file carries, so the alert says so.
+        static let masksAdded = DocumentWriteReport(
+            change: "The masks are applied to the screenshot in ClearShot",
+            note: "The saved file isn't masked, and dragging or copying the file still uses it.",
+            log: Log.annotate, storeLog: Log.annotate, addsWhenUpdateFails: true)
+        /// Undo Mask.
+        static let masksRemoved = DocumentWriteReport(change: "The masks are removed from the screenshot in ClearShot", note: nil,
+                                                      log: Log.annotate, storeLog: Log.annotate, addsWhenUpdateFails: true)
+    }
+
+    /// What every change to a capture's document does once `writeDocument` has succeeded: records the updated item in the
+    /// store (which refreshes the thumbnail through its `.updated`), then, if the saved file wasn't rewritten, logs why and
+    /// raises the alert, after this returns so that the thumbnail shows the change before the alert blocks. `afterRecording`
+    /// is what the caller does in between (Done's editor, the background's Previous Settings).
+    func recordDocumentWrite(_ updated: HistoryItem, savedFileError: (any Error)?, as report: DocumentWriteReport,
+                             afterRecording: () -> Void = {}) {
+        do {
+            try history.update(updated)
+        } catch {
+            report.storeLog.error("Couldn't record the change to \(updated.displayName) in history: \(error)")
+            // Keep memory in step with the working copy, unless the item was removed during the write.
+            if report.addsWhenUpdateFails, history.item(id: updated.id) != nil { history.add(updated) }
+        }
+        afterRecording()
+        guard let savedFileError else { return }
+        let editedElsewhere = savedFileError is SavedFileEditedElsewhere
+        if editedElsewhere {
+            report.log.info("Left the saved file for \(updated.displayName) alone: it was edited in another app")
+        } else {
+            report.log.error("Couldn't rewrite the saved file for \(updated.displayName): \(savedFileError)")
+        }
+        let message = SavedFileNotice.message(change: report.change, editedElsewhere: editedElsewhere, note: report.note)
+        Task { showAlert(message: message, error: savedFileError) }
+    }
+
+    /// What `replaceCopyIfStillOnClipboard` did.
+    enum ClipboardReplacement {
+        /// The clipboard wasn't ClearShot's copy of the capture, so it stays as it is.
+        case untouched
+        /// The masked capture is on the clipboard now.
+        case replaced
+        /// The copy failed, and has said so: the clipboard still holds what it did.
+        case failed
+    }
+
+    /// After Mask All: puts the masked capture on the clipboard again with the copy action, but only if ClearShot's copy of
+    /// this capture is still what the clipboard holds (the after-capture copy, or one from the thumbnail or Annotate, with
+    /// nothing copied since by anyone: `ClipboardOwnership.stillHolds`). Otherwise the clipboard is the person's, and stays.
+    /// It does so without "Copied to clipboard": Mask All has its own message, which says the clipboard was updated.
+    @discardableResult
+    func replaceCopyIfStillOnClipboard(_ item: HistoryItem) -> ClipboardReplacement {
+        guard let lastCopy, lastCopy.stillHolds(item.id, changeCount: NSPasteboard.general.changeCount) else { return .untouched }
+        return copy(item, confirms: false) ? .replaced : .failed
+    }
+
     /// Rewrites the saved file with `image` (a rotate, flip, resize or annotation), unless it has been edited in another
     /// app since ClearShot wrote it. The file records `updated`'s scale, the image's after the change, as its density.
     /// On success the new file date goes into `updated`. Returns what the caller should report, or nil when the file is up
@@ -321,11 +416,8 @@ final class HistoryItemActions {
                         let outputSize = Renderer.outputBounds(of: opened.document, images: opened.images, cache: nil).size
                         let op = opened.document.imageOp(for: change, itemScale: item.scale, outputSize: outputSize)
                         let document = opened.document.applying(op)
-                        guard let rendered = Renderer.render(document, images: opened.images) else { throw CaptureError.cannotTransform }
-                        var updated = try AnnotationStorage.save(document, images: opened.images, rendered: rendered, to: item,
-                                                                 root: root)
-                        let savedFileError = Self.rewriteSavedFile(of: item, with: rendered, quality: quality, updating: &updated)
-                        return (updated, savedFileError, document)
+                        let written = try Self.writeDocument(document, images: opened.images, to: item, root: root, quality: quality)
+                        return (written.item, written.savedFileError, document)
                     }
                     Log.history.info("Couldn't read the annotations of \(item.displayName); changing its working copy instead")
                 }
@@ -341,23 +433,8 @@ final class HistoryItemActions {
         }.value
         switch outcome {
         case .success(let (updated, savedFileError, document)):
-            do {
-                try history.update(updated)
-            } catch {
-                Log.history.error("Couldn't record the change to \(updated.displayName) in history: \(error)")
-            }
-            if let document { BackgroundPresets.recordPrevious(document, in: preferences) }
-            if let savedFileError {
-                let message: String
-                if savedFileError is SavedFileEditedElsewhere {
-                    Log.capture.info("Left the saved file for \(updated.displayName) alone: it was edited in another app")
-                    message = "The image changed, but the saved file was edited in another app, so ClearShot left it alone."
-                } else {
-                    Log.capture.error("Couldn't rewrite the saved file for \(updated.displayName): \(savedFileError)")
-                    message = "The image changed, but the saved file wasn't updated"
-                }
-                // After this returns, so the thumbnail shows the new image before the alert blocks.
-                Task { showAlert(message: message, error: savedFileError) }
+            recordDocumentWrite(updated, savedFileError: savedFileError, as: .imageChange) {
+                if let document { BackgroundPresets.recordPrevious(document, in: preferences) }
             }
             return updated
         case .failure(let error):

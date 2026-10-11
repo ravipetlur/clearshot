@@ -13,16 +13,14 @@ import Observation
 /// - **A background check** never starts while a check, download or install runs or the update window is open, and fails
 ///   quietly, with a line in the log; an offer standing when it fails stays. It opens the window once per version per
 ///   launch, once no capture is under way.
-/// - **A manual check** answers: a HUD says "You're up to date", an alert gives a failure in plain words, and an update
-///   always opens the window, even one that was skipped.
+/// - **A manual check** answers where it was asked (`CheckSource`), never in a floating HUD or a separate alert: from the
+///   status menu a popover under the status icon (`CheckPopoverController`), or, with no icon to point at, Settings ›
+///   About's line under Check Now; from Settings › About's Check Now that line (`aboutLine`). It says "Checking…", then
+///   "up to date" or the failure in plain words (`CheckAnswer`). An update always opens the window, even one that was
+///   skipped.
 @MainActor
 @Observable
 final class UpdateCenter {
-    /// Who asked for a check: the schedule fails quietly, a person gets an answer.
-    enum Origin: String {
-        case background, manual
-    }
-
     /// Where the update is, from the check to the install. The menu, the window and Settings read it.
     private(set) var flow = InstallFlow()
     /// The running version.
@@ -31,6 +29,10 @@ final class UpdateCenter {
     /// hasn't quit yet or couldn't relaunch). It counts as the current version for the rest of the process, so a later
     /// check doesn't offer what is already installed.
     @ObservationIgnored private var installedVersion: VersionNumber?
+    /// The answer to a check asked from Settings › About, while the pane shows one: "Up to date", the failure or the update
+    /// found (`aboutLine` adds "Checking…"). It is dropped when the pane closes or a new check starts, and never kept for
+    /// a pane that isn't showing.
+    private var aboutAnswer: CheckAnswer?
     /// Whether Return may install: the window has been key for a moment (`DefaultActionArming`, kept by the window
     /// controller). Until then Install and Relaunch works by click only.
     private(set) var defaultActionArmed = false
@@ -41,7 +43,6 @@ final class UpdateCenter {
     private(set) var restartIsWaiting = false
 
     @ObservationIgnored private let preferences: Preferences
-    @ObservationIgnored private let hud: HUDController
     @ObservationIgnored private let gate: ModalGate
     @ObservationIgnored private let client: ReleaseClient
     @ObservationIgnored private let installer: any UpdateInstaller
@@ -54,10 +55,11 @@ final class UpdateCenter {
     /// The install that is running (or was last started), and its task. An install's reports and its end are tagged with
     /// its attempt, so those of an old one are never taken for the new one's.
     @ObservationIgnored private var installRun: (attempt: InstallAttempt, task: Task<Void, Never>)?
-    /// Who the running check is for. A manual check that comes while a background one runs takes it over, to be answered.
-    @ObservationIgnored private var checkOrigin = Origin.background
-    /// The "Checking for updates…" HUD message of a manual check, to take down when it has its answer.
-    @ObservationIgnored private var checkingMessage: Int?
+    /// Who the running check is for: nobody (the schedule fails quietly), or each surface a person asked from. A manual
+    /// check that comes while another runs joins it, and every surface that asked gets the answer.
+    @ObservationIgnored private var askers = CheckAskers()
+    /// The popover under the status icon, where a check from the status menu answers.
+    @ObservationIgnored private let popover = CheckPopoverController()
     @ObservationIgnored private var windowController: UpdateWindowController?
     /// Why the last due background check had to wait, so the log says it once per reason and not at every retry.
     @ObservationIgnored private var saidWaiting: String?
@@ -71,11 +73,13 @@ final class UpdateCenter {
     /// How long, after an install has asked the app to relaunch, before the app that is still running says so.
     private static let relaunchWait: Duration = .seconds(15)
 
-    init(configuration: UpdateConfiguration, preferences: Preferences, hud: HUDController, gate: ModalGate,
-         installer: any UpdateInstaller) {
+    /// Whether Settings is open on its About pane, which is where a check from Settings answers. The Settings window's, set by
+    /// the coordinator; until then (and in a build without one) no pane shows an answer.
+    @ObservationIgnored var aboutPaneIsShowing: () -> Bool = { false }
+
+    init(configuration: UpdateConfiguration, preferences: Preferences, gate: ModalGate, installer: any UpdateInstaller) {
         self.currentVersion = configuration.currentVersion
         self.preferences = preferences
-        self.hud = hud
         self.gate = gate
         self.installer = installer
         self.client = ReleaseClient(endpoint: configuration.endpoint, userAgent: configuration.userAgent,
@@ -148,13 +152,35 @@ final class UpdateCenter {
     /// The last check, as Settings › About shows it.
     var lastCheck: Date? { preferences[Prefs.updateLastCheck] }
 
-    /// The status menu's item: the update window when a release is known ("Update to X…"), else a manual check.
-    func menuItemChosen() {
+    /// The line under Check Now in Settings › About: "Checking…" while any check runs (the schedule's too, which is why the
+    /// button is off), else the answer to the last check asked from there; nil when there is none.
+    var aboutLine: CheckAnswer? {
+        isChecking ? CheckAnswer(.checking, source: .settings) : aboutAnswer
+    }
+
+    /// The status menu's item: the update window when a release is known ("Update to X…"), else a manual check, which
+    /// answers in a popover hanging from `anchor` (the status icon's button). `anchor` is nil when the icon can't be
+    /// pointed at (hidden, or in the menu bar's overflow): the check then answers in Settings › About, which `showAbout`
+    /// opens, and never in a floating message.
+    func menuItemChosen(anchor: NSView?, showAbout: () -> Void) {
         if offer != nil {
             showWindow(activating: true)
-        } else {
-            checkNow()
+            return
         }
+        switch CheckSource.statusMenu.answering(anchorIsUsable: anchor != nil) {
+        case .statusMenu:
+            // Open at once, saying "Checking for updates…", then ask.
+            if let anchor { popover.show(below: anchor) }
+            checkNow(from: .statusMenu)
+        case .settings:
+            showAbout()
+            checkNow(from: .settings)
+        }
+    }
+
+    /// Settings › About's pane closed (another pane, or the window): the line under Check Now is cleared.
+    func aboutPaneClosed() {
+        aboutAnswer = nil
     }
 
     /// The offered release's notes as blocks for the window.
@@ -218,49 +244,63 @@ final class UpdateCenter {
             return
         }
         saidWaiting = nil
-        check(.background)
+        check(askedFrom: nil)
     }
 
     // MARK: Checking
 
-    /// A manual check: Settings' Check Now, or the menu's "Check for Updates…". It asks even while an offer stands, so a
-    /// newer release replaces the offer; the answer is given, and a found update opens the window. While an install runs
-    /// the window comes forward instead.
-    func checkNow() {
+    /// A manual check, asked from `source`: Settings' Check Now, or the menu's "Check for Updates…". It asks even while an
+    /// offer stands, so a newer release replaces the offer; the answer appears where it was asked, and a found update
+    /// opens the window. While an install runs the window comes forward instead.
+    func checkNow(from source: CheckSource) {
         switch flow.state {
         case .downloading, .verifying, .installing, .handedOff:
             showWindow(activating: true)
         case .checking:
-            // The schedule's check is already asking: the person gets its answer.
-            checkOrigin = .manual
-            showCheckingMessage()
+            // A check is already asking (the schedule's, or another surface's): the person gets its answer too. Whatever an
+            // earlier answer said no longer holds.
+            askers.add(source)
+            aboutAnswer = nil
+            answer(.checking, to: source)
         default:
-            showCheckingMessage()
-            check(.manual)
+            check(askedFrom: source)
         }
     }
 
-    private func showCheckingMessage() {
-        guard checkingMessage == nil else { return }
-        checkingMessage = hud.show("Checking for updates\u{2026}", symbol: "arrow.triangle.2.circlepath",
-                                   duration: .seconds(35))
+    /// Says `outcome` where `source` asked: the popover under the status icon, or the line in Settings › About, which
+    /// only takes it while the pane is showing (a person who has left it doesn't find an old answer on coming back).
+    private func answer(_ outcome: CheckAnswer.Outcome, to source: CheckSource) {
+        let answer = CheckAnswer(outcome, source: source)
+        switch source {
+        case .statusMenu:
+            popover.present(answer)
+        case .settings:
+            aboutAnswer = aboutPaneIsShowing() ? answer : nil
+        }
     }
 
-    private func hideCheckingMessage() {
-        if let checkingMessage { hud.hide(checkingMessage) }
-        checkingMessage = nil
+    /// A check that ended with no word to say (a result that came when no check was running) leaves no "Checking…" up.
+    private func dropPendingAnswers() {
+        popover.closeIfPending()
+        if aboutAnswer?.isPending == true { aboutAnswer = nil }
     }
 
-    private func check(_ origin: Origin) {
-        // A check that can't start leaves nothing behind: the "Checking…" message of a manual one comes down, and the
-        // schedule is asked again.
+    /// Starts a check: for `source`, or for the schedule when it is nil.
+    private func check(askedFrom source: CheckSource?) {
+        // A check that can't start leaves nothing behind: a manual one's "Checking…" comes down, and the schedule is asked
+        // again.
         guard checkTask == nil, apply(.checkStarted) else {
-            hideCheckingMessage()
+            dropPendingAnswers()
             arm(minimumDelay: Self.busyRetryDelay, logs: false)
             return
         }
-        checkOrigin = origin
-        Log.update.info("Checking for updates (\(origin.rawValue))")
+        askers = CheckAskers()
+        if let source { askers.add(source) }
+        Log.update.info("Checking for updates (\(askers.logName))")
+        // Whatever the last check said no longer holds, whoever asks now: an old "up to date" under an update window that
+        // this check opens would contradict it.
+        aboutAnswer = nil
+        if let source { answer(.checking, to: source) }
         let client = client
         checkTask = Task { [weak self] in
             let result = await client.fetchLatest()
@@ -270,66 +310,55 @@ final class UpdateCenter {
 
     private func finishCheck(_ result: FeedResult) {
         checkTask = nil
-        let origin = checkOrigin
-        checkOrigin = .background
-        hideCheckingMessage()
+        let askers = askers
+        self.askers = CheckAskers()
         // Every attempt is recorded, a failed one too: a stale last check would put the next one in the past, and a check
         // that keeps failing would repeat in a loop.
         preferences[Prefs.updateLastCheck] = Date()
 
         switch result {
         case .failed(let failure):
-            Log.update.warning("The check failed (\(origin.rawValue)): \(String(describing: failure))")
+            Log.update.warning("The check failed (\(askers.logName)): \(String(describing: failure))")
             // The offer that stood before the check stays; with none, the flow is idle again.
             if flow.settleAfterFailedCheck(failure) {
-                if origin == .manual { reportFailure(failure) }
+                for source in askers.sources { answer(.failed(failure), to: source) }
             } else {
                 Log.update.debug("A failed check arrived when none was running")
             }
         case .noRelease:
-            noUpdate(origin)
+            noUpdate(askers)
         case .release(let release):
             // A manual check ignores the skipped version: the person asked.
-            let skipped = origin == .manual ? nil : preferences[Prefs.updateSkippedVersion].flatMap { VersionNumber($0) }
+            let skipped = askers.isManual ? nil : preferences[Prefs.updateSkippedVersion].flatMap { VersionNumber($0) }
             if let offer = UpdateDecision.offer(current: effectiveVersion, latest: release, skipped: skipped) {
-                found(offer, origin)
+                found(offer, askers)
             } else {
-                noUpdate(origin)
+                noUpdate(askers)
             }
         }
+        // Whatever the branches left unanswered ends here.
+        dropPendingAnswers()
         arm()
     }
 
-    private func found(_ offer: ReleaseInfo, _ origin: Origin) {
+    private func found(_ offer: ReleaseInfo, _ askers: CheckAskers) {
         guard apply(.updateFound(offer)) else { return }
         Log.update.info("Version \(offer.version) is available")
-        if offers.shouldShowWindow(for: offer.version, manual: origin == .manual) {
+        // The popover closes (the update window says it better), and Settings' line says which version.
+        for source in askers.sources { answer(.found(offer.version), to: source) }
+        if offers.shouldShowWindow(for: offer.version, manual: askers.isManual) {
             // After a capture or recording, if one is under way. A background offer doesn't take the focus.
-            let activating = origin == .manual
+            let activating = askers.isManual
             gate.report { [weak self] in self?.showWindowIfOffered(activating: activating) }
         }
     }
 
-    private func noUpdate(_ origin: Origin) {
+    private func noUpdate(_ askers: CheckAskers) {
         guard apply(.noUpdateFound) else { return }
         Log.update.info("No update: running \(currentVersion)" + (effectiveVersion == currentVersion ? "" : ", \(effectiveVersion) is installed"))
         // A window left open on an offer that has gone has nothing to show.
         closeWindow()
-        if origin == .manual {
-            hud.show("You're up to date (\(effectiveVersion))", symbol: "checkmark.circle.fill")
-        }
-    }
-
-    private func reportFailure(_ failure: UpdateFailure) {
-        gate.report {
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.messageText = "Couldn't check for updates"
-            alert.informativeText = failure.message
-            alert.addButton(withTitle: "OK")
-            NSApp.activate()
-            alert.runModal()
-        }
+        for source in askers.sources { answer(.upToDate(effectiveVersion), to: source) }
     }
 
     // MARK: The window
@@ -403,6 +432,8 @@ final class UpdateCenter {
         guard case .available(let release) = flow.state, apply(.dismiss) else { return }
         preferences[Prefs.updateSkippedVersion] = release.version.description
         Log.update.info("Skipped \(release.version)")
+        // Settings' "Version X is available" no longer holds.
+        aboutAnswer = nil
         closeWindow()
     }
 

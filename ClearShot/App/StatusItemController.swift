@@ -1,6 +1,7 @@
 import AppKit
 import CSCore
 import CSRecording
+import CSUpdate
 
 /// The menu bar icon and its menu. The layout's items are made once, each action's with its shortcut, which then
 /// follows the shortcut store by itself; every open puts them back, renames Hide/Show Desktop Icons, and adds Show Hidden
@@ -239,7 +240,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func showHiddenPins() { coordinator.pins.toggleVisibility() }
     @objc private func openSettings() { coordinator.showSettings() }
     @objc private func openAbout() { coordinator.showAbout() }
-    @objc private func checkForUpdates() { coordinator.updates?.menuItemChosen() }
+    /// "Check for Updates…": the answer hangs under the icon, or, when the icon can't be pointed at, comes in Settings › About.
+    @objc private func checkForUpdates() {
+        coordinator.updates?.menuItemChosen(anchor: popoverAnchor, showAbout: { [coordinator] in coordinator.showAbout() })
+    }
+
+    /// The icon's button when a popover can hang from it: the item is shown and its button is on a screen. Nil with the icon
+    /// hidden, or moved off every screen by the menu bar's overflow.
+    private var popoverAnchor: NSView? {
+        guard let button = statusItem.button else { return nil }
+        let usable = StatusIconAnchor.isUsable(itemIsVisible: statusItem.isVisible && (button.window?.isVisible ?? false),
+                                               buttonFrame: button.window?.frame,
+                                               screenFrames: NSScreen.screens.map(\.frame))
+        return usable ? button : nil
+    }
 
     #if DEBUG
     @objc private func runSelfTest() { coordinator.runCaptureSelfTest() }

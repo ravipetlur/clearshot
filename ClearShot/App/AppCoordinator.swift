@@ -140,8 +140,11 @@ final class AppCoordinator {
             let installer = LiveUpdateInstaller(configuration: configuration, waitUntilQuiet: { [gate] in
                 if await gate.waitUntilIdle() { Log.update.info("The relaunch waited for a capture or recording to finish") }
             })
-            updates = UpdateCenter(configuration: configuration, preferences: preferences, hud: hud, gate: gate,
-                                   installer: installer)
+            let center = UpdateCenter(configuration: configuration, preferences: preferences, gate: gate,
+                                      installer: installer)
+            // A check from Settings answers in its About pane, but only while that pane is showing.
+            center.aboutPaneIsShowing = { [weak self] in self?.settingsWindow?.isShowingAbout ?? false }
+            updates = center
         }
         let statusItem = StatusItemController(coordinator: self)
         statusItem.isVisible = preferences[Prefs.showMenuBarIcon]

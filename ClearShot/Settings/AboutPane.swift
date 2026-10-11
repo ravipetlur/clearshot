@@ -33,7 +33,9 @@ struct AboutPane: View {
     }
 }
 
-/// "Check for updates automatically", "Last checked: …" and Check Now.
+/// "Check for updates automatically", "Last checked: …", Check Now, and under them the answer to a check (`CheckAnswerLine`):
+/// "Checking…", then "up to date", the reason a check failed, or the version that is available. The answer keeps a fixed
+/// height, so nothing in the pane shifts as a check starts and ends, and it clears when the pane closes.
 private struct UpdateRows: View {
     let updates: UpdateCenter
     @Environment(Preferences.self) private var prefs
@@ -53,19 +55,15 @@ private struct UpdateRows: View {
                     Text(LastChecked.text(lastCheck: updates.lastCheck, now: context.date))
                         .foregroundStyle(.secondary)
                 }
-                // Its place is kept, so the row doesn't change width when a check starts.
-                Group {
-                    if updates.isChecking {
-                        ProgressView().controlSize(.small)
-                            .accessibilityLabel("Checking for updates")
-                    } else {
-                        Color.clear
-                    }
-                }
-                .frame(width: 16, height: 16)
-                Button("Check Now") { updates.checkNow() }
+                Button("Check Now") { updates.checkNow(from: .settings) }
                     .disabled(updates.isChecking)
             }
+            CheckAnswerLine(answer: updates.aboutLine)
         }
+        // The words that appear under the button are also said to VoiceOver.
+        .onChange(of: updates.aboutLine?.title) { _, title in
+            if let title { AccessibilityNotification.Announcement(title).post() }
+        }
+        .onDisappear { updates.aboutPaneClosed() }
     }
 }

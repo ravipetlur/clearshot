@@ -4,7 +4,12 @@
 #
 # It runs CI's build and test gate, builds the Release app as version 1.2.0 with this workflow's run number as its build
 # number, packs ClearShot-1.2.0.dmg with scripts/make-dmg.sh (what `make dmg` runs locally), writes the DMG's SHA-256,
-# attests its build provenance, and publishes the release with generated notes, the DMG and its checksum.
+# attests its build provenance, and publishes the release with its notes, the DMG and its checksum.
+#
+# The notes open with a "What's new" section, which is release-notes/1.2.0.md (write it before pushing the tag; without
+# the file the section is a one-line default), then the install and verify sections, then GitHub's generated list of
+# changes. The app's update window shows the notes only up to the "## Install" heading, so "What's new" is all a person
+# updating sees.
 #
 # Run it by hand (Actions › Release › Run workflow) with a version for a dry run: the same build, signing and DMG,
 # uploaded as a workflow artifact. A dry run attests nothing and publishes nothing.
@@ -33,7 +38,10 @@
 # The signing identity isn't a secret of its own: it's read from the imported certificate (`security find-identity`),
 # so it can't disagree with it, and it must belong to MACOS_TEAM_ID. The repository variable RELEASE_BUNDLE_ID sets the
 # signed build's bundle identifier (com.example.clearshot when unset); an unsigned build always keeps
-# com.example.clearshot.
+# com.example.clearshot. Changing RELEASE_BUNDLE_ID or the signing team breaks in-app updates for every installed copy,
+# because the updater only installs an app with the same bundle identifier signed by the same team. A signed build also
+# gets this repository as the one its updater checks (CLEARSHOT_UPDATE_REPO); an unsigned build leaves it empty and has
+# no updater.
 #
 # The secrets reach only the steps that need them, through env, and are never printed. The files made from them (the
 # .p12, the .p8, the temporary keychain, Config/Local.xcconfig, the app's zip) are deleted at the end however the run
@@ -106,7 +114,16 @@ jobs:
             echo "::error::The version must look like 1.2.0 or 1.2.0-beta.1 (a tag: v1.2.0)."
             exit 1
           fi
-          if [[ $version == *-* ]]; then prerelease=true; else prerelease=false; fi
+          if [[ $version == *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+            # A release is what the app's updater offers, and it reads exactly three numbers without leading zeros.
+            if ! [[ $version =~ ^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$ ]]; then
+              echo "::error::A release's version is three numbers without leading zeros, like 1.2.0 (not 1.02.0 or 01.2.0)."
+              exit 1
+            fi
+          fi
           {
             echo "version=$version"
             echo "prerelease=$prerelease"
@@ -172,6 +189,7 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
           BUNDLE_ID: ${{ vars.RELEASE_BUNDLE_ID || 'com.example.clearshot' }}
+          UPDATE_REPO: ${{ github.repository }}
         run: |
           # The temporary keychain's path, for the signing steps and the clean-up.
           echo "KEYCHAIN=$RUNNER_TEMP/signing.keychain-db" >> "$GITHUB_ENV"
@@ -225,6 +243,8 @@ jobs:
             echo "CODE_SIGN_IDENTITY = $identity"
             echo "DEVELOPMENT_TEAM = $TEAM_ID"
             echo "OTHER_CODE_SIGN_FLAGS = --timestamp --keychain $KEYCHAIN"
+            # The repository the signed build checks for updates; unsigned builds leave it empty, so they never check.
+            echo "CLEARSHOT_UPDATE_REPO = $UPDATE_REPO"
           } > Config/Local.xcconfig
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
           echo "Signing as $identity, bundle identifier $BUNDLE_ID."
@@ -262,6 +282,15 @@ jobs:
           echo "$(plutil -extract CFBundleIdentifier raw "$info") $short ($build)"
           [ "$short" = "${VERSION%%-*}" ] || fail "CFBundleShortVersionString is $short, not ${VERSION%%-*}."
           [ "$build" = "$BUILD_NUMBER" ] || fail "CFBundleVersion is $build, not $BUILD_NUMBER."
+          # The updater's repository (CLEARSHOT_UPDATE_REPO): a Developer ID build names one, an unsigned build doesn't.
+          update_repo=$(plutil -extract ClearShotUpdateRepository raw "$info") || fail "The app has no ClearShotUpdateRepository key."
+          if [ "$DEVELOPER_ID" = true ]; then
+            # The repository this run publishes to: the updater reads its releases, so a build that names another one
+            # would never find this one.
+            [ "$update_repo" = "$GITHUB_REPOSITORY" ] || fail "ClearShotUpdateRepository is '$update_repo' in the Developer ID build, not $GITHUB_REPOSITORY."
+          else
+            [ -z "$update_repo" ] || fail "ClearShotUpdateRepository is $update_repo in the unsigned build, not empty."
+          fi
 
       - name: Write the notary key
         if: steps.signing.outputs.developer-id == 'true'
@@ -363,8 +392,20 @@ jobs:
           DEVELOPER_ID: ${{ steps.signing.outputs.developer-id }}
         run: |
           notes="$RUNNER_TEMP/notes.md"
+          # "What's new" comes first: the app's update window shows the notes up to the "## Install" heading and no
+          # further. It is this version's file in release-notes/, if there is one.
+          whats_new="release-notes/$VERSION.md"
+          if [ ! -s "$whats_new" ]; then
+            echo "::warning::There is no $whats_new, so the release says only 'Bug fixes and improvements.' under What's new."
+          fi
+          {
+            echo "## What's new"
+            echo
+            if [ -s "$whats_new" ]; then cat "$whats_new"; else echo "Bug fixes and improvements."; fi
+            echo
+          } > "$notes"
           if [ "$DEVELOPER_ID" = true ]; then
-            cat > "$notes" <<'EOF'
+            cat >> "$notes" <<'EOF'
           ## Install
 
           ClearShot needs macOS 27 on Apple Silicon. Download `ClearShot-@VERSION@.dmg` below, open it and drag ClearShot to Applications.
@@ -372,7 +413,7 @@ jobs:
           This build is signed with a Developer ID and notarized by Apple, so it opens like any other app.
           EOF
           else
-            cat > "$notes" <<'EOF'
+            cat >> "$notes" <<'EOF'
           ## Install
 
           ClearShot needs macOS 27 on Apple Silicon. Download `ClearShot-@VERSION@.dmg` below, open it and drag ClearShot to Applications.

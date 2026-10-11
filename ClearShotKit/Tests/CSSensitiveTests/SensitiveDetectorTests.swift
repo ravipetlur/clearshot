@@ -160,6 +160,9 @@ struct SensitiveDetectorTests {
             ":a@b.test", "a@b.test|", "a=@b.test", "x://a:b@c.test", "a@b.c:d@e.ff", "x://a:b@", "passphrase=", "&", "'", "@a.", "://",
             "password: ", "a=&b=", "aB3dE5fG7hJ9kL1m\\n", "202-555-0143...", "12 13 ", "a@b.test?c=", "a=b&c/d|e?f@", "a@b.test@",
             "**password:** x ", "password1_a_b_c_d_e_f_g=", "pwd: ab ", "x password: \"a\"b ", "token=\"a\",",
+            // A URL password may hold `/`: it runs to the last `@` of the run of text, which is read once.
+            "x://a:b/", "x://a:b/c@", "x://a:/@", "x://a:/@/@", "x://:/", "x://a:/b/c/d", "x://a:b/c@d.test/", "/@", "@/", ":/@",
+            "x://a:b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z@", "x://a:@/@/@/@/@/@/@/@/@/@/@/@/@/@/",
             // Card labels, card groupings and the long chains of digit groups they work on.
             "1 card ", "1 card:", "1 card no. ", "1 cc# ", "card - 1 ", "card 1 ", "visa 4222 ", "4222 ", "4222-", "4222 2222 2222 3433 ",
             "card 4222222222223433 ", "card: 4222 2222 2222 3433 / ", "3782 822463 10006 ", "1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 ",

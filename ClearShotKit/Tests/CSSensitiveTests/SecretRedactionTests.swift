@@ -31,6 +31,95 @@ struct SecretRedactionTests {
         #expect(found("postgres://admin:P@ssw0rd!@db.example.com") == [Found(.keyOrToken, "P@ssw0rd!@db.example.com")])
     }
 
+    // MARK: A URL password with a slash in it
+
+    /// A generated password often holds `/` (and `+`): it runs from the colon after the user to the last `@` before a space,
+    /// and a slash doesn't end it. Each case is the line, its password, and the line as it is left on screen.
+    @Test(arguments: [
+        ("postgres://app:Xy/9kQ+abc@db:5432/app", "Xy/9kQ+abc", "postgres://app:▓@db:5432/app"),
+        ("https://user:ab/cd/ef@host", "ab/cd/ef", "https://user:▓@host"),
+        ("DATABASE_URL=postgres://app:Xy/9kQ+abc@db", "Xy/9kQ+abc", "DATABASE_URL=postgres://app:▓@db"),
+        ("DATABASE_URL=postgres://app:Xy/9kQ+abc@db:5432/app", "Xy/9kQ+abc", "DATABASE_URL=postgres://app:▓@db:5432/app"),
+        ("mongodb://:/a/b/@cache.example.test/0", "/a/b/", "mongodb://:▓@cache.example.test/0"),
+        ("redis://:q/@cache", "q/", "redis://:▓@cache"),
+        ("https://user:a/b#c?d@host/p", "a/b#c?d", "https://user:▓@host/p"),
+        ("see \"amqp://guest:q/W+e/r=@rabbit:5672\" now", "q/W+e/r=", "see \"amqp://guest:▓@rabbit:5672\" now"),
+        ("smtp://jane@example.com:mail/pass@localhost", "mail/pass", "smtp://jane@example.com:▓@localhost"),
+        ("mongodb://user:p@ss/w@rd@host.example.com", "p@ss/w@rd", "mongodb://user:▓@host.example.com"),
+    ])
+    func aURLPasswordWithASlashIsMaskedWhole(line: String, password: String, left: String) {
+        #expect(masked(line, .keysAndTokens) == left)
+        #expect(found(line, .keysAndTokens) == [Found(.keyOrToken, password)])
+        #expect(readable(password, in: line, .keysAndTokens) == "")
+        #expect(readable(password, in: line) == "", "\(masked(line))")
+    }
+
+    /// A password that ends in `@`, or holds a `#` or a `?` or a `:`, is read up to the last `@` like any other.
+    @Test(arguments: [
+        ("https://user:pw@@host", "pw@"),
+        ("https://user:a/b@@host/x", "a/b@"),
+        ("https://user:p#w?x:y/z@host", "p#w?x:y/z"),
+        ("redis://:/#?@cache:6379/0", "/#?"),
+    ])
+    func aURLPasswordWithAnAtSignOrPunctuationAtItsEndIsMaskedWhole(line: String, password: String) {
+        #expect(found(line, .keysAndTokens) == [Found(.keyOrToken, password)])
+        #expect(readable(password, in: line, .keysAndTokens) == "")
+        #expect(readable(password, in: line) == "", "\(masked(line))")
+    }
+
+    /// An `@` later on the line, in a path, ends the password there: the mask covers more than the secret (accepted), and
+    /// none of it is left.
+    @Test func anAtSignInAPathAfterAURLPasswordIsTakenIntoItsMask() {
+        let line = "https://user:pw@host/a@b"
+        #expect(found(line, .keysAndTokens) == [Found(.keyOrToken, "pw@host/a")])
+        #expect(readable("pw", in: line, .keysAndTokens) == "")
+        let slash = "https://user:Xy/9kQ@host/dir/file@2x.png"
+        #expect(readable("Xy/9kQ", in: slash, .keysAndTokens) == "")
+        #expect(found(slash, .keysAndTokens) == [Found(.keyOrToken, "Xy/9kQ@host/dir/file")])
+    }
+
+    /// Two URLs with passwords in one run of text, with no space between: neither password is left.
+    @Test func twoURLsWithPasswordsWithoutASpaceBetweenThemAreBothMasked() {
+        let line = "https://u:pw/1@h.test/a,https://v:qq/2@h2.test/b"
+        #expect(readable("pw/1", in: line, .keysAndTokens) == "")
+        #expect(readable("qq/2", in: line, .keysAndTokens) == "")
+        #expect(readable("pw/1", in: line) == "")
+        #expect(readable("qq/2", in: line) == "")
+    }
+
+    /// A space ends the password's run: the next URL after it is read on its own.
+    @Test func eachURLAfterASpaceHasItsOwnPassword() {
+        let line = "x://a:b/c@d.test x://e:f/g@h.test me@example.test"
+        #expect(found(line, .keysAndTokens) == [Found(.keyOrToken, "b/c"), Found(.keyOrToken, "f/g")])
+        #expect(masked(line, .keysAndTokens) == "x://a:▓@d.test x://e:▓@h.test me@example.test")
+    }
+
+    /// A password never hides an address, a slash or not.
+    @Test func anAddressAfterAURLPasswordWithASlashIsMasked() {
+        let line = "https://admin:s3/cret@api.example.com?notify=jane@example.com"
+        #expect(readable("s3/cret", in: line, .keysAndTokens) == "")
+        #expect(readable("s3/cret", in: line) == "")
+        #expect(readable("jane@example.com", in: line, .contact) == "", "\(masked(line, .contact))")
+        #expect(readable("jane@example.com", in: line) == "", "\(masked(line))")
+    }
+
+    /// A URL with no password has no finding for one, and nor does a host and a port that has no scheme in front of it,
+    /// whatever follows the port.
+    @Test(arguments: [
+        "https://example.com/a@b",
+        "https://example.com/a/b/c@d/e",
+        "https://example.com/a:b/c@d",
+        "ssh://git@github.test/org/repo",
+        "example.com:8080/path@x",
+        "localhost:3000/cb?next=/x@y",
+        "redis://:/cache",
+        "redis://:@cache",
+        "see https://example.com/a@b and then x://a:",
+    ])
+    func noPasswordIsFoundWhereThereIsNone(line: String) {
+        #expect(found(line, .keysAndTokens) == [])
+    }
+
     // MARK: A URL password and an address never hide each other
 
     /// A password that starts with digits and then `?` or `#` is a password, not a port (round 2 masked these whole).

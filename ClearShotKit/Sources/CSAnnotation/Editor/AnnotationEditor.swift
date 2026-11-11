@@ -67,6 +67,13 @@ public final class AnnotationEditor {
     /// Word boxes in base pixels for the Smart Highlighter; nil until found.
     @ObservationIgnored public private(set) var wordBoxes: [CGRect]?
     @ObservationIgnored private var wordBoxSearch: Task<Void, Never>?
+    /// The last picture pixels built, kept while they are the document's (`picturePixels`, in `AnnotationEditor+Pixels`).
+    /// Observed, so a view reading `picturePixels` updates when they arrive.
+    var builtPicturePixels: PicturePixels?
+    /// The pixels being built or last built, with what they are of; nil before the first `loadPicturePixels()`.
+    @ObservationIgnored var picturePixelsBuild: PicturePixelsBuild?
+    /// The quiet wait before rebuilding after the picture changes, so a run of changes (a redaction dragged) rebuilds once.
+    @ObservationIgnored var picturePixelsRebuild: Task<Void, Never>?
     @ObservationIgnored public let undoManager = UndoManager()
     @ObservationIgnored public let preferences: Preferences
     @ObservationIgnored private var liveSnapshot: AnnotationDocument?

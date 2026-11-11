@@ -146,6 +146,10 @@ public extension Prefs {
     static let annotateShowDockIcon = PrefKey("annotateShowDockIcon", default: true)
     static let annotateShowColorNames = PrefKey("annotateShowColorNames", default: true)
     static let annotateRememberBackgroundTool = PrefKey("annotateRememberBackgroundTool", default: true)
+    /// "Show sizes in": the unit of the ruler and of a selection's size.
+    static let annotateSizeUnit = PrefKey("annotateSizeUnit", default: SizeUnit.points)
+    /// How a color copied from the picture is written.
+    static let annotateColorCopyFormat = PrefKey("annotateColorCopyFormat", default: ColorFormat.hex)
 
     // Editor state
     static let annotateToolSettings = PrefKey("annotateToolSettings", default: AnnotateToolSettings())

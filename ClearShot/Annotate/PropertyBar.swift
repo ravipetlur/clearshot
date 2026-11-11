@@ -54,6 +54,7 @@ struct PropertyBar: View {
                     .toggleStyle(.checkbox)
                     .help("Draw with a rough, sketched look. Reroll it with ⇧⌘R.")
             }
+            if editor.tool == .select, editor.pixelSelection != nil, editor.crop == nil { PixelSelectionPad(editor: editor) }
             Spacer()
             if context != .redact, context != .spotlight, context != .highlighter {
                 Toggle("Shadow", isOn: Binding(get: { editor.preferences[Prefs.annotateObjectShadows] }, set: { editor.setShadows($0) }))

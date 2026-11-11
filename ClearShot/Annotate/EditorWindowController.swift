@@ -257,6 +257,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     @objc func zoomToFit(_ sender: Any?) { canvas.zoomToFit() }
     @objc func zoomToSelection(_ sender: Any?) { canvas.canvas?.zoomToPixelSelection() }
 
+    /// Edit › Fit Selection to Content (⌥A): the pixel selection's edges move in over the flat margin around its content.
+    @objc func fitSelectionToContent(_ sender: Any?) {
+        let editor = editor
+        Task { await editor.fitPixelSelectionToContent() }
+    }
+
     // MARK: Crop & Resize
 
     @objc func cropAndResize(_ sender: Any?) {
@@ -583,6 +589,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             !editor.isSaving && BeforeAfterGIF.isAvailable(for: editor.document)
         case #selector(zoomToSelection(_:)):
             editor.pixelSelection != nil && editor.crop == nil
+        case #selector(fitSelectionToContent(_:)):
+            editor.pixelSelection != nil && editor.crop == nil && !isTyping
         case #selector(revertToOriginal(_:)):
             editor.document.canRevertToOriginal && window?.attachedSheet == nil
         // The Resize sheet is modal to the editor: nothing may change the canvas under it, or its sizes go stale. Opening

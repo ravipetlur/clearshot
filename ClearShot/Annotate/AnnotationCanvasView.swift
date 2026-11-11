@@ -107,6 +107,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
             _ = editor.pixelSelection
             _ = editor.selectionContrast
             _ = editor.picturePixels
+            _ = editor.pixelNotice
+            _ = editor.fitPreviewOutline
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.editorDidChange()
@@ -268,6 +270,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         drawPixelSelection(in: context, shown: shown)
         ruler.drawHint()
         drawGuide(in: context, shown: shown)
+        drawSmartSelectionOverlays(in: context)
         drawZoomDrag(in: context)
         if let crop = editor.crop { drawCrop(crop, in: context, shown: shown) }
         if isDraggingImage { drawDropZones(in: context) }
@@ -472,7 +475,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
 
     /// A small label under `rect` (above it when there is no room), drawn at a constant size on screen. Returns where it is.
     @discardableResult
-    private func drawBadge(_ text: String, near rect: CGRect, zoom: Double) -> CGRect {
+    func drawBadge(_ text: String, near rect: CGRect, zoom: Double) -> CGRect {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11 / zoom, weight: .medium), .foregroundColor: NSColor.white,
         ]

@@ -279,6 +279,38 @@ public struct PixelSampler: Sendable {
         }
     }
 
+    /// Whether every pixel of row `y` across `columns` is within `tolerance` of `reference`. False for a row or columns that
+    /// are not wholly inside the picture, and for no columns.
+    public func isFlat(row y: Int, columns: Range<Int>, matching reference: Pixel, tolerance: Int) -> Bool {
+        guard y >= 0, y < height, !columns.isEmpty, columns.lowerBound >= 0, columns.upperBound <= width else { return false }
+        return bytes.withUnsafeBufferPointer { buffer in
+            var index = (y * width + columns.lowerBound) * 4
+            for _ in columns {
+                if abs(Int(buffer[index]) - Int(reference.red)) > tolerance || abs(Int(buffer[index + 1]) - Int(reference.green)) > tolerance
+                    || abs(Int(buffer[index + 2]) - Int(reference.blue)) > tolerance
+                    || abs(Int(buffer[index + 3]) - Int(reference.alpha)) > tolerance { return false }
+                index += 4
+            }
+            return true
+        }
+    }
+
+    /// Whether every pixel of column `x` across `rows` is within `tolerance` of `reference`. False for a column or rows that
+    /// are not wholly inside the picture, and for no rows.
+    public func isFlat(column x: Int, rows: Range<Int>, matching reference: Pixel, tolerance: Int) -> Bool {
+        guard x >= 0, x < width, !rows.isEmpty, rows.lowerBound >= 0, rows.upperBound <= height else { return false }
+        return bytes.withUnsafeBufferPointer { buffer in
+            var index = (rows.lowerBound * width + x) * 4
+            for _ in rows {
+                if abs(Int(buffer[index]) - Int(reference.red)) > tolerance || abs(Int(buffer[index + 1]) - Int(reference.green)) > tolerance
+                    || abs(Int(buffer[index + 2]) - Int(reference.blue)) > tolerance
+                    || abs(Int(buffer[index + 3]) - Int(reference.alpha)) > tolerance { return false }
+                index += width * 4
+            }
+            return true
+        }
+    }
+
     // MARK: Helpers
 
     /// The pixel a point falls in, or nil for a point that isn't finite or lies beyond any picture.

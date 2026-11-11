@@ -163,4 +163,26 @@ public struct PicturePixels: Sendable {
         sampler.floodFillBounds(from: pixelPoint(fromBase: point), tolerance: tolerance, maxPixels: maxPixels)
             .map(baseRect(fromPixel:))
     }
+
+    /// `rect` (base pixels) with each of `edges` moved in over the flat margin around its content, in base pixels. Edges are
+    /// named as they are on the base: after Rotate or Flip they are other sides of the sampled pixels. See `PixelFit`.
+    public func fitBounds(of rect: CGRect, tolerance: Int, edges: Set<RectEdge> = Set(RectEdge.allCases)) -> CGRect {
+        let area = pixelRect(fromBase: rect)
+        let fitted = PixelFit.fitted(area, in: sampler, tolerance: tolerance, edges: Set(edges.map(pixelEdge(forBase:))))
+        return baseRect(fromPixel: fitted)
+    }
+
+    /// The side of the sampled pixels that shows as `edge` of the base: the one the base side's outward direction maps to.
+    private func pixelEdge(forBase edge: RectEdge) -> RectEdge {
+        let outward: CGVector = switch edge {
+        case .top: CGVector(dx: 0, dy: -1)
+        case .bottom: CGVector(dx: 0, dy: 1)
+        case .left: CGVector(dx: -1, dy: 0)
+        case .right: CGVector(dx: 1, dy: 0)
+        }
+        let dx = fromBase.a * outward.dx + fromBase.c * outward.dy
+        let dy = fromBase.b * outward.dx + fromBase.d * outward.dy
+        if abs(dx) >= abs(dy) { return dx < 0 ? .left : .right }
+        return dy < 0 ? .top : .bottom
+    }
 }

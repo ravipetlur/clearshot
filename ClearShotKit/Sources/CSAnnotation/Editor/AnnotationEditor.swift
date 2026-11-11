@@ -36,6 +36,11 @@ public final class AnnotationEditor {
     /// `selectPixels(_:)` so it is fitted to the picture; selecting an object, a crop, or any change that moves the base
     /// pixels clears it.
     public internal(set) var pixelSelection: CGRect?
+    /// A short notice about a pixel tool (a ⌘-clicked region too large to select), shown over the canvas for a few seconds.
+    public internal(set) var pixelNotice: String?
+    @ObservationIgnored var pixelNoticeTask: Task<Void, Never>?
+    /// What the ⌥-drag in progress would fit to, drawn as an outline (see `fitPreview(of:)`); nil when not dragging.
+    public internal(set) var fitPreviewOutline: CGRect?
     /// Switching to a drawing tool drops the selection, so the color and size chosen for the next shape don't restyle the
     /// last one. The object just drawn stays selected until then, so it can still be adjusted. Switching to Crop & Resize
     /// starts a crop session; switching away from it applies the crop.

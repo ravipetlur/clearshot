@@ -90,6 +90,10 @@ public enum Renderer {
             if cache.redactions.keys.contains(where: { !live.contains($0) }) {
                 cache.redactions = cache.redactions.filter { live.contains($0.key) }
             }
+            if cache.wordsPictures.keys.contains(where: { !live.contains($0) }) {
+                cache.wordRedactions = cache.wordRedactions.filter { live.contains($0.key) }
+                cache.wordsPictures = cache.wordsPictures.filter { live.contains($0.key) }
+            }
             // An object's raster goes when the object does, when its shadow is switched off, and while it is hidden. (The
             // kinds that cast no shadow never get one, whatever their flag says: `castsShadow` gates `drawCached` above.)
             if !cache.objectRasters.isEmpty {
@@ -414,22 +418,19 @@ public enum Renderer {
         context.saveGState()
         defer { context.restoreGState() }
         context.setShouldAntialias(false)
-        let black = CGColor(gray: 0, alpha: 1)
-        guard redact.style != .blackOut, let base else {
-            // Black out; or no base image to compute from, which is the same safe answer.
-            context.setFillColor(black)
-            context.fill(deviceAligned(redact.rect.standardized.integral, in: context))
-            return
-        }
-        guard let (region, image) = redactionEffect(redact, id: id, base: base, pixelScale: pixelScale, cache: cache) else { return }
-        let target = deviceAligned(region, in: context)
-        if let image {
-            // Replace, don't blend: wherever the effect is partly transparent, the original must not show through it.
-            context.setBlendMode(.copy)
-            drawImage(image, in: target, context: context)
-        } else {
-            context.setFillColor(black)
-            context.fill(target)
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        // Black out, no base image to compute from, or an effect that couldn't be made: black, the same safe answer. A
+        // text-only redaction is one cover per word (`redactionCovers`).
+        for cover in redactionCovers(redact, id: id, base: base, pixelScale: pixelScale, cache: cache).covers {
+            let target = deviceAligned(cover.region, in: context)
+            if let image = cover.image {
+                // Replace, don't blend: wherever the effect is partly transparent, the original must not show through it.
+                context.setBlendMode(.copy)
+                drawImage(image, in: target, context: context)
+                context.setBlendMode(.normal)
+            } else {
+                context.fill(target)
+            }
         }
     }
 
@@ -486,19 +487,15 @@ public enum Renderer {
         context.setFillColor(CGColor(gray: 0, alpha: 1))
         var complete = true
         for redaction in redactions {
-            if redaction.redact.style == .blackOut {
-                let area = redaction.redact.rect.standardized.integral.intersection(bounds)
-                if !area.isNull, !area.isEmpty { context.fill(area) }
-                continue
-            }
-            guard let (region, image) = redactionEffect(redaction.redact, id: redaction.id, base: base, pixelScale: pixelScale,
-                                                        cache: cache)
-            else { continue }
-            if let image {
-                drawImage(image, in: region, context: context)
-            } else {
-                complete = false
-                context.fill(region)
+            let drawn = redactionCovers(redaction.redact, id: redaction.id, base: base, pixelScale: pixelScale, cache: cache)
+            if !drawn.complete { complete = false }
+            for cover in drawn.covers {
+                if let image = cover.image {
+                    drawImage(image, in: cover.region, context: context)
+                } else {
+                    let area = cover.region.intersection(bounds)
+                    if !area.isNull, !area.isEmpty { context.fill(area) }
+                }
             }
         }
         // Drawn as the base is: interpolated or not, with its rendering intent.

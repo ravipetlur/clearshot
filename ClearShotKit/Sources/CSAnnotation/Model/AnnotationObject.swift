@@ -196,21 +196,31 @@ public struct TextObject: Codable, Equatable, Sendable {
 /// button takes out again. A redaction the person draws never has it. It is written only when set, so a document with none is
 /// written exactly as before, and a document without the key reads as having none; an older build ignores the key it doesn't
 /// know (and drops it if it saves the document, which makes the masks ordinary redactions there).
+///
+/// `textOnly` ("Text only") has the style cover only the words inside `rect`, as `words` places them, and leave the
+/// background between them as it is; until `words` are found for the rect as it is now, and when none were found, it covers
+/// the whole rect (`RedactObject.coveredAreas`). Both are written only when set, so a document without them reads as a
+/// redaction of the whole rect.
 public struct RedactObject: Codable, Equatable, Sendable {
     public var rect: CGRect
     public var style: RedactStyle
     public var intensity: Int
     public var isSecretsMask: Bool
+    public var textOnly: Bool
+    public var words: RedactionWords?
 
-    public init(rect: CGRect, style: RedactStyle, intensity: Int, isSecretsMask: Bool = false) {
+    public init(rect: CGRect, style: RedactStyle, intensity: Int, isSecretsMask: Bool = false, textOnly: Bool = false,
+                words: RedactionWords? = nil) {
         self.rect = rect
         self.style = style
         self.intensity = intensity
         self.isSecretsMask = isSecretsMask
+        self.textOnly = textOnly
+        self.words = words
     }
 
     private enum CodingKeys: String, CodingKey {
-        case rect, style, intensity, isSecretsMask
+        case rect, style, intensity, isSecretsMask, textOnly, words
     }
 
     public init(from decoder: any Decoder) throws {
@@ -219,6 +229,8 @@ public struct RedactObject: Codable, Equatable, Sendable {
         style = try container.decode(RedactStyle.self, forKey: .style)
         intensity = try container.decode(Int.self, forKey: .intensity)
         isSecretsMask = try container.decodeIfPresent(Bool.self, forKey: .isSecretsMask) ?? false
+        textOnly = try container.decodeIfPresent(Bool.self, forKey: .textOnly) ?? false
+        words = try container.decodeIfPresent(RedactionWords.self, forKey: .words)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -227,6 +239,8 @@ public struct RedactObject: Codable, Equatable, Sendable {
         try container.encode(style, forKey: .style)
         try container.encode(intensity, forKey: .intensity)
         if isSecretsMask { try container.encode(true, forKey: .isSecretsMask) }
+        if textOnly { try container.encode(true, forKey: .textOnly) }
+        try container.encodeIfPresent(words, forKey: .words)
     }
 }
 

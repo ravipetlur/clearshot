@@ -98,6 +98,9 @@ struct PropertyBar: View {
                    in: 1...10, step: 1, label: { Text("Intensity") }, onEditingChanged: dragging("Change Intensity"))
                 .frame(width: 120)
                 .help("Intensity ([ and ])")
+            Toggle("Text only", isOn: Binding(get: { editor.settings.redactTextOnly }, set: { editor.setRedactTextOnly($0) }))
+                .toggleStyle(.checkbox)
+                .help("Cover only the words in the area, not the background between them")
         case .spotlight:
             Picker("Shape", selection: Binding(get: { editor.settings.spotlightShape }, set: { editor.setSpotlightShape($0) })) {
                 ForEach(SpotlightShape.allCases, id: \.self) { Text($0.title).tag($0) }

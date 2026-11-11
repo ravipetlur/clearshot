@@ -20,7 +20,7 @@ let package = Package(
         .target(name: "CSCore"),
         .target(name: "CSCapture", dependencies: ["CSCore", "CSWebP"]),
         .target(name: "CSHistory", dependencies: ["CSCore", "CSCapture"]),
-        .target(name: "CSAnnotation", dependencies: ["CSCore", "CSCapture", "CSHistory", "CSRecording"]),
+        .target(name: "CSAnnotation", dependencies: ["CSCore", "CSCapture", "CSHistory", "CSRecording", "CSOCR", "CSSensitive"]),
         .target(name: "CSOCR", dependencies: ["CSCore"]),
         // Scrolling capture: the stitcher and the auto-scroll rules. Pure; CSCore only names its queue.
         .target(name: "CSScrolling", dependencies: ["CSCore"]),
@@ -35,8 +35,8 @@ let package = Package(
         // Nothing in the package depends on it, the app imports it.
         .target(name: "CSUpdate", dependencies: ["CSCore"]),
         // The secrets check on screenshots: the detector (emails, phone numbers, keys and tokens, card numbers and IP
-        // addresses in a line of text), the scanner that finds them in an image, and the mask sizing. Nothing in the
-        // package depends on it, the app imports it.
+        // addresses in a line of text), the scanner that finds them in an image, and the mask sizing, which text-only
+        // redactions in CSAnnotation share.
         .target(name: "CSSensitive", dependencies: ["CSCore", "CSOCR"]),
         // Our own lossless WebP encoder, written from RFC 9649. Depends on nothing: RGBA bytes in, a .webp file out.
         .target(name: "CSWebP"),
@@ -45,7 +45,7 @@ let package = Package(
         .testTarget(name: "CSCoreTests", dependencies: ["CSCore", "CSTestSupport"]),
         .testTarget(name: "CSCaptureTests", dependencies: ["CSCapture", "CSTestSupport"]),
         .testTarget(name: "CSHistoryTests", dependencies: ["CSHistory", "CSTestSupport"]),
-        .testTarget(name: "CSAnnotationTests", dependencies: ["CSAnnotation", "CSRecording","CSHistory", "CSCapture", "CSCore", "CSTestSupport"]),
+        .testTarget(name: "CSAnnotationTests", dependencies: ["CSAnnotation", "CSRecording","CSHistory", "CSCapture", "CSCore", "CSOCR", "CSTestSupport"]),
         // Fixtures/: Vision's readings of tiles, captured once, replayed through the merge.
         .testTarget(name: "CSOCRTests", dependencies: ["CSOCR", "CSCore", "CSTestSupport"], resources: [.copy("Fixtures")]),
         .testTarget(name: "CSScrollingTests", dependencies: ["CSScrolling"]),

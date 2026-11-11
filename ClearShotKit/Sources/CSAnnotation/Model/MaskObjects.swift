@@ -18,12 +18,14 @@ extension AnnotationObject {
 
     /// A copy of the object for Duplicate, paste and ⌥-drag: a new ID (or `id`), and **not** marked as one of the secrets check's
     /// masks. A copy is something the person placed on purpose, so the sensitive-info button, which takes out the masks the check
-    /// made, never takes it out; the original keeps its marker. Everything else is the object's.
+    /// made, never takes it out; the original keeps its marker. A text-only redaction's words are dropped too: the copy lands
+    /// over other pixels, maybe in another document, and has its own read there. Everything else is the object's.
     public func copied(id: UUID = UUID()) -> AnnotationObject {
         var copy = self
         copy.id = id
         if case .redact(var redact) = copy.kind {
             redact.isSecretsMask = false
+            redact.words = nil
             copy.kind = .redact(redact)
         }
         return copy

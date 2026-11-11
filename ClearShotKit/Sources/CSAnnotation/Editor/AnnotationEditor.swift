@@ -88,6 +88,8 @@ public final class AnnotationEditor {
     /// Word boxes in base pixels for the Smart Highlighter; nil until found.
     @ObservationIgnored public private(set) var wordBoxes: [CGRect]?
     @ObservationIgnored private var wordBoxSearch: Task<Void, Never>?
+    /// The text-only redactions' word searches (`AnnotationEditor+TextOnly`).
+    @ObservationIgnored let textOnlyWordSearches = TextOnlyWordSearches()
     /// The last picture pixels built, kept while they are the document's (`picturePixels`, in `AnnotationEditor+Pixels`).
     /// Observed, so a view reading `picturePixels` updates when they arrive.
     var builtPicturePixels: PicturePixels?
@@ -128,6 +130,7 @@ public final class AnnotationEditor {
            images[picture] != nil {
             capturedWallpaper = picture
         }
+        watchTextOnlyRedactions()
     }
 
     /// Edits not yet applied to the capture or project. Undoing back to the applied state leaves none.
@@ -280,6 +283,19 @@ public final class AnnotationEditor {
             let boxes = await WordBoxDetector.wordBoxes(in: base)
             self?.wordBoxes = boxes
         }
+    }
+
+    /// Stores the words found for text-only redaction `id` (`AnnotationEditor+TextOnly`), as long as it is still text-only
+    /// at the rect they were found for. Not an undo step: the words follow from the rect, and the snapshots undo and redo
+    /// bring back carry the words of their own rects, or none, which has them searched for again. Returns whether they were
+    /// stored.
+    func storeWords(_ words: RedactionWords, of id: UUID) -> Bool {
+        guard let index = document.objects.firstIndex(where: { $0.id == id }),
+              case .redact(var redact) = document.objects[index].kind, redact.textOnly, redact.rect == words.rect
+        else { return false }
+        redact.words = words
+        document.objects[index].kind = .redact(redact)
+        return true
     }
 
     /// Every undo registration goes through here (undo and redo included, via `restore`), so each one ends a run of

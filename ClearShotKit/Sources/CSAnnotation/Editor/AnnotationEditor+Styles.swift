@@ -219,6 +219,18 @@ extension AnnotationEditor {
         }
     }
 
+    /// "Text only": on or off for new redactions and the selected ones (`AnnotationEditor+TextOnly`). Off drops a redaction's
+    /// words; on has them searched for.
+    public func setRedactTextOnly(_ textOnly: Bool) {
+        settings.redactTextOnly = textOnly
+        restyleSelection("Change Redaction") { object, _ in
+            guard case .redact(var redact) = object.kind else { return }
+            redact.textOnly = textOnly
+            if !textOnly { redact.words = nil }
+            object.kind = .redact(redact)
+        }
+    }
+
     /// `[` and `]` with the redact tool or a redaction selected.
     public func adjustIntensity(by step: Int, coalescing: Bool = false) {
         setRedactIntensity(settings.redactIntensity + step, coalescing: coalescing)
@@ -343,6 +355,7 @@ extension AnnotationEditor {
         case .redact(let redact):
             adopted.redactStyle = redact.style
             adopted.redactIntensity = redact.intensity
+            adopted.redactTextOnly = redact.textOnly
         case .spotlight(let spotlight):
             adopted.spotlightShape = spotlight.shape
             adopted.spotlightOpacity = spotlight.opacity

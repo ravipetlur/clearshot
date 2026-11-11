@@ -57,6 +57,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         canvas.imageProblem = { [weak self] problem in self?.showImageProblem(problem) }
         canvas.colorCopied = { [weak self] text in self?.manager.hud.show(text, symbol: "eyedropper") }
         canvas.toggleBackgroundPanel = { [weak self] in self?.toggleBackgroundTool(nil) }
+        editor.textOnlyNotice = { [weak manager] message in manager?.hud.show(message, symbol: "text.viewfinder") }
         observeEdits()
         // Scans the picture the editor opened with, and again whenever it changes.
         sensitiveCheck.start()

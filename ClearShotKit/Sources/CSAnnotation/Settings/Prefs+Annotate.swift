@@ -15,12 +15,15 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     public var counterStart = 1
     public var highlightOpacity = 0.4
     public var smartHighlighter = true
+    /// The fill of a new rectangle or ellipse: its color (nil: the stroke's) and opacity (0: none).
+    public var fillColor: RGBAColor?
+    public var fillOpacity = 0.0
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case color, sizeLevel, arrowStyle, textStyle, redactStyle, redactIntensity, spotlightShape, spotlightOpacity
-        case counterStyle, counterStart, highlightOpacity, smartHighlighter
+        case counterStyle, counterStart, highlightOpacity, smartHighlighter, fillColor, fillOpacity
     }
 
     /// Every field is optional on disk and falls back to its default. A stored value from before a field existed keeps
@@ -41,6 +44,8 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         counterStart = try container.decodeIfPresent(Int.self, forKey: .counterStart) ?? counterStart
         highlightOpacity = try container.decodeIfPresent(Double.self, forKey: .highlightOpacity) ?? highlightOpacity
         smartHighlighter = try container.decodeIfPresent(Bool.self, forKey: .smartHighlighter) ?? smartHighlighter
+        fillColor = try container.decodeIfPresent(RGBAColor.self, forKey: .fillColor)
+        fillOpacity = try container.decodeIfPresent(Double.self, forKey: .fillOpacity) ?? fillOpacity
     }
 }
 

@@ -70,28 +70,51 @@ public enum CounterStyle: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// Color, line width (base pixels) and shadow, shared by every object.
+/// Color, line width (base pixels) and shadow, shared by every object. A rectangle or ellipse can also be filled:
+/// `fillOpacity` is how much (0, the default, is no fill) and `fillColor` the color (nil: the stroke's color).
 public struct ObjectStyle: Codable, Equatable, Sendable {
     public var color: RGBAColor
     public var lineWidth: Double
     public var shadow: Bool
+    public var fillColor: RGBAColor?
+    public var fillOpacity: Double
 
-    public init(color: RGBAColor, lineWidth: Double, shadow: Bool) {
+    public init(color: RGBAColor, lineWidth: Double, shadow: Bool, fillColor: RGBAColor? = nil, fillOpacity: Double = 0) {
         self.color = color
         self.lineWidth = lineWidth
         self.shadow = shadow
+        self.fillColor = fillColor
+        self.fillOpacity = fillOpacity
     }
+
+    /// Whether a shape of this style is filled.
+    public var hasFill: Bool { fillOpacity > 0 }
 
     private enum CodingKeys: String, CodingKey {
-        case color, lineWidth, shadow
+        case color, lineWidth, shadow, fillColor, fillOpacity
     }
 
-    /// `shadow` is optional on disk so a style saved before it existed still decodes; encoding stays synthesized.
+    /// `shadow` and the fill are optional on disk so a style saved before they existed still decodes, unfilled.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         color = try container.decode(RGBAColor.self, forKey: .color)
         lineWidth = try container.decode(Double.self, forKey: .lineWidth)
         shadow = try container.decodeIfPresent(Bool.self, forKey: .shadow) ?? false
+        fillColor = try container.decodeIfPresent(RGBAColor.self, forKey: .fillColor)
+        let opacity = try container.decodeIfPresent(Double.self, forKey: .fillOpacity) ?? 0
+        fillOpacity = opacity.isFinite ? min(max(opacity, 0), 1) : 0
+    }
+
+    /// The fill is written only when there is one, so an unfilled object's file is what it always was.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(color, forKey: .color)
+        try container.encode(lineWidth, forKey: .lineWidth)
+        try container.encode(shadow, forKey: .shadow)
+        if hasFill {
+            try container.encodeIfPresent(fillColor, forKey: .fillColor)
+            try container.encode(fillOpacity, forKey: .fillOpacity)
+        }
     }
 }
 
@@ -261,7 +284,8 @@ public struct AnnotationObject: Codable, Equatable, Sendable, Identifiable {
     /// read from a file that may not be ours are checked with this (`AnnotationDocument.isWellFormed`).
     public var isFinite: Bool {
         let color = style.color
-        return ([style.lineWidth, color.red, color.green, color.blue, color.alpha] + numbers).allSatisfy(\.isFinite)
+        let fill = style.fillColor.map { [$0.red, $0.green, $0.blue, $0.alpha] } ?? []
+        return ([style.lineWidth, color.red, color.green, color.blue, color.alpha] + fill + numbers).allSatisfy(\.isFinite)
     }
 
     /// The numbers in the object's kind.

@@ -82,8 +82,9 @@ public enum Renderer {
             if cache.redactions.keys.contains(where: { !live.contains($0) }) {
                 cache.redactions = cache.redactions.filter { live.contains($0.key) }
             }
-            if cache.wordRedactions.keys.contains(where: { !live.contains($0) }) {
+            if cache.wordsPictures.keys.contains(where: { !live.contains($0) }) {
                 cache.wordRedactions = cache.wordRedactions.filter { live.contains($0.key) }
+                cache.wordsPictures = cache.wordsPictures.filter { live.contains($0.key) }
             }
             // An object's raster goes when the object does, when its shadow is switched off, and while it is hidden. (The
             // kinds that cast no shadow never get one, whatever their flag says: `castsShadow` gates `drawCached` above.)

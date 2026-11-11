@@ -16,9 +16,18 @@ final class TextOnlyWordSearches {
     /// read doesn't search on every change. The redaction covers its whole rect meanwhile.
     var failed: [(id: UUID, rect: CGRect)] = []
     /// The picture the words are read from, made once per picture (`RedactionWordFinder.picture`).
-    var picture: (key: PictureKey, task: Task<PictureRender?, Never>)?
+    var picture: (key: PictureKey, task: Task<TextPicture?, Never>)?
+    /// The fingerprints of the base's pixels under the text-only redactions (`RedactionWords.fingerprint`), by redaction,
+    /// with the base and rect each was taken of.
+    var fingerprints: [UUID: CachedWordsPicture] = [:]
     var isWatching = false
     var notice: ((String) -> Void)?
+
+    /// The picture the words are read from, and the base image it was rendered from.
+    struct TextPicture: @unchecked Sendable {
+        var render: PictureRender
+        var base: CGImage
+    }
 
     struct PictureKey: Equatable {
         var base: ImageRef
@@ -29,7 +38,8 @@ final class TextOnlyWordSearches {
 /// "Text only" on the Redact tool: the style covers only the words inside a redaction's rect.
 ///
 /// **Finding the words.** Whenever a text-only redaction has no words for its rect as it is now (it was just drawn or switched
-/// to text only, or it was moved or resized: `RedactObject.needsWords`), the words under it are found in the background,
+/// to text only, pasted or duplicated, moved or resized, or the base's pixels under it changed: `RedactObject.needsWords`),
+/// the words under it are found in the background,
 /// after a quiet `textOnlySearchDelay` and once no drag is open, so a run of changes searches once. They are stored in the
 /// redaction (`RedactObject.words`) without an undo step of their own: they follow from the rect, and an undo that brings
 /// back a rect brings back its words, or searches again.
@@ -61,15 +71,20 @@ extension AnnotationEditor {
     /// Reads which redactions need words, registers for the document's next change, and starts or cancels searches to
     /// match. The change is reported before the new value is set, so it is read again on the next turn of the main actor.
     private func updateTextOnlySearches() {
+        let searches = textOnlyWordSearches
         let pending = withObservationTracking {
-            document.objects.compactMap { object -> (id: UUID, rect: CGRect)? in
-                guard case .redact(let redact) = object.kind, redact.needsWords else { return nil }
-                return (object.id, redact.rect)
+            let base = images[document.base]
+            return document.objects.compactMap { object -> (id: UUID, rect: CGRect)? in
+                guard case .redact(let redact) = object.kind, redact.textOnly else { return nil }
+                // Words for this rect count only if they were read from the pixels under it now.
+                let picture = redact.wordsForRect == nil ? nil : base.flatMap { wordsPicture(of: object.id, rect: redact.rect, base: $0) }
+                return redact.needsWords(picture: picture) ? (object.id, redact.rect) : nil
             }
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateTextOnlySearches() }
         }
-        let searches = textOnlyWordSearches
+        let live = Set(document.objects.map(\.id))
+        searches.fingerprints = searches.fingerprints.filter { live.contains($0.key) }
         for (id, running) in searches.running where !pending.contains(where: { $0.id == id && $0.rect == running.rect }) {
             running.task.cancel()
             searches.running[id] = nil
@@ -97,7 +112,7 @@ extension AnnotationEditor {
             let picture = await textPicture()
             let words: RedactionWords?
             if let picture {
-                words = await RedactionWordFinder.words(in: rect, of: picture, options: options)
+                words = await RedactionWordFinder.words(in: rect, of: picture.render, base: picture.base, options: options)
             } else {
                 words = nil
             }
@@ -118,16 +133,27 @@ extension AnnotationEditor {
     }
 
     /// The picture the words are read from (`RedactionWordFinder.picture`), made once for the picture as it is now.
-    private func textPicture() async -> PictureRender? {
+    private func textPicture() async -> TextOnlyWordSearches.TextPicture? {
         let key = TextOnlyWordSearches.PictureKey(base: document.base,
                                                   identity: RedactionWordFinder.textPicture(of: document).pictureIdentity)
         let searches = textOnlyWordSearches
         if let picture = searches.picture, picture.key == key { return await picture.task.value }
         let document = document, images = images
-        let task = Task.detached(priority: .userInitiated) {
-            RedactionWordFinder.picture(of: document, images: images)
+        let task = Task.detached(priority: .userInitiated) { () -> TextOnlyWordSearches.TextPicture? in
+            guard let base = images[document.base], let render = RedactionWordFinder.picture(of: document, images: images)
+            else { return nil }
+            return TextOnlyWordSearches.TextPicture(render: render, base: base)
         }
         searches.picture = (key, task)
         return await task.value
+    }
+
+    /// The fingerprint of `base`'s pixels under `rect` for redaction `id`, kept while the base and the rect are the same.
+    private func wordsPicture(of id: UUID, rect: CGRect, base: CGImage) -> UInt64? {
+        let searches = textOnlyWordSearches
+        if let cached = searches.fingerprints[id], cached.base === base, cached.rect == rect { return cached.fingerprint }
+        let fingerprint = RedactionWords.fingerprint(of: base, in: rect)
+        searches.fingerprints[id] = CachedWordsPicture(base: base, rect: rect, fingerprint: fingerprint)
+        return fingerprint
     }
 }

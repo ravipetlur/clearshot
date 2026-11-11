@@ -24,7 +24,7 @@ extension AnnotationDocument {
             // The first match wins: a corrupt document with two objects of one ID is read as having the first.
             guard let now = after.first(where: { $0.id == old.id }) else { return false }
             guard now.style == old.style, now.intensity == old.intensity, now.redact.coversAtLeast(old.redact) else { return false }
-            if now.rect.standardized != old.rect.standardized || now.redact.coversWholeRect != old.redact.coversWholeRect {
+            if now.rect.standardized != old.rect.standardized || now.redact.mayCoverOnlyWords != old.redact.mayCoverOnlyWords {
                 addsSomething = true
             }
         }

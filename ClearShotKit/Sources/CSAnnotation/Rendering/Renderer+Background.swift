@@ -273,8 +273,9 @@ extension Renderer {
         if cache.redactions.keys.contains(where: { !live.contains($0) }) {
             cache.redactions = cache.redactions.filter { live.contains($0.key) }
         }
-        if cache.wordRedactions.keys.contains(where: { !live.contains($0) }) {
+        if cache.wordsPictures.keys.contains(where: { !live.contains($0) }) {
             cache.wordRedactions = cache.wordRedactions.filter { live.contains($0.key) }
+            cache.wordsPictures = cache.wordsPictures.filter { live.contains($0.key) }
         }
         if !cache.objectRasters.isEmpty {
             let shadowed = Set(objects.lazy.filter(\.style.shadow).map(\.id))

@@ -22,15 +22,19 @@ enum RedactionWordFinder {
     }
 
     /// The words inside `rect` (base pixels) of `picture`: the part of the picture under the rect is read, and each word's
-    /// box taken back to base pixels. Nil when recognition failed or was cancelled; no words is an empty list.
-    static func words(in rect: CGRect, of picture: PictureRender, options: TextRecognitionOptions) async -> RedactionWords? {
+    /// box taken back to base pixels. `base` is the base image `picture` was rendered from: the words carry the fingerprint of
+    /// its pixels under the rect (`RedactionWords.picture`), so they apply to those pixels only. Nil when recognition failed
+    /// or was cancelled; no words is an empty list.
+    static func words(in rect: CGRect, of picture: PictureRender, base: CGImage,
+                      options: TextRecognitionOptions) async -> RedactionWords? {
+        let fingerprint = RedactionWords.fingerprint(of: base, in: rect)
         let toBase = picture.mapping.toBase
         // A quarter turn takes the picture's x axis (the way the text reads on screen) to the base's y axis.
         let runVertically = abs(toBase.b) > abs(toBase.a)
         let bounds = CGRect(x: 0, y: 0, width: picture.image.width, height: picture.image.height)
         let shown = rect.standardized.applying(toBase.inverted()).integral.intersection(bounds)
         guard !shown.isNull, shown.width >= 1, shown.height >= 1, let crop = picture.image.cropping(to: shown) else {
-            return RedactionWords(rect: rect, boxes: [], runVertically: runVertically)
+            return RedactionWords(rect: rect, boxes: [], runVertically: runVertically, picture: fingerprint)
         }
         let result: OCRResult
         do {
@@ -42,7 +46,7 @@ enum RedactionWordFinder {
         let boxes = result.lines.flatMap(boxes(of:)).map { box in
             box.offsetBy(dx: shown.minX, dy: shown.minY).applying(toBase).standardized
         }
-        return RedactionWords(rect: rect, boxes: boxes, runVertically: runVertically)
+        return RedactionWords(rect: rect, boxes: boxes, runVertically: runVertically, picture: fingerprint)
     }
 
     /// Each run of non-blank characters in a line: a word, for recognition to box (`TextRecognizer.Marking`).

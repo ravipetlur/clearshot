@@ -114,6 +114,15 @@ struct DocumentVersionTests {
         }
     }
 
+    @Test func aTextOnlyRedactionNeedsVersionThree() {
+        for style in RedactStyle.allCases {
+            var redact = RedactObject(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: style, intensity: 5)
+            redact.textOnly = true
+            #expect(AnnotationDocument.requiredVersion(of: redact) == 3)
+            #expect(Self.document(with: [Self.object(.redact(redact))]).requiredVersion == 3)
+        }
+    }
+
     // MARK: Refusing newer files
 
     @Test func aVersionThreeDocumentIsRefusedByABuildThatKnowsVersionTwo() throws {

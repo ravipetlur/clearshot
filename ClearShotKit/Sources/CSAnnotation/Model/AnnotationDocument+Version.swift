@@ -50,12 +50,14 @@ extension AnnotationDocument {
     ]
 
     /// The version a redaction needs. The switch names every style, so a new style doesn't compile until it says which
-    /// version it needs (Erase: 3); a text-only redaction (`textOnly`, with its `words`) adds its check after the switch.
-    /// `isSecretsMask` needs none: an older build reads it as an ordinary redaction, which hides the same pixels.
+    /// version it needs (Erase: 3). A text-only redaction needs 3 too: an older build would cover its whole rect, which
+    /// hides as much but isn't what was drawn. `isSecretsMask` needs none: an older build reads it as an ordinary
+    /// redaction, which hides the same pixels.
     public static func requiredVersion(of redact: RedactObject) -> Int {
-        switch redact.style {
+        let style = switch redact.style {
         case .pixelate, .secureBlur, .smoothBlur, .blackOut: baseVersion
         }
+        return redact.textOnly ? max(style, 3) : style
     }
 
     /// The lowest version that holds everything in the document: `baseVersion`, or the newest version of a feature it

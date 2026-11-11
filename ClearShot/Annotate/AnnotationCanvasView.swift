@@ -33,6 +33,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     /// A press that only finished text editing: its drag and release do nothing, so the Text tool doesn't start new text
     /// where the person clicked away.
     private var pressEndedTextEditing = false
+    /// The ruler: arrow keys held under the Select tool with nothing selected.
+    private(set) lazy var ruler = RulerController(canvas: self, editor: editor)
     private var spaceHeld = false
     private var panAnchor: (mouse: NSPoint, origin: NSPoint)?
     /// Z is held: a click zooms 2× on the point and a drag zooms to the rect. A tap that touched no mouse picks the tool
@@ -74,6 +76,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         registerForDraggedTypes([.fileURL] + ImageInput.dataTypes)
         installColorHoverTracking()
         selectTool.onEditText = { [unowned self] id in beginEditingText(id, isNew: false) }
+        _ = ruler
     }
 
     @available(*, unavailable)
@@ -187,6 +190,10 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         basePoint(forView: convert(event.locationInWindow, from: nil))
     }
 
+    func basePoint(forWindowPoint point: NSPoint) -> CGPoint {
+        basePoint(forView: convert(point, from: nil))
+    }
+
     func basePoint(forView point: NSPoint) -> CGPoint {
         editor.document.transform.toBase(outputPoint(point))
     }
@@ -230,6 +237,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         drawCheckerboard(in: context)
         var document = editor.document
         if let preview = tool.preview { document.objects.append(preview) }
+        if let measuring = ruler.preview { document.objects.append(measuring) }
         let shown = displayRect
         // While cropping, the whole viewport renders, filled as an expanded canvas would be, and without the background:
         // the crop is of the content alone. The overlay then dims what the crop leaves out.
@@ -249,6 +257,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         context.restoreGState()
         drawSelection(in: context, shown: shown)
         drawPixelSelection(in: context, shown: shown)
+        ruler.drawHint()
         drawZoomDrag(in: context)
         if let crop = editor.crop { drawCrop(crop, in: context, shown: shown) }
         if isDraggingImage { drawDropZones(in: context) }
@@ -446,6 +455,12 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         colorHoverEnded()
         window?.makeFirstResponder(self)
         pressEndedTextEditing = false
+        if ruler.isMeasuring {
+            // A click while measuring imprints the measurement; its drag and release do nothing.
+            ruler.imprint()
+            pressEndedTextEditing = true
+            return
+        }
         if textEditor != nil {
             // A click outside the text being edited finishes it; with the text tool it doesn't start another one.
             endTextEditing()
@@ -783,7 +798,19 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
 
     // MARK: Keys
 
+    override func mouseMoved(with event: NSEvent) { ruler.mouseMoved() }
+
+    override func flagsChanged(with event: NSEvent) {
+        ruler.flagsChanged(event)
+        super.flagsChanged(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if !ruler.scroll(event) { super.scrollWheel(with: event) }
+    }
+
     override func keyDown(with event: NSEvent) {
+        if ruler.keyDown(event) { return }
         if event.keyCode == 6, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
             // Z held zooms with the mouse; a tap (no click, no drag) is the letter's own tool, on the key-up.
             if !event.isARepeat {
@@ -888,6 +915,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
 
     override func keyUp(with event: NSEvent) {
+        if ruler.keyUp(event) { return }
         if event.keyCode == 6 {
             let tapped = zHeld && !zUsed
             endZHold()
@@ -919,6 +947,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     override func resignFirstResponder() -> Bool {
         endSpaceHold()
         endZHold()
+        ruler.stop()
         return super.resignFirstResponder()
     }
 

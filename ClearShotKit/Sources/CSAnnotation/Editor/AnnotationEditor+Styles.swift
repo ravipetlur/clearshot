@@ -96,7 +96,7 @@ extension AnnotationEditor {
         case .rectangle: .rectangle
         case .filledRectangle: .filledRectangle
         case .ellipse: .ellipse
-        case .line: .line
+        case .line, .ruler: .line
         case .arrow: .arrow
         case .text: .text
         case .redact: .redact

@@ -31,7 +31,7 @@ public enum ObjectGeometry {
         case .counter(let counter):
             CGRect(x: counter.center.x - counter.diameter / 2, y: counter.center.y - counter.diameter / 2,
                    width: counter.diameter, height: counter.diameter)
-        case .line, .arrow, .stroke, .highlight: nil
+        case .line, .arrow, .stroke, .highlight, .ruler: nil
         }
     }
 
@@ -42,6 +42,8 @@ public enum ObjectGeometry {
         switch object.kind {
         case .line(let start, let end):
             return box(around: [start, end]).insetBy(dx: -width / 2, dy: -width / 2)
+        case .ruler(let ruler):
+            return RulerGeometry.bounds(of: ruler, lineWidth: width)
         case .arrow(let arrow):
             let head = ArrowGeometry.headLength(for: width)
             // A fancy arrow's body flares to 60% of the head length either side of its axis.
@@ -104,6 +106,8 @@ public enum ObjectGeometry {
             return insideOuter && !insideInner
         case .line(let start, let end):
             return distance(from: point, toPolyline: [start, end]) <= width / 2 + tolerance
+        case .ruler(let ruler):
+            return distance(from: point, toPolyline: [ruler.start, ruler.end]) <= width / 2 + tolerance
         case .arrow(let arrow):
             let reach = max(width, ArrowGeometry.headLength(for: width) * 0.5) / 2
             return distance(from: point, toPolyline: ArrowGeometry.spine(of: arrow)) <= reach + tolerance
@@ -131,6 +135,10 @@ public enum ObjectGeometry {
         case .filledRectangle(let rect): copy.kind = .filledRectangle(move(rect))
         case .ellipse(let rect): copy.kind = .ellipse(move(rect))
         case .line(let start, let end): copy.kind = .line(start: move(start), end: move(end))
+        case .ruler(var ruler):
+            ruler.start = move(ruler.start)
+            ruler.end = move(ruler.end)
+            copy.kind = .ruler(ruler)
         case .arrow(var arrow):
             arrow.start = move(arrow.start)
             arrow.end = move(arrow.end)
@@ -169,7 +177,7 @@ public enum ObjectGeometry {
             Corner.allCases.map(Handle.corner) + RectEdge.allCases.map(Handle.edge)
         case .stroke, .highlight: freehandHandles(of: object)
         case .text: [.edge(.left), .edge(.right)]
-        case .line: [.start, .end]
+        case .line, .ruler: [.start, .end]
         case .arrow: [.start, .end, .control]
         case .counter: []
         }
@@ -229,6 +237,8 @@ public enum ObjectGeometry {
         switch (handle, object.kind) {
         case (.start, .line(let start, _)): return start
         case (.end, .line(_, let end)): return end
+        case (.start, .ruler(let ruler)): return ruler.start
+        case (.end, .ruler(let ruler)): return ruler.end
         case (.start, .arrow(let arrow)): return arrow.start
         case (.end, .arrow(let arrow)): return arrow.end
         case (.control, .arrow(let arrow)): return ArrowGeometry.midpoint(of: arrow)
@@ -250,6 +260,13 @@ public enum ObjectGeometry {
             case .end: copy.kind = .line(start: start, end: constrained ? ShapeConstraints.snapped(point, from: start) : point)
             default: break
             }
+        case .ruler(var ruler):
+            switch handle {
+            case .start: ruler.start = constrained ? ShapeConstraints.snapped(point, from: ruler.end) : point
+            case .end: ruler.end = constrained ? ShapeConstraints.snapped(point, from: ruler.start) : point
+            default: break
+            }
+            copy.kind = .ruler(ruler)
         case .arrow(var arrow):
             switch handle {
             case .start: arrow.start = constrained ? ShapeConstraints.snapped(point, from: arrow.end) : point

@@ -107,7 +107,8 @@ extension Renderer {
         drawBase(document, base: base, redactions: redactions, in: context, cache: cache)
         context.concatenate(document.transform.transform)
         for redaction in redactions {
-            drawRedaction(redaction.redact, id: redaction.id, base: base, pixelScale: document.pixelScale, in: context, cache: cache)
+            drawRedaction(redaction.redact, id: redaction.id, base: base, redactions: redactions, pixelScale: document.pixelScale,
+                          in: context, cache: cache)
         }
         return context.makeImage()
     }
@@ -225,10 +226,12 @@ extension Renderer {
         context.saveGState()
         context.concatenate(baseToOutput)
         var complete = true
+        let keys = RedactionKey.all(in: redactions)
         let covers = redactions.compactMap { object -> (target: CGRect, effect: CGImage?)? in
             guard case .redact(let redact) = object.kind else { return nil }
             guard redact.style != .blackOut else { return (deviceAligned(redact.rect.standardized.integral, in: context), nil) }
-            guard let effect = redactionEffect(redact, id: object.id, base: base, pixelScale: document.pixelScale, cache: cache)
+            guard let effect = redactionEffect(redact, id: object.id, base: base, redactions: keys, pixelScale: document.pixelScale,
+                                               cache: cache)
             else { return nil }
             if effect.image == nil { complete = false }
             return (deviceAligned(effect.region, in: context), effect.image)
@@ -247,7 +250,7 @@ extension Renderer {
         }
         context.setShouldAntialias(true)
         fillCanvas(document, base: base, canvas: document.canvasBounds, in: context, cache: cache)
-        if !drawBase(document, base: base, redactions: RedactionKey.all(in: redactions), in: context, cache: cache) {
+        if !drawBase(document, base: base, redactions: keys, in: context, cache: cache) {
             complete = false
         }
         context.restoreGState()

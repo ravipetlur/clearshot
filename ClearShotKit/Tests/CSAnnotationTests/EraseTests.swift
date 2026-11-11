@@ -176,19 +176,25 @@ struct EraseFillTests {
         let base = try #require(context.makeImage())
         let band = CGRect(x: 0, y: 1200, width: width, height: 1000)
         _ = EraseFill.image(base, region: CGRect(x: 0, y: 0, width: 10, height: 10)) // warm up
-        // This thread's processor time, the best of a few runs, so the tests running alongside don't count.
+        // The thread's processor time, the best of a few runs, at the priority an edit on the canvas runs at, so the tests
+        // running alongside count as little as they can.
         func threadTime() -> Duration {
             var time = timespec()
             clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time)
             return .seconds(time.tv_sec) + .nanoseconds(time.tv_nsec)
         }
-        var image: CGImage?
-        let elapsed = (0..<5).map { _ in
-            let start = threadTime()
-            image = EraseFill.image(base, region: band)
-            return threadTime() - start
-        }.min()!
-        #expect(image?.width == width && image?.height == 1000)
+        let (elapsed, size) = DispatchQueue.global(qos: .userInteractive).sync {
+            var size = (0, 0)
+            let elapsed = (0..<5).map { _ in
+                let start = threadTime()
+                let image = EraseFill.image(base, region: band)
+                let elapsed = threadTime() - start
+                size = (image?.width ?? 0, image?.height ?? 0)
+                return elapsed
+            }.min()!
+            return (elapsed, size)
+        }
+        #expect(size.0 == width && size.1 == 1000)
         #expect(elapsed < .milliseconds(100), "\(elapsed)")
     }
 }
@@ -248,5 +254,147 @@ struct EditorEraseTests {
         h.editor.deleteSelection() // outside `act`: a registration here would raise
         #expect(h.editor.document.objects.isEmpty)
         #expect(!h.editor.undoManager.canUndo)
+    }
+}
+
+/// An Erase never reads what another redaction hides: its ring comes from the picture with every other redaction in it.
+struct EraseBesideRedactionsTests {
+    /// Calm greys, nothing near the pattern's magenta or green.
+    static func around(_ x: Int, _ y: Int) -> (UInt8, UInt8, UInt8) {
+        let level = (x * 3 + y * 2) % 100 + 80
+        return (UInt8(level), UInt8(level + 10), UInt8(level - 10))
+    }
+
+    static func redaction(_ style: RedactStyle, _ rect: CGRect, id: UUID = UUID()) -> AnnotationObject {
+        AnnotationObject(id: id, kind: .redact(RedactObject(rect: rect, style: style, intensity: 3)),
+                         style: ObjectStyle(color: RGBAColor(red: 0, green: 0, blue: 0), lineWidth: 1, shadow: false))
+    }
+
+    /// The picture: `hidden` areas hold the pattern (or, `swapped`, its other phase), the rest calm colours.
+    static func base(hidden: [CGRect], swapped: Bool = false) -> CGImage {
+        picture(96, 64) { x, y in
+            guard hidden.contains(where: { inside($0, x, y) }) else { return around(x, y) }
+            return pattern(x + (swapped ? 1 : 0), y)
+        }
+    }
+
+    static func rendered(_ objects: [AnnotationObject], over base: CGImage) throws -> [UInt8] {
+        let (document, images) = TestBitmaps.document(base: base, objects: objects)
+        return TestBitmaps.bytes(try #require(Renderer.render(document, images: images)))
+    }
+
+    /// No pixel of `rect` in `bytes` (96 wide) is near the pattern's magenta or green.
+    static func expectNoPattern(in bytes: [UInt8], _ rect: CGRect, _ label: String) {
+        var found = 0
+        for y in 0..<64 {
+            for x in 0..<96 where inside(rect, x, y) {
+                let index = (y * 96 + x) * 4
+                let (r, g, b) = (Int(bytes[index]), Int(bytes[index + 1]), Int(bytes[index + 2]))
+                if (r > 195 && g < 60 && b > 195) || (r < 60 && g > 195 && b < 60) { found += 1 }
+            }
+        }
+        #expect(found == 0, "\(found) pixels of the \(label) fill look like the pattern")
+    }
+
+    static func expectSame(_ a: [UInt8], _ b: [UInt8], in rect: CGRect, _ label: String) {
+        var differ = 0
+        for y in 0..<64 {
+            for x in 0..<96 where inside(rect, x, y) {
+                let index = (y * 96 + x) * 4
+                if a[index..<index + 4] != b[index..<index + 4] { differ += 1 }
+            }
+        }
+        #expect(differ == 0, "\(differ) pixels of the \(label) fill depend on what is hidden")
+    }
+
+    let erase = CGRect(x: 40, y: 20, width: 20, height: 20)
+
+    /// A Black Out just left of the Erase, the pattern under it, before or after the Erase in the document.
+    @Test(arguments: [true, false])
+    func aBlackOutBesideItHidesThePatternFromIt(blackOutFirst: Bool) throws {
+        let covered = CGRect(x: 30, y: 15, width: 10, height: 30)
+        var objects = [Self.redaction(.erase, erase)]
+        objects.insert(Self.redaction(.blackOut, covered), at: blackOutFirst ? 0 : 1)
+        let first = try Self.rendered(objects, over: Self.base(hidden: [covered]))
+        let second = try Self.rendered(objects, over: Self.base(hidden: [covered], swapped: true))
+        Self.expectNoPattern(in: first, erase, "erase")
+        Self.expectSame(first, second, in: erase, "erase")
+        // The ring's left side is the Black Out's black: the fill darkens toward it.
+        let nearLeft = (30 * 96 + 40) * 4
+        #expect(first[nearLeft] < 60 && first[nearLeft + 1] < 60)
+    }
+
+    @Test(arguments: [true, false])
+    func aPixelateBesideItShowsItOnlyThePixelation(pixelateFirst: Bool) throws {
+        let covered = CGRect(x: 30, y: 15, width: 10, height: 30)
+        let pixelate = Self.redaction(.pixelate, covered)
+        var objects = [Self.redaction(.erase, erase)]
+        objects.insert(pixelate, at: pixelateFirst ? 0 : 1)
+        let base = Self.base(hidden: [covered])
+        let bytes = try Self.rendered(objects, over: base)
+        Self.expectNoPattern(in: bytes, erase, "erase")
+        // Exactly the fill made from the picture with the pixelation in it.
+        guard case .redact(let redact) = pixelate.kind else { return }
+        let pixelated = try #require(Renderer.redactedBase(base, redactions: [RedactionKey(id: pixelate.id, redact: redact)],
+                                                           pixelScale: 1, cache: nil)?.image)
+        let expected = TestBitmaps.bytes(try #require(EraseFill.image(pixelated, region: erase)))
+        var differ = 0
+        for y in 0..<20 {
+            for x in 0..<20 {
+                let from = (y * 20 + x) * 4, to = ((y + 20) * 96 + x + 40) * 4
+                if expected[from..<from + 4] != bytes[to..<to + 4] { differ += 1 }
+            }
+        }
+        #expect(differ == 0)
+    }
+
+    /// Two Erases side by side, the pattern under both: neither is made from what the other hides.
+    @Test func twoAdjacentErasesReadNothingOfEachOther() throws {
+        let right = CGRect(x: 60, y: 20, width: 20, height: 20)
+        let objects = [Self.redaction(.erase, erase), Self.redaction(.erase, right)]
+        let first = try Self.rendered(objects, over: Self.base(hidden: [erase, right]))
+        let second = try Self.rendered(objects, over: Self.base(hidden: [erase, right], swapped: true))
+        for (rect, label) in [(erase, "left"), (right, "right")] {
+            Self.expectNoPattern(in: first, rect, label)
+            Self.expectSame(first, second, in: rect, label)
+        }
+    }
+
+    /// An Erase overlapping a Black Out, the pattern under the part of the Black Out its ring crosses.
+    @Test func anEraseOverlappingARedactionReadsWhatItShows() throws {
+        let covered = CGRect(x: 50, y: 10, width: 30, height: 20)
+        for objects in [[Self.redaction(.blackOut, covered), Self.redaction(.erase, erase)],
+                        [Self.redaction(.erase, erase), Self.redaction(.blackOut, covered)]] {
+            let first = try Self.rendered(objects, over: Self.base(hidden: [covered]))
+            let second = try Self.rendered(objects, over: Self.base(hidden: [covered], swapped: true))
+            Self.expectNoPattern(in: first, erase, "erase")
+            Self.expectSame(first, second, in: CGRect(x: 0, y: 0, width: 96, height: 64), "picture")
+        }
+    }
+
+    /// A Black Out added over the pattern beside an Erase already drawn: the canvas's cached fill is made again.
+    @Test func aRedactionAddedBesideItRemakesItsCachedFill() throws {
+        let covered = CGRect(x: 30, y: 15, width: 10, height: 30)
+        let base = Self.base(hidden: [covered])
+        let (document, images) = TestBitmaps.document(base: base, objects: [Self.redaction(.erase, erase)])
+        let cache = RenderCache()
+        func draw(_ document: AnnotationDocument) throws -> [UInt8] {
+            let context = TestBitmaps.flippedContext(96, 64)
+            Renderer.draw(document, images: images, in: context, cache: cache)
+            return TestBitmaps.bytes(try #require(context.makeImage()))
+        }
+        let before = try draw(document)
+        var covering = document
+        covering.objects.append(Self.redaction(.blackOut, covered))
+        let after = try draw(covering)
+        let index = (30 * 96 + 40) * 4
+        #expect(before[index..<index + 4] != after[index..<index + 4])
+        Self.expectNoPattern(in: after, erase, "erase")
+        Self.expectSame(after, try Self.rendered(covering.objects, over: base), in: erase, "cached erase")
+        // Moved away, the Black Out uncovers the pattern, and the fill is made again from what now shows.
+        var moved = covering
+        moved.objects[1] = Self.redaction(.blackOut, covered.offsetBy(dx: -25, dy: 0), id: moved.objects[1].id)
+        let away = try draw(moved)
+        Self.expectSame(away, try Self.rendered(moved.objects, over: base), in: erase, "erase after the move")
     }
 }

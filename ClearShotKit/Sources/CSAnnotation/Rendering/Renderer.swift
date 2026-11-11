@@ -56,7 +56,8 @@ public enum Renderer {
         fillCanvas(document, base: base, canvas: canvas, in: context, cache: cache)
         // The base with the redactions in it, so nothing beside one samples what it hides. Each is drawn over it again
         // below, on whole device pixels.
-        drawBase(document, base: base, redactions: RedactionKey.all(in: objects), in: context, cache: cache)
+        let redactions = RedactionKey.all(in: objects)
+        drawBase(document, base: base, redactions: redactions, in: context, cache: cache)
         context.saveGState()
         context.concatenate(document.transform.transform)
         var spotlightsDrawn = false
@@ -72,7 +73,7 @@ public enum Renderer {
                            deviceScale: deviceScale)
             } else {
                 draw(object, pixelScale: document.pixelScale, base: base, images: images, in: context, cache: cache,
-                     deviceScale: deviceScale)
+                     deviceScale: deviceScale, redactions: redactions)
             }
         }
         context.restoreGState()
@@ -94,9 +95,18 @@ public enum Renderer {
     }
 
     /// One object in base pixels; the context must already be in base pixels (as `draw(_:images:in:)` sets it up). The
-    /// canvas uses this for the object being drawn.
+    /// canvas uses this for the object being drawn. An Erase drawn this way reads its ring from the base as it is: draw a
+    /// document's redactions with the document (`redactions`).
     public static func draw(_ object: AnnotationObject, pixelScale: Double, base: CGImage?, images: ImageStore, in context: CGContext,
                             cache: RenderCache? = nil, deviceScale: Double = 1) {
+        draw(object, pixelScale: pixelScale, base: base, images: images, in: context, cache: cache, deviceScale: deviceScale,
+             redactions: [])
+    }
+
+    /// One object of a document whose redactions are `redactions` (`RedactionKey.all(in:)`): an Erase's ring is read with
+    /// every other redaction in the picture (`redactionInput`).
+    static func draw(_ object: AnnotationObject, pixelScale: Double, base: CGImage?, images: ImageStore, in context: CGContext,
+                     cache: RenderCache? = nil, deviceScale: Double = 1, redactions: [RedactionKey]) {
         context.saveGState()
         defer { context.restoreGState() }
         let width = object.style.lineWidth
@@ -185,7 +195,8 @@ public enum Renderer {
         case .text(let text):
             drawText(text, color: color, in: context)
         case .redact(let redact):
-            drawRedaction(redact, id: object.id, base: base, pixelScale: pixelScale, in: context, cache: cache)
+            drawRedaction(redact, id: object.id, base: base, redactions: redactions, pixelScale: pixelScale, in: context,
+                          cache: cache)
         case .spotlight:
             break // Drawn together with the other spotlights.
         case .counter(let counter):
@@ -236,8 +247,9 @@ public enum Renderer {
         let base = images[document.base]
         // The canvas's order (`AnnotationDocument.visualOrder`): redactions first, then everything else, counters last.
         // A spotlight draws nothing on its own.
+        let redactions = RedactionKey.all(in: document.visualOrder)
         for object in document.visualOrder where ids.contains(object.id) {
-            draw(object, pixelScale: document.pixelScale, base: base, images: images, in: context)
+            draw(object, pixelScale: document.pixelScale, base: base, images: images, in: context, redactions: redactions)
         }
         return context.makeImage()
     }
@@ -388,9 +400,9 @@ public enum Renderer {
     /// without antialiasing: after a resize op (or at a zoom) its edges fall between output pixels, and a blended edge
     /// pixel would mix in the picture beside it. The pixels beside it come from the redacted base (`drawBase`), so they
     /// mix in nothing of the original under it either. (With a background, redactions are drawn with the content instead:
-    /// `drawRedactedContent`.)
-    static func drawRedaction(_ redact: RedactObject, id: UUID, base: CGImage?, pixelScale: Double, in context: CGContext,
-                              cache: RenderCache?) {
+    /// `drawRedactedContent`.) `redactions` are the document's, which an Erase's ring may lie under (`redactionInput`).
+    static func drawRedaction(_ redact: RedactObject, id: UUID, base: CGImage?, redactions: [RedactionKey], pixelScale: Double,
+                              in context: CGContext, cache: RenderCache?) {
         context.saveGState()
         defer { context.restoreGState() }
         context.setShouldAntialias(false)
@@ -401,7 +413,9 @@ public enum Renderer {
             context.fill(deviceAligned(redact.rect.standardized.integral, in: context))
             return
         }
-        guard let (region, image) = redactionEffect(redact, id: id, base: base, pixelScale: pixelScale, cache: cache) else { return }
+        guard let (region, image) = redactionEffect(redact, id: id, base: base, redactions: redactions, pixelScale: pixelScale,
+                                                    cache: cache)
+        else { return }
         let target = deviceAligned(region, in: context)
         if let image {
             // Replace, don't blend: wherever the effect is partly transparent, the original must not show through it.
@@ -414,23 +428,43 @@ public enum Renderer {
     }
 
     /// A redaction's region (its rect on the base, in whole base pixels) and its effect, from `cache` while nothing it is
-    /// made from has changed: the object, the region, the base and the pixel scale. Nil when the redaction covers no base
-    /// pixel. The image is nil when the effect can't be made; that isn't cached, so the next frame tries again.
-    static func redactionEffect(_ redact: RedactObject, id: UUID, base: CGImage, pixelScale: Double,
+    /// made from has changed: the object, the region, the base, what an Erase reads besides (`redactionInput`) and the pixel
+    /// scale. Nil when the redaction covers no base pixel. The image is nil when the effect can't be made; that isn't
+    /// cached, so the next frame tries again. `redactions` are the document's.
+    static func redactionEffect(_ redact: RedactObject, id: UUID, base: CGImage, redactions: [RedactionKey], pixelScale: Double,
                                 cache: RenderCache?) -> (region: CGRect, image: CGImage?)? {
         let region = redact.rect.standardized.intersection(CGRect(x: 0, y: 0, width: base.width, height: base.height)).integral
         guard !region.isNull, region.width >= 1, region.height >= 1 else { return nil }
+        // An Erase whose surroundings can't be made is black, as a failed effect is.
+        guard let input = redactionInput(redact, id: id, base: base, redactions: redactions, pixelScale: pixelScale, cache: cache)
+        else { return (region, nil) }
         let image: CGImage?
         if let cached = cache?.redactions[id], cached.object == redact, cached.region == region, cached.base === base,
-           cached.pixelScale == pixelScale {
+           cached.surroundings === input.surroundings, cached.excluded == input.excluded, cached.pixelScale == pixelScale {
             image = cached.image
         } else {
-            image = (cache?.effect ?? Redaction.image)(redact, region, base, pixelScale, id)
+            image = (cache?.effect ?? Redaction.image)(redact, region, input, pixelScale, id)
             cache?.redactions[id] = image.map {
-                CachedRedaction(object: redact, region: region, base: base, pixelScale: pixelScale, image: $0)
+                CachedRedaction(object: redact, region: region, base: base, surroundings: input.surroundings,
+                                excluded: input.excluded, pixelScale: pixelScale, image: $0)
             }
         }
         return (region, image)
+    }
+
+    /// What the redaction's effect reads (`RedactionInput`). For an Erase: the base with every one of `redactions` that
+    /// isn't an Erase in it (`redactedBase`, kept in its own slot of `cache`), and the other Erases' areas left out of its
+    /// ring. The rule doesn't depend on the order of the redactions: whether another redaction comes before or after it,
+    /// an Erase reads what that redaction shows, never what it hides. Nil when the surroundings can't be made.
+    static func redactionInput(_ redact: RedactObject, id: UUID, base: CGImage, redactions: [RedactionKey], pixelScale: Double,
+                               cache: RenderCache?) -> RedactionInput? {
+        guard redact.style == .erase else { return RedactionInput(base: base) }
+        let covering = redactions.filter { $0.redact.style != .erase }
+        guard let surroundings = redactedBase(base, redactions: covering, pixelScale: pixelScale, cache: cache,
+                                              slot: \.eraseSurroundings)
+        else { return nil }
+        let excluded = redactions.filter { $0.redact.style == .erase && $0.id != id }.map { $0.redact.rect.standardized.integral }
+        return RedactionInput(base: base, surroundings: surroundings.image, excluded: excluded)
     }
 
     /// The base with `redactions` drawn into a copy of it, at the base's own resolution, in drawing order: over each
@@ -443,16 +477,19 @@ public enum Renderer {
     /// in order) and the pixel scale are the ones it was made with. `complete` is false when an effect couldn't be made;
     /// such a copy isn't kept, so the next frame tries again. Nil when a bitmap can't be made: nothing of the base may then
     /// be drawn.
-    static func redactedBase(_ base: CGImage, redactions: [RedactionKey], pixelScale: Double,
-                             cache: RenderCache?) -> (image: CGImage, complete: Bool)? {
+    /// `slot` is where `cache` keeps it (the Erases' surroundings have their own: `redactionInput`).
+    static func redactedBase(_ base: CGImage, redactions: [RedactionKey], pixelScale: Double, cache: RenderCache?,
+                             slot: ReferenceWritableKeyPath<RenderCache, CachedRedactedBase?> = \.redactedBase)
+        -> (image: CGImage, complete: Bool)? {
         guard !redactions.isEmpty else {
-            cache?.redactedBase = nil
+            cache?[keyPath: slot] = nil
             return (base, true)
         }
-        if let cached = cache?.redactedBase, cached.base === base, cached.redactions == redactions, cached.pixelScale == pixelScale {
+        if let cached = cache?[keyPath: slot], cached.base === base, cached.redactions == redactions,
+           cached.pixelScale == pixelScale {
             return (cached.image, true)
         }
-        cache?.redactedBase = nil
+        cache?[keyPath: slot] = nil
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
         guard let context = ImageOps.bitmapContext(width: base.width, height: base.height, preferring: base.colorSpace)
         else { return nil }
@@ -471,8 +508,8 @@ public enum Renderer {
                 if !area.isNull, !area.isEmpty { context.fill(area) }
                 continue
             }
-            guard let (region, image) = redactionEffect(redaction.redact, id: redaction.id, base: base, pixelScale: pixelScale,
-                                                        cache: cache)
+            guard let (region, image) = redactionEffect(redaction.redact, id: redaction.id, base: base, redactions: redactions,
+                                                        pixelScale: pixelScale, cache: cache)
             else { continue }
             if let image {
                 drawImage(image, in: region, context: context)
@@ -489,7 +526,7 @@ public enum Renderer {
                                   shouldInterpolate: base.shouldInterpolate, intent: base.renderingIntent)
         else { return nil }
         if complete {
-            cache?.redactedBase = CachedRedactedBase(base: base, redactions: redactions, pixelScale: pixelScale, image: image)
+            cache?[keyPath: slot] = CachedRedactedBase(base: base, redactions: redactions, pixelScale: pixelScale, image: image)
         }
         return (image, complete)
     }

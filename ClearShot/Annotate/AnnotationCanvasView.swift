@@ -35,6 +35,12 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     private var pressEndedTextEditing = false
     private var spaceHeld = false
     private var panAnchor: (mouse: NSPoint, origin: NSPoint)?
+    /// Z is held: a click zooms 2× on the point and a drag zooms to the rect. A tap that touched no mouse picks the tool
+    /// Z is set to (if any), on the key-up.
+    private var zHeld = false
+    private var zUsed = false
+    /// The rect (in view points) a Z-drag is zooming to, from where it began to where the mouse is.
+    private var zoomDrag: (start: NSPoint, current: NSPoint)?
     /// Fits the canvas in the window (the canvas controller supplies it). Entering and leaving Crop & Resize change what the
     /// canvas shows, and so do adding and removing the background.
     var fitToWindow: (() -> Void)?
@@ -85,6 +91,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
             _ = editor.tool
             _ = editor.previewRevision
             _ = editor.crop
+            _ = editor.pixelSelection
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.editorDidChange()
@@ -232,6 +239,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
                       useObjectCache: true)
         context.restoreGState()
         drawSelection(in: context, shown: shown)
+        drawPixelSelection(in: context, shown: shown)
+        drawZoomDrag(in: context)
         if let crop = editor.crop { drawCrop(crop, in: context, shown: shown) }
         if isDraggingImage { drawDropZones(in: context) }
     }
@@ -332,6 +341,73 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         context.restoreGState()
     }
 
+    /// The pixel selection: a tint, a white and accent border, eight handles and its size as "W × H" beside it.
+    private func drawPixelSelection(in context: CGContext, shown: CGRect) {
+        guard let selection = editor.pixelSelection, editor.crop == nil else { return }
+        let zoom = max(magnification(), 0.01)
+        let accent = NSColor.controlAccentColor
+        let rect = viewRect(fromBase: selection, shown: shown)
+        context.saveGState()
+        context.setFillColor(accent.withAlphaComponent(0.12).cgColor)
+        context.fill(rect)
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(2 / zoom)
+        context.stroke(rect)
+        context.setStrokeColor(accent.cgColor)
+        context.setLineWidth(1 / zoom)
+        context.setLineDash(phase: 0, lengths: [4 / zoom, 3 / zoom])
+        context.stroke(rect)
+        context.setLineDash(phase: 0, lengths: [])
+        if editor.tool == .select {
+            let size = 8 / zoom
+            for handle in CropGeometry.handles {
+                let center = viewPoint(fromBase: ObjectGeometry.point(of: handle, in: selection), shown: shown)
+                let square = CGRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
+                context.setFillColor(NSColor.white.cgColor)
+                context.fill(square)
+                context.setStrokeColor(accent.cgColor)
+                context.stroke(square)
+            }
+        }
+        context.restoreGState()
+        if let text = editor.pixelSelectionSizeText {
+            drawBadge(text, near: rect, zoom: zoom)
+        }
+    }
+
+    /// A small label under `rect` (above it when there is no room), drawn at a constant size on screen.
+    private func drawBadge(_ text: String, near rect: CGRect, zoom: Double) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11 / zoom, weight: .medium), .foregroundColor: NSColor.white,
+        ]
+        let string = NSAttributedString(string: text, attributes: attributes)
+        let size = string.size()
+        let pad = 4 / zoom
+        let box = CGSize(width: size.width + 2 * pad, height: size.height + pad)
+        var origin = CGPoint(x: rect.minX, y: rect.maxY + 4 / zoom)
+        if origin.y + box.height > bounds.maxY { origin.y = rect.minY - box.height - 4 / zoom }
+        origin.x = min(max(origin.x, bounds.minX), max(bounds.maxX - box.width, bounds.minX))
+        let badge = CGRect(origin: origin, size: box)
+        NSColor.black.withAlphaComponent(0.7).setFill()
+        NSBezierPath(roundedRect: badge, xRadius: 3 / zoom, yRadius: 3 / zoom).fill()
+        string.draw(at: CGPoint(x: badge.minX + pad, y: badge.minY + pad / 2))
+    }
+
+    /// The rect a Z-drag is zooming to.
+    private func drawZoomDrag(in context: CGContext) {
+        guard let drag = zoomDrag else { return }
+        let zoom = max(magnification(), 0.01)
+        let rect = CGRect(x: min(drag.start.x, drag.current.x), y: min(drag.start.y, drag.current.y),
+                          width: abs(drag.current.x - drag.start.x), height: abs(drag.current.y - drag.start.y))
+        context.saveGState()
+        context.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor)
+        context.fill(rect)
+        context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        context.setLineWidth(1 / zoom)
+        context.stroke(rect)
+        context.restoreGState()
+    }
+
     /// The bounds, in view points, of a rectangle in base pixels: after Rotate or Flip, of its transformed corners.
     func viewRect(fromBase rect: CGRect) -> CGRect {
         viewRect(fromBase: rect, shown: displayRect)
@@ -350,7 +426,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     // MARK: Mouse
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: spaceHeld && !editor.isCanvasLocked ? .openHand : tool.cursor)
+        addCursorRect(bounds, cursor: spaceHeld && !editor.isCanvasLocked ? .openHand : zHeld ? .crosshair : tool.cursor)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -364,9 +440,11 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
                 return
             }
         }
-        if spaceHeld, !editor.isCanvasLocked, let clip = enclosingScrollView?.contentView {
-            panAnchor = (event.locationInWindow, clip.bounds.origin)
-            NSCursor.closedHand.set()
+        if spaceHeld, beginPan(event) { return }
+        if zHeld {
+            zUsed = true
+            let start = convert(event.locationInWindow, from: nil)
+            zoomDrag = (start, start)
             return
         }
         let point = basePoint(for: event)
@@ -381,13 +459,47 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         needsDisplay = true
     }
 
+    /// Starts a pan (Space held, or the right button) unless the canvas is locked.
+    private func beginPan(_ event: NSEvent) -> Bool {
+        guard !editor.isCanvasLocked, let clip = enclosingScrollView?.contentView else { return false }
+        panAnchor = (event.locationInWindow, clip.bounds.origin)
+        NSCursor.closedHand.set()
+        return true
+    }
+
+    private func continuePan(_ event: NSEvent) -> Bool {
+        guard let anchor = panAnchor, let scroll = enclosingScrollView else { return false }
+        let zoom = max(scroll.magnification, 0.01)
+        let origin = NSPoint(x: anchor.origin.x - (event.locationInWindow.x - anchor.mouse.x) / zoom,
+                             y: anchor.origin.y + (event.locationInWindow.y - anchor.mouse.y) / zoom)
+        scroll.contentView.scroll(to: origin)
+        scroll.reflectScrolledClipView(scroll.contentView)
+        return true
+    }
+
+    private func endPan() -> Bool {
+        guard panAnchor != nil else { return false }
+        panAnchor = nil
+        window?.invalidateCursorRects(for: self)
+        return true
+    }
+
+    /// The right button pans, whatever the tool.
+    override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        endTextEditing()
+        _ = beginPan(event)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) { _ = continuePan(event) }
+    override func rightMouseUp(with event: NSEvent) { _ = endPan() }
+
     override func mouseDragged(with event: NSEvent) {
-        if let anchor = panAnchor, let scroll = enclosingScrollView {
-            let zoom = max(scroll.magnification, 0.01)
-            let origin = NSPoint(x: anchor.origin.x - (event.locationInWindow.x - anchor.mouse.x) / zoom,
-                                 y: anchor.origin.y + (event.locationInWindow.y - anchor.mouse.y) / zoom)
-            scroll.contentView.scroll(to: origin)
-            scroll.reflectScrolledClipView(scroll.contentView)
+        if continuePan(event) { return }
+        if var drag = zoomDrag {
+            drag.current = convert(event.locationInWindow, from: nil)
+            zoomDrag = drag
+            needsDisplay = true
             return
         }
         guard !pressEndedTextEditing else { return }
@@ -396,9 +508,11 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if panAnchor != nil {
-            panAnchor = nil
-            window?.invalidateCursorRects(for: self)
+        if endPan() { return }
+        if let drag = zoomDrag {
+            zoomDrag = nil
+            needsDisplay = true
+            finishZoomDrag(drag)
             return
         }
         if pressEndedTextEditing {
@@ -409,6 +523,33 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         routedTool = nil
         controller.mouseUp(at: basePoint(for: event), event: event)
         needsDisplay = true
+    }
+
+    // MARK: Zoom
+
+    /// A Z-click zooms 2× on the point; a Z-drag zooms to the rect it drew.
+    private func finishZoomDrag(_ drag: (start: NSPoint, current: NSPoint)) {
+        guard let scroll = enclosingScrollView else { return }
+        let limits = Double(scroll.minMagnification)...Double(scroll.maxMagnification)
+        let target: ZoomTarget? = if ZoomGeometry.isClick(from: drag.start, to: drag.current) {
+            ZoomGeometry.zooming(at: drag.start, from: Double(scroll.magnification), limits: limits)
+        } else {
+            ZoomGeometry.fitting(CGRect(x: drag.start.x, y: drag.start.y, width: drag.current.x - drag.start.x,
+                                        height: drag.current.y - drag.start.y),
+                                 in: scroll.contentSize, limits: limits)
+        }
+        if let target { zoom(to: target) }
+    }
+
+    private func zoom(to target: ZoomTarget) {
+        enclosingScrollView?.setMagnification(CGFloat(target.magnification), centeredAt: target.center)
+    }
+
+    /// View › Zoom to Selection (⌘2): the pixel selection fills the window.
+    func zoomToPixelSelection() {
+        guard let selection = editor.pixelSelection, let scroll = enclosingScrollView else { return }
+        let limits = Double(scroll.minMagnification)...Double(scroll.maxMagnification)
+        if let target = ZoomGeometry.fitting(viewRect(fromBase: selection), in: scroll.contentSize, limits: limits) { zoom(to: target) }
     }
 
     // MARK: Text editing
@@ -629,6 +770,15 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     // MARK: Keys
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 6, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            // Z held zooms with the mouse; a tap (no click, no drag) is the letter's own tool, on the key-up.
+            if !event.isARepeat {
+                zHeld = true
+                zUsed = false
+                window?.invalidateCursorRects(for: self)
+            }
+            return
+        }
         if event.keyCode == 49 {
             // Space pans while held.
             if !event.isARepeat {
@@ -651,18 +801,44 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
                 break
             }
         }
+        // ⌘-arrows resize the pixel selection's right and bottom edges (⇧⌘ by 10).
+        if editor.pixelSelection != nil, editor.crop == nil, flags.contains(.command), flags.isSubset(of: [.command, .shift]),
+           let arrow = Self.arrowVector(for: event.keyCode, step: flags.contains(.shift) ? 10 : 1) {
+            editor.resizePixelSelection(by: arrow)
+            return
+        }
         guard flags.isEmpty || flags == .shift else { return super.keyDown(with: event) }
         let step: Double = flags == .shift ? 10 : 1
+        // `[` grows the pixel selection by a pixel on every side and `]` shrinks it (⇧ for 10). Under the Select tool only:
+        // the other tools use the same keys for size.
+        if editor.pixelSelection != nil, editor.crop == nil, editor.tool == .select,
+           let character = event.charactersIgnoringModifiers?.first, "[{]}".contains(character) {
+            editor.growPixelSelection(by: "[{".contains(character) ? step : -step)
+            return
+        }
         switch event.keyCode {
         case 51, 117: editor.deleteSelection()
-        case 53: editor.selection = []
-        case 123: editor.nudgeSelection(by: CGVector(dx: -step, dy: 0))
-        case 124: editor.nudgeSelection(by: CGVector(dx: step, dy: 0))
-        case 125: editor.nudgeSelection(by: CGVector(dx: 0, dy: step))
-        case 126: editor.nudgeSelection(by: CGVector(dx: 0, dy: -step))
+        case 53:
+            editor.selection = []
+            editor.clearPixelSelection()
+        case 123, 124, 125, 126:
+            // An object selected moves with the arrows; with none, the pixel selection does (1 pixel, ⇧ 10).
+            let arrow = Self.arrowVector(for: event.keyCode, step: step)!
+            if editor.selection.isEmpty, editor.crop == nil { editor.nudgePixelSelection(by: arrow) } else { editor.nudgeSelection(by: arrow) }
         default:
             guard flags.isEmpty, let character = event.charactersIgnoringModifiers?.lowercased().first,
                   handleKey(character) else { return super.keyDown(with: event) }
+        }
+    }
+
+    /// The arrow key's direction as a vector of `step`, or nil for another key.
+    private static func arrowVector(for keyCode: UInt16, step: Double) -> CGVector? {
+        switch keyCode {
+        case 123: CGVector(dx: -step, dy: 0)
+        case 124: CGVector(dx: step, dy: 0)
+        case 125: CGVector(dx: 0, dy: step)
+        case 126: CGVector(dx: 0, dy: -step)
+        default: nil
         }
     }
 
@@ -696,8 +872,24 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
 
     override func keyUp(with event: NSEvent) {
+        if event.keyCode == 6 {
+            let tapped = zHeld && !zUsed
+            endZHold()
+            // A tap of Z is the tool letter it has been given (Z has none unless Settings gave it one).
+            if tapped { _ = handleKey("z") }
+            return
+        }
         guard event.keyCode == 49 else { return super.keyUp(with: event) }
         endSpaceHold()
+    }
+
+    /// Z is no longer held (also when the canvas loses the keyboard mid-hold).
+    private func endZHold() {
+        guard zHeld else { return }
+        zHeld = false
+        zoomDrag = nil
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
     }
 
     /// Space is no longer held. Also called when the canvas or its window loses the keyboard, where the key-up would
@@ -710,6 +902,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
 
     override func resignFirstResponder() -> Bool {
         endSpaceHold()
+        endZHold()
         return super.resignFirstResponder()
     }
 

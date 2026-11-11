@@ -103,6 +103,7 @@ enum MainMenu {
         menu.addItem(item("Zoom Out", #selector(EditorWindowController.zoomOut(_:)), "-"))
         menu.addItem(item("Actual Size", #selector(EditorWindowController.zoomToActualSize(_:)), "0"))
         menu.addItem(item("Zoom to Fit", #selector(EditorWindowController.zoomToFit(_:)), "9"))
+        menu.addItem(item("Zoom to Selection", #selector(EditorWindowController.zoomToSelection(_:)), "2"))
         return menu
     }
 

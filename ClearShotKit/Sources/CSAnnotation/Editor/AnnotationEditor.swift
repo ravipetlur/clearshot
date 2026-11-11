@@ -16,10 +16,26 @@ public enum EditorSource: Sendable {
 @MainActor
 @Observable
 public final class AnnotationEditor {
-    public private(set) var document: AnnotationDocument
+    public private(set) var document: AnnotationDocument {
+        didSet {
+            // A turn, flip, crop or resize moves the base pixels the selection names.
+            if pixelSelection != nil, document.baseSize != oldValue.baseSize || document.imageOps != oldValue.imageOps {
+                pixelSelection = nil
+            }
+        }
+    }
     public private(set) var images: ImageStore
     public var source: EditorSource
-    public var selection: Set<UUID> = []
+    public var selection: Set<UUID> = [] {
+        didSet {
+            // Objects and the pixel area are one selection at a time: keys and tools act on whichever is there.
+            if !selection.isEmpty, pixelSelection != nil { pixelSelection = nil }
+        }
+    }
+    /// The pixel area the Select tool marked (see `PixelSelection`), in whole base pixels, or nil. Set it with
+    /// `selectPixels(_:)` so it is fitted to the picture; selecting an object, a crop, or any change that moves the base
+    /// pixels clears it.
+    public internal(set) var pixelSelection: CGRect?
     /// Switching to a drawing tool drops the selection, so the color and size chosen for the next shape don't restyle the
     /// last one. The object just drawn stays selected until then, so it can still be adjusted. Switching to Crop & Resize
     /// starts a crop session; switching away from it applies the crop.

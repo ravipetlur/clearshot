@@ -148,6 +148,8 @@ public extension Prefs {
     static let annotateRememberBackgroundTool = PrefKey("annotateRememberBackgroundTool", default: true)
     /// "Show sizes in": the unit of the ruler and of a selection's size.
     static let annotateSizeUnit = PrefKey("annotateSizeUnit", default: SizeUnit.points)
+    /// Whether the contrast beside a pixel selection is APCA's ("Lc 62") rather than WCAG 2's ("4.5:1"): ⌥-click switches it.
+    static let annotateContrastAPCA = PrefKey("annotateContrastAPCA", default: false)
     /// How a color copied from the picture is written.
     static let annotateColorCopyFormat = PrefKey("annotateColorCopyFormat", default: ColorFormat.hex)
 

@@ -86,6 +86,12 @@ public final class AnnotationEditor {
     /// The last picture pixels built, kept while they are the document's (`picturePixels`, in `AnnotationEditor+Pixels`).
     /// Observed, so a view reading `picturePixels` updates when they arrive.
     var builtPicturePixels: PicturePixels?
+    /// The two main colors of the pixel selection and their contrast (`updateSelectionContrast()`); nil for a uniform area, no
+    /// selection, or while it is being worked out.
+    public internal(set) var selectionContrast: SelectionContrast?
+    /// What the contrast in flight, or last shown, is of, and the work that finds it.
+    @ObservationIgnored var contrastRequest: (rect: CGRect, picture: PicturePixelsIdentity)?
+    @ObservationIgnored var contrastTask: Task<Void, Never>?
     /// The pixels being built or last built, with what they are of; nil before the first `loadPicturePixels()`.
     @ObservationIgnored var picturePixelsBuild: PicturePixelsBuild?
     /// The quiet wait before rebuilding after the picture changes, so a run of changes (a redaction dragged) rebuilds once.

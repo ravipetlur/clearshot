@@ -43,6 +43,12 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     private var zUsed = false
     /// The rect (in view points) a Z-drag is zooming to, from where it began to where the mouse is.
     private var zoomDrag: (start: NSPoint, current: NSPoint)?
+    /// ⌥S or ⌥D is held over the picture (Select tool): the guide that shows at the pointer, and a click imprints.
+    private var guideAxis: PictureGuide.Axis?
+    /// The pointer in view points while it is over the canvas, for the guide.
+    private var pointerInView: NSPoint?
+    /// Where the contrast readout was last drawn, in view points, for the ⌥-click that switches WCAG 2 and APCA.
+    private var contrastBadgeRect: CGRect?
     /// Fits the canvas in the window (the canvas controller supplies it). Entering and leaving Crop & Resize change what the
     /// canvas shows, and so do adding and removing the background.
     var fitToWindow: (() -> Void)?
@@ -74,7 +80,6 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         updateFrameSize()
         observeEditor()
         registerForDraggedTypes([.fileURL] + ImageInput.dataTypes)
-        installPointerTracking()
         selectTool.onEditText = { [unowned self] id in beginEditingText(id, isNew: false) }
         _ = ruler
     }
@@ -100,6 +105,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
             _ = editor.previewRevision
             _ = editor.crop
             _ = editor.pixelSelection
+            _ = editor.selectionContrast
+            _ = editor.picturePixels
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.editorDidChange()
@@ -110,6 +117,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
 
     private func editorDidChange() {
         syncTool()
+        editor.updateSelectionContrast()
+        if editor.tool != .select || editor.crop != nil { guideAxis = nil }
         updateFrameSize()
         var refit = false
         let viewport = editor.crop?.viewport
@@ -258,6 +267,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         drawSelection(in: context, shown: shown)
         drawPixelSelection(in: context, shown: shown)
         ruler.drawHint()
+        drawGuide(in: context, shown: shown)
         drawZoomDrag(in: context)
         if let crop = editor.crop { drawCrop(crop, in: context, shown: shown) }
         if isDraggingImage { drawDropZones(in: context) }
@@ -362,6 +372,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
 
     /// The pixel selection: a tint, a white and accent border, eight handles and its size as "W × H" beside it.
     private func drawPixelSelection(in context: CGContext, shown: CGRect) {
+        contrastBadgeRect = nil
         guard let selection = editor.pixelSelection, editor.crop == nil else { return }
         let zoom = max(magnification(), 0.01)
         let accent = NSColor.controlAccentColor
@@ -390,12 +401,78 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         }
         context.restoreGState()
         if let text = editor.pixelSelectionSizeText {
-            drawBadge(text, near: rect, zoom: zoom)
+            let badge = drawBadge(text, near: rect, zoom: zoom)
+            if let contrast = editor.selectionContrast { drawContrast(contrast, besides: badge, zoom: zoom) }
         }
     }
 
-    /// A small label under `rect` (above it when there is no room), drawn at a constant size on screen.
-    private func drawBadge(_ text: String, near rect: CGRect, zoom: Double) {
+    /// The contrast of the selection's two main colors, right of the size badge: both colors as swatches, then "4.5:1" and
+    /// whether it passes (WCAG 2), or "Lc 62" (APCA). ⌥-click on it switches between them.
+    private func drawContrast(_ contrast: SelectionContrast, besides sizeBadge: CGRect, zoom: Double) {
+        let apca = editor.contrastUsesAPCA
+        let level = contrast.level
+        let value = apca ? contrast.apcaText : contrast.ratioText
+        let text = NSMutableAttributedString(string: value, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11 / zoom, weight: .medium), .foregroundColor: NSColor.white,
+        ])
+        if !apca {
+            let tint: NSColor = level.passes ? .systemGreen : .systemOrange
+            text.append(NSAttributedString(string: "  " + level.title, attributes: [
+                .font: NSFont.systemFont(ofSize: 10 / zoom, weight: .semibold), .foregroundColor: tint,
+            ]))
+        }
+        let size = text.size()
+        let pad = 4 / zoom, swatch = 10 / zoom, gap = 3 / zoom
+        let box = CGSize(width: pad + 2 * swatch + gap + pad + size.width + pad, height: sizeBadge.height)
+        var origin = CGPoint(x: sizeBadge.maxX + 4 / zoom, y: sizeBadge.minY)
+        if origin.x + box.width > bounds.maxX { origin.x = max(sizeBadge.minX - 4 / zoom - box.width, bounds.minX) }
+        let badge = CGRect(origin: origin, size: box)
+        NSColor.black.withAlphaComponent(0.7).setFill()
+        NSBezierPath(roundedRect: badge, xRadius: 3 / zoom, yRadius: 3 / zoom).fill()
+        for (index, color) in [contrast.background, contrast.foreground].enumerated() {
+            let square = CGRect(x: badge.minX + pad + Double(index) * (swatch + gap), y: badge.midY - swatch / 2, width: swatch, height: swatch)
+            NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1).setFill()
+            square.fill()
+            NSColor.white.withAlphaComponent(0.8).setStroke()
+            let outline = NSBezierPath(rect: square)
+            outline.lineWidth = 1 / zoom
+            outline.stroke()
+        }
+        text.draw(at: CGPoint(x: badge.minX + pad + 2 * swatch + gap + pad, y: badge.midY - size.height / 2))
+        contrastBadgeRect = badge
+    }
+
+    /// The guide at the pointer (⌥S, ⌥D): a thin dark line with a light edge across the whole picture, and its position in the
+    /// size unit beside the pointer.
+    private func drawGuide(in context: CGContext, shown: CGRect) {
+        guard let axis = guideAxis, let pointer = pointerInView, editor.crop == nil,
+              let guide = editor.guide(axis, through: outputPoint(pointer, shown: shown)) else { return }
+        let zoom = max(magnification(), 0.01)
+        let document = editor.document
+        func view(_ output: CGPoint) -> CGPoint {
+            CGPoint(x: (output.x - shown.minX) / document.pixelScale, y: (output.y - shown.minY) / document.pixelScale)
+        }
+        let start = view(guide.start), end = view(guide.end)
+        context.saveGState()
+        context.setLineCap(.butt)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.85).cgColor)
+        context.setLineWidth(3 / zoom)
+        context.move(to: start)
+        context.addLine(to: end)
+        context.strokePath()
+        context.setStrokeColor(NSColor.systemPink.cgColor)
+        context.setLineWidth(1 / zoom)
+        context.move(to: start)
+        context.addLine(to: end)
+        context.strokePath()
+        context.restoreGState()
+        let label = document.guideLabel(guide, in: editor.preferences[Prefs.annotateSizeUnit])
+        drawBadge(label, near: CGRect(x: pointer.x + 10 / zoom, y: pointer.y + 6 / zoom, width: 0, height: 0), zoom: zoom)
+    }
+
+    /// A small label under `rect` (above it when there is no room), drawn at a constant size on screen. Returns where it is.
+    @discardableResult
+    private func drawBadge(_ text: String, near rect: CGRect, zoom: Double) -> CGRect {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11 / zoom, weight: .medium), .foregroundColor: NSColor.white,
         ]
@@ -410,6 +487,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         NSColor.black.withAlphaComponent(0.7).setFill()
         NSBezierPath(roundedRect: badge, xRadius: 3 / zoom, yRadius: 3 / zoom).fill()
         string.draw(at: CGPoint(x: badge.minX + pad, y: badge.minY + pad / 2))
+        return badge
     }
 
     /// The rect a Z-drag is zooming to.
@@ -444,15 +522,37 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
 
     // MARK: Mouse
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: spaceHeld && !editor.isCanvasLocked ? .openHand : zHeld ? .crosshair : tool.cursor)
+    /// One tracking area for everything that follows the pointer: the colour chip, the ruler and the guides. Each move
+    /// then arrives once.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self, userInfo: nil))
     }
 
+    override func mouseEntered(with event: NSEvent) { pointerMoved(to: event) }
+
     override func mouseMoved(with event: NSEvent) {
+        pointerMoved(to: event)
         colorHoverMoved(to: event)
         ruler.mouseMoved()
     }
-    override func mouseExited(with event: NSEvent) { colorHoverEnded() }
+
+    override func mouseExited(with event: NSEvent) {
+        pointerInView = nil
+        if guideAxis != nil { needsDisplay = true }
+        colorHoverEnded()
+    }
+
+    private func pointerMoved(to event: NSEvent) {
+        pointerInView = convert(event.locationInWindow, from: nil)
+        if guideAxis != nil { needsDisplay = true }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: spaceHeld && !editor.isCanvasLocked ? .openHand : zHeld ? .crosshair : tool.cursor)
+    }
 
     override func mouseDown(with event: NSEvent) {
         colorHoverEnded()
@@ -471,6 +571,22 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
                 pressEndedTextEditing = true
                 return
             }
+        }
+        let clicked = convert(event.locationInWindow, from: nil)
+        if event.modifierFlags.contains(.option), let badge = contrastBadgeRect, badge.contains(clicked) {
+            // ⌥-click on the contrast: WCAG 2 and APCA, the other way round.
+            editor.contrastUsesAPCA.toggle()
+            pressEndedTextEditing = true
+            needsDisplay = true
+            return
+        }
+        pointerInView = clicked
+        if let axis = guideAxis, tool === selectTool, editor.crop == nil {
+            // A click while a guide shows imprints it as a line across the picture.
+            pressEndedTextEditing = true
+            if let guide = editor.guide(axis, through: outputPoint(clicked)) { editor.imprint(guide) }
+            needsDisplay = true
+            return
         }
         if spaceHeld, beginPan(event) { return }
         if zHeld {
@@ -832,6 +948,16 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         // Tab, ⇧Tab and ⌥Tab copy a color under the Select tool.
         if handleColorCopyKey(event) { return }
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        // ⌥S and ⌥D show a guide while held (by key, not character: ⌥ types other characters), on the Select tool.
+        if flags == .option, event.keyCode == 1 || event.keyCode == 2, editor.tool == .select, editor.crop == nil, !isEditingText {
+            let axis: PictureGuide.Axis = event.keyCode == 1 ? .vertical : .horizontal
+            if guideAxis != axis {
+                guideAxis = axis
+                if let window { pointerInView = convert(window.mouseLocationOutsideOfEventStream, from: nil) }
+                needsDisplay = true
+            }
+            return
+        }
         if editor.crop != nil, flags.isEmpty {
             // Return (or Enter) applies the crop, Esc cancels it.
             switch event.keyCode {
@@ -924,8 +1050,19 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
             if tapped { _ = handleKey("z") }
             return
         }
+        if event.keyCode == 1 || event.keyCode == 2 {
+            if guideAxis == (event.keyCode == 1 ? .vertical : .horizontal) { endGuide() }
+            return
+        }
         guard event.keyCode == 49 else { return super.keyUp(with: event) }
         endSpaceHold()
+    }
+
+    /// The guide is no longer shown (its key is up, or the canvas lost the keyboard).
+    private func endGuide() {
+        guard guideAxis != nil else { return }
+        guideAxis = nil
+        needsDisplay = true
     }
 
     /// Z is no longer held (also when the canvas loses the keyboard mid-hold).
@@ -949,6 +1086,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         endSpaceHold()
         endZHold()
         ruler.stop()
+        endGuide()
         return super.resignFirstResponder()
     }
 

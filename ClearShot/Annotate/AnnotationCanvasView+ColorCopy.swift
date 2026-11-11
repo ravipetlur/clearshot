@@ -96,12 +96,6 @@ extension AnnotationCanvasView {
 
     // MARK: Chip
 
-    /// Tracks the pointer over the canvas, for the colour chip and the ruler (one tracking area, so each move arrives once).
-    func installPointerTracking() {
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-    }
-
     func colorHoverMoved(to event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         colorHover.viewPoint = point

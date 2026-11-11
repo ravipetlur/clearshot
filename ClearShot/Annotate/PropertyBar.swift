@@ -43,6 +43,12 @@ struct PropertyBar: View {
                 SizePicker(level: editor.settings.sizeLevel) { editor.setSizeLevel($0) }
             }
             options
+            if let opacity = editor.selectedImageOpacity {
+                Slider(value: Binding(get: { opacity }, set: { editor.setImageOpacity($0) }), in: ImageObject.opacityRange,
+                       label: { Text("Opacity") }, onEditingChanged: dragging("Change Opacity"))
+                    .frame(width: 120)
+                    .help("Opacity (keys 1–9 for 10%–90%, 0 for 100%)")
+            }
             Spacer()
             if context != .redact, context != .spotlight, context != .highlighter {
                 Toggle("Shadow", isOn: Binding(get: { editor.preferences[Prefs.annotateObjectShadows] }, set: { editor.setShadows($0) }))

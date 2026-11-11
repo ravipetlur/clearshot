@@ -33,6 +33,12 @@ enum MainMenu {
         editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
         // Scans the picture for emails, keys, card numbers and the like and pixelates them. No key equivalent, so the shortcut
         // recorder's "used by ClearShot's menu" check, which lists the items that have one, is unchanged.
+        // Colors from the picture. Tab, ⇧Tab and ⌥Tab do these in the canvas; no key equivalents here, which would take
+        // Tab from the focus loop everywhere.
+        editMenu.addItem(.separator())
+        editMenu.addItem(item("Copy Color Under Pointer", #selector(AnnotationCanvasView.copyColorUnderPointer(_:)), ""))
+        editMenu.addItem(item("Copy Text Color Under Pointer", #selector(AnnotationCanvasView.copyTextColorUnderPointer(_:)), ""))
+        editMenu.addItem(item("Copy Average Color of Selection", #selector(AnnotationCanvasView.copyAverageColorOfSelection(_:)), ""))
         editMenu.addItem(.separator())
         editMenu.addItem(item("Mask Sensitive Info", #selector(EditorWindowController.maskSensitiveInfo(_:)), ""))
         // Crop & Resize. Rotate and Resize Image… take ⌥⌘ shortcuts (⌘R alone is Send to Raycast AI Chat). Crop &

@@ -59,6 +59,10 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     private var dropEdge: RectEdge?
     /// Tells the person an image couldn't be read or added; set where the canvas is made, from the window controller.
     var imageProblem: ((ImageProblem) -> Void)?
+    /// Says a color was copied ("Copied #1E90FF"); set where the canvas is made, from the window controller.
+    var colorCopied: ((String) -> Void)?
+    /// Where the pointer is, for the color chip and Edit's color-copy items (`AnnotationCanvasView+ColorCopy.swift`).
+    var colorHover = ColorHover()
 
     init(editor: AnnotationEditor) {
         self.editor = editor
@@ -68,6 +72,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         updateFrameSize()
         observeEditor()
         registerForDraggedTypes([.fileURL] + ImageInput.dataTypes)
+        installColorHoverTracking()
         selectTool.onEditText = { [unowned self] id in beginEditingText(id, isNew: false) }
     }
 
@@ -179,7 +184,11 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
 
     func basePoint(for event: NSEvent) -> CGPoint {
-        editor.document.transform.toBase(outputPoint(convert(event.locationInWindow, from: nil)))
+        basePoint(forView: convert(event.locationInWindow, from: nil))
+    }
+
+    func basePoint(forView point: NSPoint) -> CGPoint {
+        editor.document.transform.toBase(outputPoint(point))
     }
 
     func viewPoint(fromBase point: CGPoint) -> NSPoint {
@@ -243,6 +252,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         drawZoomDrag(in: context)
         if let crop = editor.crop { drawCrop(crop, in: context, shown: shown) }
         if isDraggingImage { drawDropZones(in: context) }
+        drawColorChip()
     }
 
     /// Crop & Resize's overlay: everything outside the crop dimmed, thirds lines, a white border and eight handles.
@@ -429,7 +439,11 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         addCursorRect(bounds, cursor: spaceHeld && !editor.isCanvasLocked ? .openHand : zHeld ? .crosshair : tool.cursor)
     }
 
+    override func mouseMoved(with event: NSEvent) { colorHoverMoved(to: event) }
+    override func mouseExited(with event: NSEvent) { colorHoverEnded() }
+
     override func mouseDown(with event: NSEvent) {
+        colorHoverEnded()
         window?.makeFirstResponder(self)
         pressEndedTextEditing = false
         if textEditor != nil {
@@ -787,6 +801,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
             }
             return
         }
+        // Tab, ⇧Tab and ⌥Tab copy a color under the Select tool.
+        if handleColorCopyKey(event) { return }
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if editor.crop != nil, flags.isEmpty {
             // Return (or Enter) applies the crop, Esc cancels it.
@@ -959,7 +975,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         case #selector(duplicate(_:)): editor.crop == nil && !editor.selection.isEmpty
         case #selector(paste(_:)): editor.crop == nil && (ObjectClipboard.hasObjects || ImageInput.hasImage(.general))
         case #selector(selectAll(_:)): editor.crop == nil
-        default: true
+        default: validateColorCopy(menuItem.action) ?? true
         }
     }
 }

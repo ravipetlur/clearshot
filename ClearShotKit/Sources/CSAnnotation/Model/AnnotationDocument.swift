@@ -177,7 +177,7 @@ public struct AnnotationDocument: Codable, Equatable, Sendable {
             default: others.append(object)
             }
         }
-        return redactions + spotlights + others + counters
+        return redactions + spotlights + labelingRulers(others, in: SizeUnit.stored) + counters
     }
 
     /// The next counter's value: one more than the highest so far, or `start` for the first.

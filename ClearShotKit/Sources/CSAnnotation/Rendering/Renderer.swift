@@ -172,6 +172,8 @@ public enum Renderer {
             context.move(to: start)
             context.addLine(to: end)
             context.strokePath()
+        case .ruler(let ruler):
+            drawRuler(ruler, lineWidth: width, color: color, pixelScale: pixelScale, in: context)
         case .arrow(let arrow):
             let parts = object.style.handDrawn
                 ? ArrowGeometry.roughParts(for: arrow, width: width, seed: object.style.seed)

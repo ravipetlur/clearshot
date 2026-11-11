@@ -20,12 +20,15 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     /// The fill of a new rectangle or ellipse: its color (nil: the stroke's) and opacity (0: none).
     public var fillColor: RGBAColor?
     public var fillOpacity = 0.0
+    /// How far two colors may differ, on any channel, and still count as one run to the ruler (`RulerGeometry.toleranceRange`).
+    public var rulerTolerance = RulerGeometry.defaultTolerance
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case color, sizeLevel, arrowStyle, textStyle, redactStyle, redactIntensity, spotlightShape, spotlightOpacity
         case counterStyle, counterStart, highlightOpacity, smartHighlighter, handDrawn, fillColor, fillOpacity
+        case rulerTolerance
     }
 
     /// Every field is optional on disk and falls back to its default. A stored value from before a field existed keeps
@@ -49,6 +52,8 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         handDrawn = try container.decodeIfPresent(Bool.self, forKey: .handDrawn) ?? handDrawn
         fillColor = try container.decodeIfPresent(RGBAColor.self, forKey: .fillColor)
         fillOpacity = try container.decodeIfPresent(Double.self, forKey: .fillOpacity) ?? fillOpacity
+        rulerTolerance = RulerGeometry.clampedTolerance(
+            try container.decodeIfPresent(Int.self, forKey: .rulerTolerance) ?? rulerTolerance)
     }
 }
 

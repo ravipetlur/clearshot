@@ -19,6 +19,10 @@ public enum ObjectScaling {
         case .filledRectangle(let shape): copy.kind = .filledRectangle(rect(shape))
         case .ellipse(let shape): copy.kind = .ellipse(rect(shape))
         case .line(let start, let end): copy.kind = .line(start: point(start), end: point(end))
+        case .ruler(var ruler):
+            ruler.start = point(ruler.start)
+            ruler.end = point(ruler.end)
+            copy.kind = .ruler(ruler)
         case .arrow(var arrow):
             arrow.start = point(arrow.start)
             arrow.end = point(arrow.end)

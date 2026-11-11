@@ -34,6 +34,8 @@ enum MainMenu {
         // Scans the picture for emails, keys, card numbers and the like and pixelates them. No key equivalent, so the shortcut
         // recorder's "used by ClearShot's menu" check, which lists the items that have one, is unchanged.
         editMenu.addItem(.separator())
+        // Moves a pixel selection's edges in to what is inside it. ⌥A: no other key uses ⌥ with A.
+        editMenu.addItem(item("Fit Selection to Content", #selector(EditorWindowController.fitSelectionToContent(_:)), "a", .option))
         editMenu.addItem(item("Mask Sensitive Info", #selector(EditorWindowController.maskSensitiveInfo(_:)), ""))
         // Crop & Resize. Rotate and Resize Image… take ⌥⌘ shortcuts (⌘R alone is Send to Raycast AI Chat). Crop &
         // Resize and Background Tool (checked while the panel is open) have their letters instead, since a plain letter

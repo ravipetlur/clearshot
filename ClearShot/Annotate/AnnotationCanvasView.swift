@@ -74,7 +74,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         updateFrameSize()
         observeEditor()
         registerForDraggedTypes([.fileURL] + ImageInput.dataTypes)
-        installColorHoverTracking()
+        installPointerTracking()
         selectTool.onEditText = { [unowned self] id in beginEditingText(id, isNew: false) }
         _ = ruler
     }
@@ -448,7 +448,10 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         addCursorRect(bounds, cursor: spaceHeld && !editor.isCanvasLocked ? .openHand : zHeld ? .crosshair : tool.cursor)
     }
 
-    override func mouseMoved(with event: NSEvent) { colorHoverMoved(to: event) }
+    override func mouseMoved(with event: NSEvent) {
+        colorHoverMoved(to: event)
+        ruler.mouseMoved()
+    }
     override func mouseExited(with event: NSEvent) { colorHoverEnded() }
 
     override func mouseDown(with event: NSEvent) {
@@ -797,8 +800,6 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
 
     // MARK: Keys
-
-    override func mouseMoved(with event: NSEvent) { ruler.mouseMoved() }
 
     override func flagsChanged(with event: NSEvent) {
         ruler.flagsChanged(event)

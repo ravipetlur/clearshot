@@ -21,8 +21,6 @@ final class RulerController {
     init(canvas: AnnotationCanvasView, editor: AnnotationEditor) {
         self.canvas = canvas
         self.editor = editor
-        canvas.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: canvas,
-                                              userInfo: nil))
     }
 
     /// Whether a measurement is being made: an arrow key is held and nothing says otherwise.

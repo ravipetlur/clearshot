@@ -1,4 +1,6 @@
+import AppKit
 import CoreGraphics
+import CoreText
 import CSCore
 import Foundation
 
@@ -67,12 +69,46 @@ public enum RulerGeometry {
         return CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
     }
 
-    /// The painted bounds of the line and its caps (the label is not counted: its size is the renderer's).
+    /// The label's font size in base pixels: 11 points at the picture's scale, larger beside a thick line.
+    public static func labelFontSize(lineWidth: Double, pixelScale: Double) -> Double {
+        max(11 * pixelScale, lineWidth * 3.5)
+    }
+
+    /// The label as the renderer draws it: its text set in `font`, on a rounded plate at `frame` with corners of `padding`.
+    struct LabelPlate {
+        var frame: CGRect
+        var font: NSFont
+        var line: CTLine
+        /// The text's optical bounds, relative to its baseline origin.
+        var textBounds: CGRect
+        var padding: Double
+    }
+
+    /// The ruler's label plate (`labelFrame`), or nil for a ruler without a label. The text color is `textColor`, which
+    /// doesn't change the plate's size.
+    static func labelPlate(of ruler: RulerObject, lineWidth: Double, textColor: CGColor? = nil) -> LabelPlate? {
+        guard let label = ruler.label, !label.isEmpty else { return nil }
+        let size = ruler.labelFontSize ?? labelFontSize(lineWidth: lineWidth, pixelScale: 1)
+        guard size.isFinite, size > 0 else { return nil }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
+        var attributes: [NSAttributedString.Key: Any] = [.font: font]
+        if let textColor { attributes[NSAttributedString.Key(kCTForegroundColorAttributeName as String)] = textColor }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: label, attributes: attributes))
+        let text = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+        let padding = font.pointSize * 0.3
+        let plateSize = CGSize(width: text.width + 2 * padding, height: font.pointSize * 1.3 + padding)
+        return LabelPlate(frame: labelFrame(of: ruler, size: plateSize, lineWidth: lineWidth), font: font, line: line,
+                          textBounds: text, padding: padding)
+    }
+
+    /// The painted bounds of the line, its caps and, for a labeled ruler, its label's plate.
     public static func bounds(of ruler: RulerObject, lineWidth: Double) -> CGRect {
         let points = [ruler.start, ruler.end] + caps(of: ruler, lineWidth: lineWidth).flatMap { [$0.0, $0.1] }
         let xs = points.map(\.x), ys = points.map(\.y)
-        return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+        let line = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
             .insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+        guard let plate = labelPlate(of: ruler, lineWidth: lineWidth)?.frame, plate.isFiniteRect else { return line }
+        return line.union(plate)
     }
 
     private static func unitDirection(of ruler: RulerObject) -> CGVector {
@@ -83,22 +119,37 @@ public enum RulerGeometry {
 }
 
 extension SizeUnit {
-    /// The unit Settings › Annotate › Show sizes in has now. A ruler's label is made wherever the picture is drawn, an export
-    /// included, which has no preferences store at hand: this reads the standard defaults the store writes to.
-    public static var stored: SizeUnit {
-        SizeUnit.read(from: .standard, key: Prefs.annotateSizeUnit.name) ?? Prefs.annotateSizeUnit.defaultValue
-    }
+    /// The unit a ruler's label is written in when the caller doesn't say: Settings › Annotate › Show sizes in's default.
+    /// The app passes the setting itself to the renderer (`Renderer.render(_:images:rulerUnit:)`).
+    public static let rulerDefault = Prefs.annotateSizeUnit.defaultValue
 }
 
 extension AnnotationDocument {
-    /// `objects` with each ruler's `label` set: the length as the picture is now, in `unit`.
-    func labelingRulers(_ objects: [AnnotationObject], in unit: SizeUnit) -> [AnnotationObject] {
-        objects.map { object in
-            guard case .ruler(var ruler) = object.kind else { return object }
-            ruler.label = RulerGeometry.labelText(of: ruler, in: self, unit: unit)
-            var copy = object
-            copy.kind = .ruler(ruler)
-            return copy
-        }
+    /// `objects` with each ruler's `label` set: the length as the picture is now, in `unit`, at the size the renderer
+    /// writes it.
+    public func labelingRulers(_ objects: [AnnotationObject], in unit: SizeUnit) -> [AnnotationObject] {
+        objects.map { labelingRuler($0, in: unit) }
+    }
+
+    private func labelingRuler(_ object: AnnotationObject, in unit: SizeUnit) -> AnnotationObject {
+        guard case .ruler(var ruler) = object.kind else { return object }
+        ruler.label = RulerGeometry.labelText(of: ruler, in: self, unit: unit)
+        ruler.labelFontSize = RulerGeometry.labelFontSize(lineWidth: object.style.lineWidth, pixelScale: pixelScale)
+        var copy = object
+        copy.kind = .ruler(ruler)
+        return copy
+    }
+
+    /// The objects in `visualOrder`, with each ruler labeled in `rulerUnit`: what the renderer draws.
+    public func drawingOrder(rulerUnit: SizeUnit) -> [AnnotationObject] {
+        labelingRulers(visualOrder, in: rulerUnit)
+    }
+
+    /// Everything `object` paints when this document draws it, in base pixels (`ObjectGeometry.bounds`), a ruler's label
+    /// included. With `rulerUnit` nil a ruler's bounds hold its label in either unit, so they don't depend on a setting.
+    public func paintedBounds(of object: AnnotationObject, rulerUnit: SizeUnit? = nil) -> CGRect {
+        guard case .ruler = object.kind else { return ObjectGeometry.bounds(of: object) }
+        let units = rulerUnit.map { [$0] } ?? SizeUnit.allCases
+        return units.reduce(CGRect.null) { $0.union(ObjectGeometry.bounds(of: labelingRuler(object, in: $1))) }
     }
 }

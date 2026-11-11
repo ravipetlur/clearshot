@@ -125,7 +125,7 @@ extension Renderer {
     /// raster kept in `cache`. `analysis` is the content's, when the caller has measured it already.
     static func drawBackgrounded(_ document: AnnotationDocument, background: DocumentBackground, analysis: ContentAnalysis? = nil,
                                  images: ImageStore, in context: CGContext, cache: RenderCache?, hiding hidden: Set<UUID>,
-                                 deviceScale: Double, useObjectCache: Bool) {
+                                 deviceScale: Double, useObjectCache: Bool, rulerUnit: SizeUnit) {
         guard let base = images[document.base] else { return }
         let analysis = analysis ?? contentAnalysis(for: document, images: images, cache: cache)
         guard let layout = document.backgroundLayout(trims: analysis.trims) else { return }
@@ -138,7 +138,7 @@ extension Renderer {
             nil
         }
         // The document's visual order: redactions first, which are drawn with the content.
-        let objects = document.visualOrder.filter { !hidden.contains($0.id) }
+        let objects = document.drawingOrder(rulerUnit: rulerUnit).filter { !hidden.contains($0.id) }
         let layer = BackgroundLayer(document: document, background: background, layout: layout, trims: analysis.trims,
                                     picture: picture, base: base,
                                     redactions: objects.filter { if case .redact = $0.kind { true } else { false } })

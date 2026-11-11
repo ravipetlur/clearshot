@@ -103,6 +103,8 @@ public final class AnnotationEditor {
     @ObservationIgnored var picturePixelsRebuild: Task<Void, Never>?
     @ObservationIgnored public let undoManager = UndoManager()
     @ObservationIgnored public let preferences: Preferences
+    /// The unit rulers are labeled in: Settings › Annotate › Show sizes in, read now.
+    public var rulerUnit: SizeUnit { preferences[Prefs.annotateSizeUnit] }
     @ObservationIgnored private var liveSnapshot: AnnotationDocument?
     /// A slider drag opened the live change that is open. One that was already open (the text being typed) isn't the
     /// drag's to end, or to start over.

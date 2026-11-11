@@ -43,10 +43,10 @@ extension AnnotationDocument {
         backgroundLayout(trims: trims)?.frame ?? canvasBounds
     }
 
-    /// An object's painted bounds in output pixels: its base-pixel bounds through the image operations. Null for an
-    /// object that paints nothing.
+    /// An object's painted bounds in output pixels: its base-pixel bounds (`paintedBounds(of:)`, a ruler's label in either
+    /// unit included) through the image operations. Null for an object that paints nothing.
     public func outputBounds(of object: AnnotationObject) -> CGRect {
-        let bounds = ObjectGeometry.bounds(of: object)
+        let bounds = paintedBounds(of: object)
         guard !bounds.isNull else { return .null }
         return bounds.applying(transform.transform)
     }

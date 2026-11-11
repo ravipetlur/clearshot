@@ -25,7 +25,7 @@ enum ObjectClipboard {
         var images: [ImageRef: CGImage]
     }
 
-    static func write(_ objects: [AnnotationObject], document: AnnotationDocument, images: ImageStore) {
+    static func write(_ objects: [AnnotationObject], document: AnnotationDocument, images: ImageStore, rulerUnit: SizeUnit) {
         var bitmaps: [String: Data] = [:]
         for object in objects {
             guard case .image(let picture) = object.kind, bitmaps[picture.image.name] == nil, let image = images[picture.image],
@@ -37,7 +37,7 @@ enum ObjectClipboard {
         if let data = try? JSONEncoder().encode(payload) { item.setData(data, forType: type) }
         // The picture is in base pixels, `pixelScale` of them to a point in a picture the editor exports (whose
         // `renderedScale` is that times the resize's scale), so the objects come out the size they are there.
-        if let image = Renderer.renderObjects(objects, document: document, images: images),
+        if let image = Renderer.renderObjects(objects, document: document, images: images, rulerUnit: rulerUnit),
            let png = try? ImageEncoder.encode(image, as: .png, quality: 1, pixelsPerPoint: document.pixelScale) {
             item.setData(png, forType: .png)
         }

@@ -24,9 +24,10 @@ extension AnnotateManager {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let document = editor.document
         let images = editor.images
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Void, any Error> in
             Result {
-                let data = try BeforeAfterGIF.data(for: document, images: images)
+                let data = try BeforeAfterGIF.data(for: document, images: images, rulerUnit: rulerUnit)
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
             }

@@ -182,7 +182,8 @@ final class SelectTool: ToolController {
         case .marquee(let start, let kept):
             let rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
             marquee = rect
-            let inside = editor.document.objects.filter { ObjectGeometry.bounds(of: $0).intersects(rect) }.map(\.id)
+            let document = editor.document, unit = editor.rulerUnit
+            let inside = document.objects.filter { document.paintedBounds(of: $0, rulerUnit: unit).intersects(rect) }.map(\.id)
             editor.selection = kept.union(inside)
         case .pixelMarquee(let start):
             marquee = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))

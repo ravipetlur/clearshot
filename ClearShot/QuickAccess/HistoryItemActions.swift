@@ -279,10 +279,11 @@ final class HistoryItemActions {
     ///
     /// Throws when the render or the save fails. Once the working copy has been replaced the outcome is a success, even when
     /// the saved file then couldn't be rewritten: that is `savedFileError`, for the caller to report, and the returned item
-    /// is for the caller to record in the store. Runs off the main actor, like everything it calls.
+    /// is for the caller to record in the store. Runs off the main actor, like everything it calls. Rulers are labeled in
+    /// `rulerUnit` (Settings › Annotate › Show sizes in).
     nonisolated static func writeDocument(_ document: AnnotationDocument, images: ImageStore, to item: HistoryItem, root: URL,
-                                          quality: Double) throws -> (item: HistoryItem, savedFileError: (any Error)?) {
-        guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
+                                          quality: Double, rulerUnit: SizeUnit) throws -> (item: HistoryItem, savedFileError: (any Error)?) {
+        guard let rendered = Renderer.render(document, images: images, rulerUnit: rulerUnit) else { throw CaptureError.cannotTransform }
         var updated = try AnnotationStorage.save(document, images: images, rendered: rendered, to: item, root: root)
         let savedFileError = rewriteSavedFile(of: item, with: rendered, quality: quality, updating: &updated)
         return (updated, savedFileError)
@@ -409,6 +410,7 @@ final class HistoryItemActions {
         }
         let root = history.root
         let quality = preferences[Prefs.imageQuality]
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         history.holds.hold(item.id)
         defer { history.holds.release(item.id) }
         let outcome = await Task.detached(priority: .userInitiated) {
@@ -420,7 +422,8 @@ final class HistoryItemActions {
                         let outputSize = Renderer.outputBounds(of: opened.document, images: opened.images, cache: nil).size
                         let op = opened.document.imageOp(for: change, itemScale: item.scale, outputSize: outputSize)
                         let document = opened.document.applying(op)
-                        let written = try Self.writeDocument(document, images: opened.images, to: item, root: root, quality: quality)
+                        let written = try Self.writeDocument(document, images: opened.images, to: item, root: root, quality: quality,
+                                                             rulerUnit: rulerUnit)
                         return (written.item, written.savedFileError, document)
                     }
                     Log.history.info("Couldn't read the annotations of \(item.displayName); changing its working copy instead")

@@ -9,8 +9,9 @@ import Foundation
 public enum Renderer {
     /// The finished document at output pixel size: the background's frame, or the canvas without a background
     /// (`outputBounds(of:images:cache:)`). Nil when the base image is missing, the output is empty or too big, or a bitmap
-    /// can't be made. Uses no cache.
-    public static func render(_ document: AnnotationDocument, images: ImageStore) -> CGImage? {
+    /// can't be made. Uses no cache. Rulers are labeled in `rulerUnit` (the app passes Settings › Annotate › Show sizes in).
+    public static func render(_ document: AnnotationDocument, images: ImageStore,
+                              rulerUnit: SizeUnit = .rulerDefault) -> CGImage? {
         guard let base = images[document.base] else { return nil }
         // With a background, the content is measured once, for the frame and for the drawing alike.
         let analysis = document.background.map { _ in contentAnalysis(for: document, images: images, cache: nil) }
@@ -27,9 +28,9 @@ public enum Renderer {
         context.translateBy(x: -output.minX, y: -output.minY)
         if let background = document.background {
             drawBackgrounded(document, background: background, analysis: analysis, images: images, in: context, cache: nil,
-                             hiding: [], deviceScale: 1, useObjectCache: false)
+                             hiding: [], deviceScale: 1, useObjectCache: false, rulerUnit: rulerUnit)
         } else {
-            draw(document, images: images, in: context)
+            draw(document, images: images, in: context, rulerUnit: rulerUnit)
         }
         return context.makeImage()
     }
@@ -41,18 +42,20 @@ public enum Renderer {
     ///   sizes are in that scaled space, so they are divided by it to look the same size as in an export.
     /// - `useObjectCache` draws shadowed objects, and a background under the objects, from rasters kept in `cache`, within
     ///   its budget (the canvas only; exports draw everything afresh).
+    /// - `rulerUnit` is the unit rulers are labeled in.
     public static func draw(_ document: AnnotationDocument, images: ImageStore, in context: CGContext, cache: RenderCache? = nil,
-                            hiding hidden: Set<UUID> = [], deviceScale: Double = 1, useObjectCache: Bool = false) {
+                            hiding hidden: Set<UUID> = [], deviceScale: Double = 1, useObjectCache: Bool = false,
+                            rulerUnit: SizeUnit = .rulerDefault) {
         cache?.frame += 1
         if let background = document.background {
             drawBackgrounded(document, background: background, images: images, in: context, cache: cache, hiding: hidden,
-                             deviceScale: deviceScale, useObjectCache: useObjectCache)
+                             deviceScale: deviceScale, useObjectCache: useObjectCache, rulerUnit: rulerUnit)
             return
         }
         guard let base = images[document.base] else { return }
         let canvas = document.canvasBounds
         // The document's visual order, which hit testing reverses: what is drawn on top is what a click picks.
-        let objects = document.visualOrder.filter { !hidden.contains($0.id) }
+        let objects = document.drawingOrder(rulerUnit: rulerUnit).filter { !hidden.contains($0.id) }
         fillCanvas(document, base: base, canvas: canvas, in: context, cache: cache)
         // The base with the redactions in it, so nothing beside one samples what it hides. Each is drawn over it again
         // below, on whole device pixels.
@@ -232,11 +235,13 @@ public enum Renderer {
     }
 
     /// Only `objects`, on transparency, cropped to their bounds plus room for shadows ("Copy Object to Clipboard"). In
-    /// base pixels, unaffected by image operations. Drawn in the canvas's order, so they stack as they do there.
-    public static func renderObjects(_ objects: [AnnotationObject], document: AnnotationDocument, images: ImageStore) -> CGImage? {
-        guard let first = objects.first else { return nil }
+    /// base pixels, unaffected by image operations. Drawn in the canvas's order, so they stack as they do there, with
+    /// rulers labeled in `rulerUnit`.
+    public static func renderObjects(_ objects: [AnnotationObject], document: AnnotationDocument, images: ImageStore,
+                                     rulerUnit: SizeUnit = .rulerDefault) -> CGImage? {
+        guard !objects.isEmpty else { return nil }
         let margin = 8 * document.pixelScale
-        let bounds = objects.dropFirst().reduce(ObjectGeometry.bounds(of: first)) { $0.union(ObjectGeometry.bounds(of: $1)) }
+        let bounds = objects.reduce(CGRect.null) { $0.union(document.paintedBounds(of: $1, rulerUnit: rulerUnit)) }
             .insetBy(dx: -margin, dy: -margin).integral
         guard bounds.width > 0, bounds.height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: Int(bounds.width), height: Int(bounds.height), bitsPerComponent: 8,
@@ -250,7 +255,7 @@ public enum Renderer {
         let base = images[document.base]
         // The canvas's order (`AnnotationDocument.visualOrder`): redactions first, then everything else, counters last.
         // A spotlight draws nothing on its own.
-        for object in document.visualOrder where ids.contains(object.id) {
+        for object in document.drawingOrder(rulerUnit: rulerUnit) where ids.contains(object.id) {
             if case .magnifier(let magnifier) = object.kind {
                 // The callout shows the document's picture with its redactions, as on the canvas.
                 let picture = base.map { magnifiedPicture(of: document, base: $0, cache: nil) }

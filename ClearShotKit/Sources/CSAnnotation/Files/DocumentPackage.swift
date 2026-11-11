@@ -76,7 +76,7 @@ public enum DocumentPackage {
         }
         // Look at the version first, so a newer format gets its own message rather than "damaged".
         struct Version: Decodable { var version: Int }
-        if let version = try? JSONDecoder().decode(Version.self, from: data).version, version > AnnotationDocument.currentVersion {
+        if let version = try? JSONDecoder().decode(Version.self, from: data).version, !AnnotationDocument.canRead(version: version) {
             throw DocumentError.newerVersion
         }
         let document: AnnotationDocument

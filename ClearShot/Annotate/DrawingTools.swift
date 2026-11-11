@@ -59,8 +59,9 @@ final class ShapeTool: ToolController {
 
     private func object(in rect: CGRect) -> AnnotationObject {
         let settings = editor.settings
-        let style = editor.newStyle(lineWidthPoints: ToolSizes.lineWidth(settings.sizeLevel),
-                                    handDrawable: self.kind == .rectangle || self.kind == .ellipse)
+        let width = ToolSizes.lineWidth(settings.sizeLevel)
+        let style = self.kind == .rectangle || self.kind == .ellipse
+            ? editor.newShapeStyle(lineWidthPoints: width) : editor.newStyle(lineWidthPoints: width)
         let kind: ObjectKind = switch self.kind {
         case .rectangle: .rectangle(rect)
         case .filledRectangle: .filledRectangle(rect)

@@ -79,6 +79,14 @@ extension AnnotationEditor {
         }
     }
 
+    /// `newStyle` with the remembered fill, for a rectangle or an ellipse.
+    public func newShapeStyle(lineWidthPoints: Double) -> ObjectStyle {
+        var style = newStyle(lineWidthPoints: lineWidthPoints, handDrawable: true)
+        style.fillColor = settings.fillColor
+        style.fillOpacity = settings.fillOpacity
+        return style
+    }
+
     /// Which tool's controls the property bar shows: the current tool, or with Select, the one selected object's kind.
     /// While text is being typed that is the text controls, even when a double-click under Select started the edit.
     public var styleContext: EditorTool {
@@ -108,6 +116,37 @@ extension AnnotationEditor {
             case .redact, .spotlight, .image: break
             default: object.style.color = color
             }
+        }
+    }
+
+    /// The fill color of rectangles and ellipses; nil follows the stroke's color. Picking one while there is no fill
+    /// gives it a half-opaque fill, so the pick shows.
+    public func setFillColor(_ color: RGBAColor?, coalescing: Bool = false) {
+        settings.fillColor = color
+        if settings.fillOpacity == 0, color != nil { settings.fillOpacity = 0.5 }
+        let opacity = settings.fillOpacity
+        restyleSelection("Change Fill", coalescing: coalescing) { object, _ in
+            guard Self.takesFill(object.kind) else { return }
+            object.style.fillColor = color
+            if object.style.fillOpacity == 0, color != nil { object.style.fillOpacity = opacity }
+        }
+    }
+
+    /// The fill opacity, 0 (no fill) to 1. A slider drag is one undo step (`sliderEditingChanged`).
+    public func setFillOpacity(_ opacity: Double, coalescing: Bool = false) {
+        let opacity = min(max(opacity, 0), 1)
+        settings.fillOpacity = opacity
+        restyleSelection("Change Fill", coalescing: coalescing) { object, _ in
+            guard Self.takesFill(object.kind) else { return }
+            object.style.fillOpacity = opacity
+        }
+    }
+
+    /// Whether the kind takes a fill: the outlined rectangle and ellipse (a filled rectangle is already filled).
+    private static func takesFill(_ kind: ObjectKind) -> Bool {
+        switch kind {
+        case .rectangle, .ellipse: true
+        default: false
         }
     }
 
@@ -310,6 +349,10 @@ extension AnnotationEditor {
             adopted.highlightOpacity = highlight.opacity
         case .image:
             break
+        case .rectangle, .ellipse:
+            adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
+            adopted.fillColor = object.style.fillColor
+            adopted.fillOpacity = object.style.fillOpacity
         default:
             adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
             if Self.hasRoughStrokes(object.kind) { adopted.handDrawn = object.style.handDrawn }

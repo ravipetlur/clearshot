@@ -93,11 +93,13 @@ public enum ObjectGeometry {
             return shapePath(of: spotlight).copy(strokingWithWidth: 2 * tolerance, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
                 .contains(point)
         case .rectangle(let rect):
+            if object.style.hasFill { return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) }
             let inner = rect.insetBy(dx: width + tolerance, dy: width + tolerance)
             return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) && !(inner.width > 0 && inner.height > 0 && inner.contains(point))
         case .ellipse(let rect):
             let inner = rect.insetBy(dx: width + tolerance, dy: width + tolerance)
             let insideOuter = ellipseContains(rect.insetBy(dx: -tolerance, dy: -tolerance), point)
+            if object.style.hasFill { return insideOuter }
             let insideInner = inner.width > 0 && inner.height > 0 && ellipseContains(inner, point)
             return insideOuter && !insideInner
         case .line(let start, let end):

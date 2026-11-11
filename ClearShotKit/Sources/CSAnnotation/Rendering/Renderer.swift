@@ -133,6 +133,11 @@ public enum Renderer {
         case .rectangle(let rect):
             let inner = rect.insetBy(dx: width / 2, dy: width / 2)
             if inner.width > 0, inner.height > 0 {
+                if object.style.hasFill {
+                    context.setFillColor(fillColor(of: object.style, stroke: color))
+                    context.addPath(roundedRect(inner, radius: width))
+                    context.fillPath()
+                }
                 if object.style.handDrawn {
                     let amplitude = RoughPath.amplitude(lineWidth: width, extent: min(inner.width, inner.height))
                     context.addPath(RoughPath.path(from: RoughPath.rectangle(inner, amplitude: amplitude, seed: object.style.seed)))
@@ -149,6 +154,10 @@ public enum Renderer {
         case .ellipse(let rect):
             let inner = rect.insetBy(dx: width / 2, dy: width / 2)
             if inner.width > 0, inner.height > 0 {
+                if object.style.hasFill {
+                    context.setFillColor(fillColor(of: object.style, stroke: color))
+                    context.fillEllipse(in: inner)
+                }
                 if object.style.handDrawn {
                     let amplitude = RoughPath.amplitude(lineWidth: width, extent: min(inner.width, inner.height))
                     context.addPath(RoughPath.path(from: RoughPath.ellipse(inner, amplitude: amplitude, seed: object.style.seed)))
@@ -264,6 +273,12 @@ public enum Renderer {
 
     /// Whether the style color's alpha is the object's opacity. The highlighter has its own opacity (and multiplies),
     /// redactions and spotlights have no color, and an image is drawn as it is.
+    /// A shape's fill, painted under its stroke: its own color, or the stroke's, at the fill opacity.
+    private static func fillColor(of style: ObjectStyle, stroke: RGBAColor) -> CGColor {
+        let base = style.fillColor ?? stroke
+        return base.withAlpha(base.alpha * style.fillOpacity).cgColor
+    }
+
     private static func usesColorAlpha(_ kind: ObjectKind) -> Bool {
         switch kind {
         case .highlight, .redact, .spotlight, .image: false

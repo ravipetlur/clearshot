@@ -120,6 +120,8 @@ struct PropertyBar: View {
             Slider(value: Binding(get: { editor.settings.highlightOpacity }, set: { editor.setHighlightOpacity($0) }), in: 0.1...0.9,
                    label: { Text("Opacity") }, onEditingChanged: dragging("Change Highlight"))
                 .frame(width: 120)
+        case .rectangle, .ellipse:
+            FillControl(editor: editor)
         case .pen:
             Toggle("Smooth", isOn: Binding(get: { editor.preferences[Prefs.annotateSmoothDrawing] }, set: { editor.setSmoothDrawing($0) }))
                 .toggleStyle(.checkbox)

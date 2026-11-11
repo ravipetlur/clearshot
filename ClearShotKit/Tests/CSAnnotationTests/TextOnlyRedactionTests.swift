@@ -276,10 +276,10 @@ struct TextOnlyRedactionRenderTests {
         ])
         let cache = RenderCache()
         nonisolated(unsafe) var asked: [CGRect] = []
-        cache.effect = { redact, region, base, scale, seed in
+        cache.effect = { redact, region, input, scale, seed in
             asked.append(region)
             #expect(redact.rect == region)
-            return Redaction.image(for: redact, region: region, base: base, pixelScale: scale, seed: seed)
+            return Redaction.image(for: redact, region: region, input: input, pixelScale: scale, seed: seed)
         }
         Renderer.draw(document, images: images, in: TestBitmaps.flippedContext(120, 40), cache: cache)
         #expect(Set(asked.map { "\($0)" }) == Set(areas.map { "\($0)" }))

@@ -13,6 +13,9 @@ struct CachedWordRedaction {
     var object: RedactObject
     var regions: [CGRect]
     var base: CGImage
+    /// What an Erase reads around each word (`RedactionInput`): another redaction changing beside it makes the words again.
+    var surroundings: CGImage
+    var excluded: [CGRect]
     var pixelScale: Double
     var images: [CGImage]
 }
@@ -34,14 +37,16 @@ extension Renderer {
     ///
     /// `complete` is false when an effect couldn't be made; that cover is then black, and nothing of it is cached, so the
     /// next frame tries again. Empty when the redaction covers no base pixel.
-    static func redactionCovers(_ redact: RedactObject, id: UUID, base: CGImage?, pixelScale: Double,
-                                cache: RenderCache?) -> (covers: [RedactionCover], complete: Bool) {
+    /// `redactions` are the document's, which an Erase reads around (`redactionInput`), for the whole rect or per word.
+    static func redactionCovers(_ redact: RedactObject, id: UUID, base: CGImage?, redactions: [RedactionKey],
+                                pixelScale: Double, cache: RenderCache?) -> (covers: [RedactionCover], complete: Bool) {
         let whole = redact.rect.standardized.integral
         guard let base else { return ([RedactionCover(region: whole, image: nil)], true) }
         let picture = redact.wordsForRect == nil ? nil : wordsPicture(redact, id: id, base: base, cache: cache)
         if redact.coversWholeRect(picture: picture) {
             if redact.style == .blackOut { return ([RedactionCover(region: whole, image: nil)], true) }
-            guard let (region, image) = redactionEffect(redact, id: id, base: base, pixelScale: pixelScale, cache: cache)
+            guard let (region, image) = redactionEffect(redact, id: id, base: base, redactions: redactions, pixelScale: pixelScale,
+                                                        cache: cache)
             else { return ([], true) }
             return ([RedactionCover(region: region, image: image)], image != nil)
         }
@@ -51,7 +56,10 @@ extension Renderer {
             return region.isNull || region.width < 1 || region.height < 1 ? nil : region
         }
         if redact.style == .blackOut { return (regions.map { RedactionCover(region: $0, image: nil) }, true) }
-        let images = wordEffects(redact, id: id, regions: regions, base: base, pixelScale: pixelScale, cache: cache)
+        // An Erase whose surroundings can't be made is black, as a failed effect is.
+        guard let input = redactionInput(redact, id: id, base: base, redactions: redactions, pixelScale: pixelScale, cache: cache)
+        else { return (regions.map { RedactionCover(region: $0, image: nil) }, false) }
+        let images = wordEffects(redact, id: id, regions: regions, input: input, pixelScale: pixelScale, cache: cache)
         return (zip(regions, images).map { RedactionCover(region: $0, image: $1) }, !images.contains { $0 == nil })
     }
 
@@ -67,21 +75,23 @@ extension Renderer {
     /// The effect of `redact`'s style on each of `regions` (whole base pixels), from `cache` while nothing they are made from
     /// has changed. Each region has a seed of its own (`seed(_:for:)`), so no two words share their noise. Kept only when
     /// every one was made.
-    private static func wordEffects(_ redact: RedactObject, id: UUID, regions: [CGRect], base: CGImage, pixelScale: Double,
-                                    cache: RenderCache?) -> [CGImage?] {
+    private static func wordEffects(_ redact: RedactObject, id: UUID, regions: [CGRect], input: RedactionInput,
+                                    pixelScale: Double, cache: RenderCache?) -> [CGImage?] {
+        let base = input.base
         if let cached = cache?.wordRedactions[id], cached.object == redact, cached.regions == regions, cached.base === base,
-           cached.pixelScale == pixelScale {
+           cached.surroundings === input.surroundings, cached.excluded == input.excluded, cached.pixelScale == pixelScale {
             return cached.images
         }
         let effect = cache?.effect ?? Redaction.image
         let images = regions.map { region -> CGImage? in
             var piece = redact
             piece.rect = region
-            return effect(piece, region, base, pixelScale, seed(id, for: region))
+            return effect(piece, region, input, pixelScale, seed(id, for: region))
         }
         let made = images.compactMap(\.self)
         cache?.wordRedactions[id] = made.count == images.count
-            ? CachedWordRedaction(object: redact, regions: regions, base: base, pixelScale: pixelScale, images: made)
+            ? CachedWordRedaction(object: redact, regions: regions, base: base, surroundings: input.surroundings,
+                                  excluded: input.excluded, pixelScale: pixelScale, images: made)
             : nil
         return images
     }

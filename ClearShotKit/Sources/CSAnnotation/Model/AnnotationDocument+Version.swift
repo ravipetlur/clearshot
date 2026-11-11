@@ -56,6 +56,7 @@ extension AnnotationDocument {
     public static func requiredVersion(of redact: RedactObject) -> Int {
         let style = switch redact.style {
         case .pixelate, .secureBlur, .smoothBlur, .blackOut: baseVersion
+        case .erase: 3
         }
         return redact.textOnly ? max(style, 3) : style
     }

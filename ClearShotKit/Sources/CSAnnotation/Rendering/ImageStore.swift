@@ -42,11 +42,15 @@ public struct ImageStore: Sendable {
 }
 
 /// A redaction's effect image, with everything it was computed from: the object, its region, the base it read and the
-/// pixel scale that sized its blocks. It is reused only while all of those are unchanged.
+/// pixel scale that sized its blocks. It is reused only while all of those are unchanged. An Erase also depends on the
+/// other redactions: through `surroundings` (compared by identity: a new picture whenever any redaction that isn't an
+/// Erase is added, moved, restyled or deleted) and `excluded` (the other Erases' areas).
 struct CachedRedaction {
     var object: RedactObject
     var region: CGRect
     var base: CGImage
+    var surroundings: CGImage
+    var excluded: [CGRect]
     var pixelScale: Double
     var image: CGImage
 }
@@ -118,6 +122,8 @@ public final class RenderCache {
     /// Text-only redactions' fingerprints of the pixels under them, by object (`Renderer.redactionCovers`).
     var wordsPictures: [UUID: CachedWordsPicture] = [:]
     var redactedBase: CachedRedactedBase?
+    /// The base with only the redactions that aren't Erases in it: what Erases read their rings from.
+    var eraseSurroundings: CachedRedactedBase?
     var objectRasters: [UUID: CachedObjectRaster] = [:]
     var backgroundLayer: CachedBackgroundLayer?
     /// How a redaction's image is made. Tests replace it to make the effect fail.

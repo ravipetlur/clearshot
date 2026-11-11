@@ -4,13 +4,22 @@ import Foundation
 
 /// Redaction, computed from the base pixels under the region only. Pixelate averages each block and adds random
 /// per-block noise, seeded by the object's id so every render is identical. That way the original can't be recovered
-/// from the blocks.
+/// from the blocks. Erase is the one made from outside the region instead: from the pixels around it only (`EraseFill`),
+/// read from a picture that already hides what the other redactions hide (`RedactionInput`).
 enum Redaction {
-    typealias Effect = (RedactObject, CGRect, CGImage, Double, UUID) -> CGImage?
+    typealias Effect = (RedactObject, CGRect, RedactionInput, Double, UUID) -> CGImage?
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
+    static func image(for redact: RedactObject, region: CGRect, input: RedactionInput, pixelScale: Double, seed: UUID) -> CGImage? {
+        if redact.style == .erase { return EraseFill.image(input.surroundings, region: region, excluding: input.excluded) }
+        return image(for: redact, region: region, base: input.base, pixelScale: pixelScale, seed: seed)
+    }
+
+    /// The effect read from `base` alone. For an Erase, `base` must be the picture its ring may be read from
+    /// (`RedactionInput.surroundings`).
     static func image(for redact: RedactObject, region: CGRect, base: CGImage, pixelScale: Double, seed: UUID) -> CGImage? {
+        if redact.style == .erase { return EraseFill.image(base, region: region) }
         guard let crop = base.cropping(to: region) else { return nil }
         let intensity = Double(min(max(redact.intensity, 1), 10))
         let scale = pixelScale.isFinite && pixelScale > 0 ? min(pixelScale, 64) : 1
@@ -23,7 +32,7 @@ enum Redaction {
             return blurred(blocks, sigma: intensity * 1.5 * scale)
         case .smoothBlur:
             return blurred(crop, sigma: intensity * 2 * scale)
-        case .blackOut:
+        case .blackOut, .erase:
             return nil
         }
     }
@@ -107,6 +116,30 @@ enum Redaction {
         let input = CIImage(cgImage: image)
         let output = input.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: input.extent)
         return ciContext.createCGImage(output, from: input.extent)
+    }
+}
+
+/// What a redaction's effect reads.
+///
+/// Every effect but Erase reads the pixels under its own region from `base`: they are what it hides. An Erase reads
+/// a ring outside its region, which may lie under another redaction, so it reads `surroundings` instead: the base with
+/// every redaction that isn't an Erase drawn in (their effects, or black), whatever their order, and leaves out the ring
+/// pixels in `excluded`, the other Erases' areas (two Erases can't each be made from the other). So no Erase reads a
+/// pixel another redaction hides, and none depends on the order of the redactions (`Renderer.redactionInput`).
+struct RedactionInput {
+    var base: CGImage
+    var surroundings: CGImage
+    var excluded: [CGRect]
+
+    /// The input of every effect but Erase, and of an Erase alone in its document.
+    init(base: CGImage) {
+        self.init(base: base, surroundings: base, excluded: [])
+    }
+
+    init(base: CGImage, surroundings: CGImage, excluded: [CGRect]) {
+        self.base = base
+        self.surroundings = surroundings
+        self.excluded = excluded
     }
 }
 

@@ -106,12 +106,18 @@ struct DocumentVersionTests {
         #expect(Self.document(with: plain).requiredVersion == 2)
     }
 
-    @Test func everyRedactionStyleNeedsTheBaseVersionToday() {
-        for style in RedactStyle.allCases {
+    @Test func everyRedactionStyleButEraseNeedsTheBaseVersion() {
+        for style in RedactStyle.allCases where style != .erase {
             let redact = RedactObject(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: style, intensity: 5)
             #expect(AnnotationDocument.requiredVersion(of: redact) == 2)
             #expect(Self.document(with: [Self.object(.redact(redact))]).requiredVersion == 2)
         }
+    }
+
+    @Test func anEraseNeedsVersionThree() {
+        let redact = RedactObject(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: .erase, intensity: 5)
+        #expect(AnnotationDocument.requiredVersion(of: redact) == 3)
+        #expect(Self.document(with: [Self.object(.redact(redact))]).requiredVersion == 3)
     }
 
     @Test func aTextOnlyRedactionNeedsVersionThree() {

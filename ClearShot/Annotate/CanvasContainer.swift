@@ -66,6 +66,8 @@ final class CanvasController {
     @ObservationIgnored weak var canvas: AnnotationCanvasView?
     /// Tells the person an image couldn't be read or added (the window controller supplies it).
     @ObservationIgnored var imageProblem: ((ImageProblem) -> Void)?
+    /// Says a color was copied (the window controller supplies it).
+    @ObservationIgnored var colorCopied: ((String) -> Void)?
     /// Shows or hides the Background panel, for the canvas's letter (the window controller supplies it).
     @ObservationIgnored var toggleBackgroundPanel: (() -> Void)?
 
@@ -117,6 +119,7 @@ struct CanvasContainer: NSViewRepresentable {
         canvas.magnification = { [weak scrollView] in Double(scrollView?.magnification ?? 1) }
         canvas.fitToWindow = { [weak controller] in controller?.zoomToFit() }
         canvas.imageProblem = { [weak controller] problem in controller?.imageProblem?(problem) }
+        canvas.colorCopied = { [weak controller] text in controller?.colorCopied?(text) }
         canvas.toggleBackgroundPanel = { [weak controller] in controller?.toggleBackgroundPanel?() }
         scrollView.documentView = canvas
         scrollView.isLocked = { [weak editor] in editor?.isCanvasLocked ?? false }

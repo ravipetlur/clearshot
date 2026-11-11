@@ -55,6 +55,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.setContentSize(Self.initialSize(for: editor))
         // Before the canvas exists: it passes these on through the controller.
         canvas.imageProblem = { [weak self] problem in self?.showImageProblem(problem) }
+        canvas.colorCopied = { [weak self] text in self?.manager.hud.show(text, symbol: "eyedropper") }
         canvas.toggleBackgroundPanel = { [weak self] in self?.toggleBackgroundTool(nil) }
         observeEdits()
         // Scans the picture the editor opened with, and again whenever it changes.

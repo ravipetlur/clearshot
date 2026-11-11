@@ -43,6 +43,11 @@ struct PropertyBar: View {
                 SizePicker(level: editor.settings.sizeLevel) { editor.setSizeLevel($0) }
             }
             options
+            if context == .rectangle || context == .ellipse || context == .arrow || context == .text {
+                Toggle("Hand-drawn", isOn: Binding(get: { editor.settings.handDrawn }, set: { editor.setHandDrawn($0) }))
+                    .toggleStyle(.checkbox)
+                    .help("Draw with a rough, sketched look. Reroll it with ⇧⌘R.")
+            }
             Spacer()
             if context != .redact, context != .spotlight, context != .highlighter {
                 Toggle("Shadow", isOn: Binding(get: { editor.preferences[Prefs.annotateObjectShadows] }, set: { editor.setShadows($0) }))

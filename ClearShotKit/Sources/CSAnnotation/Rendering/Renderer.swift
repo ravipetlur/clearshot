@@ -133,7 +133,12 @@ public enum Renderer {
         case .rectangle(let rect):
             let inner = rect.insetBy(dx: width / 2, dy: width / 2)
             if inner.width > 0, inner.height > 0 {
-                context.addPath(roundedRect(inner, radius: width))
+                if object.style.handDrawn {
+                    let amplitude = RoughPath.amplitude(lineWidth: width, extent: min(inner.width, inner.height))
+                    context.addPath(RoughPath.path(from: RoughPath.rectangle(inner, amplitude: amplitude, seed: object.style.seed)))
+                } else {
+                    context.addPath(roundedRect(inner, radius: width))
+                }
                 context.strokePath()
             } else {
                 context.fill(rect)
@@ -144,7 +149,13 @@ public enum Renderer {
         case .ellipse(let rect):
             let inner = rect.insetBy(dx: width / 2, dy: width / 2)
             if inner.width > 0, inner.height > 0 {
-                context.strokeEllipse(in: inner)
+                if object.style.handDrawn {
+                    let amplitude = RoughPath.amplitude(lineWidth: width, extent: min(inner.width, inner.height))
+                    context.addPath(RoughPath.path(from: RoughPath.ellipse(inner, amplitude: amplitude, seed: object.style.seed)))
+                    context.strokePath()
+                } else {
+                    context.strokeEllipse(in: inner)
+                }
             } else {
                 context.fillEllipse(in: rect)
             }
@@ -153,7 +164,9 @@ public enum Renderer {
             context.addLine(to: end)
             context.strokePath()
         case .arrow(let arrow):
-            let parts = ArrowGeometry.parts(for: arrow, width: width)
+            let parts = object.style.handDrawn
+                ? ArrowGeometry.roughParts(for: arrow, width: width, seed: object.style.seed)
+                : ArrowGeometry.parts(for: arrow, width: width)
             context.addPath(parts.shaft)
             context.strokePath()
             for fill in parts.fills {

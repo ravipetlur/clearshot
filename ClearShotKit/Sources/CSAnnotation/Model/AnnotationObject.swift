@@ -70,32 +70,50 @@ public enum CounterStyle: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// Color, line width (base pixels) and shadow, shared by every object.
+/// Color, line width (base pixels) and shadow, shared by every object, and the hand-drawn look of the rectangle, ellipse and
+/// arrow: `handDrawn` draws them as rough strokes, which `seed` fixes, so every draw of the object is the same shape (text
+/// keeps its own flag, `TextObject.handDrawn`, since laying it out needs it).
 public struct ObjectStyle: Codable, Equatable, Sendable {
     public var color: RGBAColor
     public var lineWidth: Double
     public var shadow: Bool
+    public var handDrawn: Bool
+    public var seed: UInt32
 
-    public init(color: RGBAColor, lineWidth: Double, shadow: Bool) {
+    public init(color: RGBAColor, lineWidth: Double, shadow: Bool, handDrawn: Bool = false, seed: UInt32 = 0) {
         self.color = color
         self.lineWidth = lineWidth
         self.shadow = shadow
+        self.handDrawn = handDrawn
+        self.seed = seed
     }
 
     private enum CodingKeys: String, CodingKey {
-        case color, lineWidth, shadow
+        case color, lineWidth, shadow, handDrawn, seed
     }
 
-    /// `shadow` is optional on disk so a style saved before it existed still decodes; encoding stays synthesized.
+    /// `shadow`, `handDrawn` and `seed` are optional on disk so a style saved before they existed still decodes.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         color = try container.decode(RGBAColor.self, forKey: .color)
         lineWidth = try container.decode(Double.self, forKey: .lineWidth)
         shadow = try container.decodeIfPresent(Bool.self, forKey: .shadow) ?? false
+        handDrawn = try container.decodeIfPresent(Bool.self, forKey: .handDrawn) ?? false
+        seed = try container.decodeIfPresent(UInt32.self, forKey: .seed) ?? 0
+    }
+
+    /// The hand-drawn keys are written only when they matter, so a document without hand-drawn objects is written as before.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(color, forKey: .color)
+        try container.encode(lineWidth, forKey: .lineWidth)
+        try container.encode(shadow, forKey: .shadow)
+        if handDrawn { try container.encode(true, forKey: .handDrawn) }
+        if seed != 0 { try container.encode(seed, forKey: .seed) }
     }
 }
 
-/// The head is at `end`; a double-headed arrow has one at `start` too. `control` bends a curved arrow.
+/// The head is at `end`; a double-headed arrow has one at `start` too. `control` bends the arrow, whatever its style (a curved one starts bent); nil is straight.
 public struct ArrowShape: Codable, Equatable, Sendable {
     public var start: CGPoint
     public var end: CGPoint
@@ -111,20 +129,47 @@ public struct ArrowShape: Codable, Equatable, Sendable {
 }
 
 /// Text laid out from `origin` (the box's top-left). `width` nil grows with the text on one line per paragraph; a width
-/// wraps it into left-aligned paragraphs.
+/// wraps it into left-aligned paragraphs. `handDrawn` sets it in a handwriting font.
 public struct TextObject: Codable, Equatable, Sendable {
     public var origin: CGPoint
     public var width: Double?
     public var string: String
     public var style: TextStyle
     public var fontSize: Double
+    public var handDrawn: Bool
 
-    public init(origin: CGPoint, width: Double? = nil, string: String, style: TextStyle, fontSize: Double) {
+    public init(origin: CGPoint, width: Double? = nil, string: String, style: TextStyle, fontSize: Double, handDrawn: Bool = false) {
         self.origin = origin
         self.width = width
         self.string = string
         self.style = style
         self.fontSize = fontSize
+        self.handDrawn = handDrawn
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case origin, width, string, style, fontSize, handDrawn
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        origin = try container.decode(CGPoint.self, forKey: .origin)
+        width = try container.decodeIfPresent(Double.self, forKey: .width)
+        string = try container.decode(String.self, forKey: .string)
+        style = try container.decode(TextStyle.self, forKey: .style)
+        fontSize = try container.decode(Double.self, forKey: .fontSize)
+        handDrawn = try container.decodeIfPresent(Bool.self, forKey: .handDrawn) ?? false
+    }
+
+    /// Written only when set, so a document without hand-drawn text is written as before.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(origin, forKey: .origin)
+        try container.encodeIfPresent(width, forKey: .width)
+        try container.encode(string, forKey: .string)
+        try container.encode(style, forKey: .style)
+        try container.encode(fontSize, forKey: .fontSize)
+        if handDrawn { try container.encode(true, forKey: .handDrawn) }
     }
 }
 

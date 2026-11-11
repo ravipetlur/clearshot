@@ -27,6 +27,8 @@ enum MainMenu {
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(NSMenuItem(title: "Duplicate", action: #selector(AnnotationCanvasView.duplicate(_:)), keyEquivalent: "d"))
+        // ⇧⌘R, not ⌘R: that is taken by File's send item.
+        editMenu.addItem(item("Reroll Hand-drawn Style", #selector(AnnotationCanvasView.rerollHandDrawn(_:)), "r", [.command, .shift]))
         // No shortcut: the canvas's own Delete key deletes the selection.
         editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
         // Scans the picture for emails, keys, card numbers and the like and pixelates them. No key equivalent, so the shortcut

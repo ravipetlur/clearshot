@@ -67,6 +67,11 @@ final class SelectTool: ToolController {
         moved = false
         // A handle of the one selected object.
         if let handle = handle(at: point), let id = editor.selection.first, let object = editor.object(id) {
+            if handle == .control, event.clickCount == 2 {
+                // Double-clicking an arrow's bend handle straightens it.
+                editor.straightenArrow(id)
+                return
+            }
             let spot = ObjectGeometry.handlePoint(handle, of: object)
             editor.beginLiveChange()
             drag = .handle(original: object, handle: handle, offset: CGVector(dx: spot.x - point.x, dy: spot.y - point.y))

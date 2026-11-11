@@ -750,8 +750,15 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         editor.duplicateSelection()
     }
 
+    /// Edit › Reroll Hand-drawn Style (⇧⌘R): draws the selected hand-drawn shapes again, differently.
+    @objc func rerollHandDrawn(_ sender: Any?) {
+        guard editor.crop == nil else { return }
+        editor.rerollHandDrawn()
+    }
+
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(rerollHandDrawn(_:)): editor.crop == nil && editor.canRerollHandDrawn
         case #selector(copy(_:)): true
         case #selector(cut(_:)), #selector(delete(_:)): !editor.selection.isEmpty
         case #selector(duplicate(_:)): editor.crop == nil && !editor.selection.isEmpty

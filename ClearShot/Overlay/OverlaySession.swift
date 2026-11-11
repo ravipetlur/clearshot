@@ -52,10 +52,16 @@ final class OverlaySession {
     private var mode: OverlayMode
     private(set) var frozen: Bool
     private(set) var overlayWindows: [UInt32: OverlayWindow] = [:]
-    private var controller: SelectionController?
+    private(set) var controller: SelectionController?
     private var activeDisplay: DisplayInfo?
     var hoveredWindow: WindowRecord?
     var modifiers: SelectionModifiers = []
+    /// Z is held: the zoom lens shows (`OverlaySession+PointerTools`).
+    var zoomHeld = false
+    /// ⌘ held: the pointer's precise position (`OverlaySession+PointerTools`).
+    var precision = PrecisionPointer()
+    /// The pointer as the last mouse event or nudge put it, which the lens follows.
+    var lastPointer: CGPoint?
     /// All-In-One's mode and selection; nil in the `.capture` style.
     var allInOne: AllInOneController?
     /// All-In-One's toolbar; nil in the `.capture` style.
@@ -148,6 +154,7 @@ final class OverlaySession {
     func finish(_ outcome: OverlayOutcome) {
         guard let continuation else { return }
         self.continuation = nil
+        pointerToolsEnd()
         NSCursor.pop()
         // All-In-One's toolbar, hover label and ratio list, the scrolling toolbar and tips, and Ready's toolbar and lists are
         // children of an overlay window: they go first.
@@ -170,6 +177,8 @@ final class OverlaySession {
     // MARK: Events
 
     func mouseMoved(to point: CGPoint, flags: NSEvent.ModifierFlags) {
+        lastPointer = point
+        defer { updateLens() }
         if case .allInOne = style { allInOneMouseMoved(to: point, flags: flags); return }
         if isScrollingSelection { scrollingMouseMoved(to: point, flags: flags); return }
         if isRecordingSelection { recordingMouseMoved(to: point, flags: flags); return }
@@ -184,6 +193,8 @@ final class OverlaySession {
     }
 
     func mouseDown(at point: CGPoint, flags: NSEvent.ModifierFlags) {
+        lastPointer = point
+        defer { updateLens() }
         if case .allInOne = style { allInOneMouseDown(at: point, flags: flags); return }
         if isScrollingSelection { scrollingMouseDown(at: point, flags: flags); return }
         if isRecordingSelection { recordingMouseDown(at: point, flags: flags); return }
@@ -202,6 +213,8 @@ final class OverlaySession {
     }
 
     func mouseDragged(to point: CGPoint, flags: NSEvent.ModifierFlags) {
+        lastPointer = point
+        defer { updateLens() }
         if case .allInOne = style { allInOneMouseDragged(to: point, flags: flags); return }
         if isScrollingSelection { scrollingMouseDragged(to: point, flags: flags); return }
         if isRecordingSelection { recordingMouseDragged(to: point, flags: flags); return }
@@ -211,6 +224,8 @@ final class OverlaySession {
     }
 
     func mouseUp(at point: CGPoint, flags: NSEvent.ModifierFlags) {
+        lastPointer = point
+        defer { updateLens() }
         if case .allInOne = style { allInOneMouseUp(at: point, flags: flags); return }
         if isScrollingSelection { scrollingMouseUp(at: point, flags: flags); return }
         if isRecordingSelection { recordingMouseUp(at: point, flags: flags); return }
@@ -231,9 +246,11 @@ final class OverlaySession {
     }
 
     func keyDown(_ event: NSEvent) {
+        if zoomKey(event, down: true) { return }
         if case .allInOne = style { allInOneKeyDown(event); return }
         if isScrollingSelection { scrollingKeyDown(event); return }
         if isRecordingSelection { recordingKeyDown(event); return }
+        if nudgeKeyDown(event) { return }
         switch event.keyCode {
         case 53: // Esc
             finish(.cancelled)
@@ -258,6 +275,7 @@ final class OverlaySession {
     }
 
     func keyUp(_ event: NSEvent) {
+        if zoomKey(event, down: false) { return }
         if case .allInOne = style { allInOneKeyUp(event); return }
         if isScrollingSelection { scrollingKeyUp(event); return }
         if isRecordingSelection { recordingKeyUp(event); return }

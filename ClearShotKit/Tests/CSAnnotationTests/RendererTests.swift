@@ -508,9 +508,10 @@ struct RendererRedactionTests {
         let rect = CGRect(x: 20, y: 20, width: 40, height: 40)
         let noise = TestBitmaps.noise(size, size)
         // The same picture inside the redaction (so the redaction itself is the same), and a different one around it.
+        // Erase is made from the pixels around it instead, so for it the picture differs inside.
         var bytes = TestBitmaps.bytes(noise)
         for y in 0..<size {
-            for x in 0..<size where !rect.contains(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) {
+            for x in 0..<size where rect.contains(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) == (style == .erase) {
                 for channel in 0..<3 { bytes[(y * size + x) * 4 + channel] = 255 - bytes[(y * size + x) * 4 + channel] }
             }
         }

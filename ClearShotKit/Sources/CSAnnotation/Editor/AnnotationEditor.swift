@@ -306,8 +306,9 @@ public final class AnnotationEditor {
         selection = [object.id]
     }
 
+    /// Deletes the selected objects; with none, erases the pixel selection (`erasePixelSelection`).
     public func deleteSelection() {
-        guard !selection.isEmpty else { return }
+        guard !selection.isEmpty else { return erasePixelSelection() }
         let ids = selection
         change("Delete") { $0.objects.removeAll { ids.contains($0.id) } }
         selection = []

@@ -955,7 +955,9 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         switch menuItem.action {
         case #selector(rerollHandDrawn(_:)): editor.crop == nil && editor.canRerollHandDrawn
         case #selector(copy(_:)): true
-        case #selector(cut(_:)), #selector(delete(_:)): !editor.selection.isEmpty
+        case #selector(cut(_:)): !editor.selection.isEmpty
+        // With no object selected, Delete erases the pixel selection.
+        case #selector(delete(_:)): !editor.selection.isEmpty || (editor.pixelSelection != nil && editor.crop == nil)
         case #selector(duplicate(_:)): editor.crop == nil && !editor.selection.isEmpty
         case #selector(paste(_:)): editor.crop == nil && (ObjectClipboard.hasObjects || ImageInput.hasImage(.general))
         case #selector(selectAll(_:)): editor.crop == nil

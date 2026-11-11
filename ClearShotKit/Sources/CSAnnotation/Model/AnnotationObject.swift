@@ -33,7 +33,8 @@ public enum TextStyle: String, Codable, CaseIterable, Sendable {
 }
 
 public enum RedactStyle: String, Codable, CaseIterable, Sendable {
-    case pixelate, secureBlur, smoothBlur, blackOut
+    /// Erase fills the area from the pixels around it (`EraseFill`).
+    case pixelate, secureBlur, smoothBlur, blackOut, erase
 
     public var title: String {
         switch self {
@@ -41,6 +42,7 @@ public enum RedactStyle: String, Codable, CaseIterable, Sendable {
         case .secureBlur: "Blur (secure)"
         case .smoothBlur: "Blur (smooth)"
         case .blackOut: "Black out"
+        case .erase: "Erase"
         }
     }
 }

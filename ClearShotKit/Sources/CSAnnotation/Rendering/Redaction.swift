@@ -4,13 +4,14 @@ import Foundation
 
 /// Redaction, computed from the base pixels under the region only. Pixelate averages each block and adds random
 /// per-block noise, seeded by the object's id so every render is identical. That way the original can't be recovered
-/// from the blocks.
+/// from the blocks. Erase is the one made from outside the region instead: from the pixels around it only (`EraseFill`).
 enum Redaction {
     typealias Effect = (RedactObject, CGRect, CGImage, Double, UUID) -> CGImage?
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
     static func image(for redact: RedactObject, region: CGRect, base: CGImage, pixelScale: Double, seed: UUID) -> CGImage? {
+        if redact.style == .erase { return EraseFill.image(base, region: region) }
         guard let crop = base.cropping(to: region) else { return nil }
         let intensity = Double(min(max(redact.intensity, 1), 10))
         let scale = pixelScale.isFinite && pixelScale > 0 ? min(pixelScale, 64) : 1
@@ -23,7 +24,7 @@ enum Redaction {
             return blurred(blocks, sigma: intensity * 1.5 * scale)
         case .smoothBlur:
             return blurred(crop, sigma: intensity * 2 * scale)
-        case .blackOut:
+        case .blackOut, .erase:
             return nil
         }
     }

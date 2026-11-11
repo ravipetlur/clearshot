@@ -338,17 +338,31 @@ public enum Renderer {
             fill = color
         case .auto:
             guard expanded else { return }
-            if let cached = cache?.edgeColor, cached.base === base {
-                fill = cached.color
-            } else {
-                let color = EdgeColor.dominant(in: base)
-                cache?.edgeColor = (base, color)
-                fill = color
-            }
+            fill = autoEdgeColor(of: document, base: base, cache: cache)
         }
         guard let fill else { return }
         context.setFillColor(fill.cgColor)
         context.fill(canvas)
+    }
+
+    /// The colour Auto fills with (the expanded canvas, a magnifier's backdrop, a background's inset): the dominant edge
+    /// colour (`EdgeColor`) of the base with every redaction in it (`redactedBase`, the copy the canvas draws, from the same
+    /// slot of `cache`), never of the base itself, so a redaction along the picture's edge gives nothing of what it hides
+    /// away in the colour. Kept in `cache` by that copy's identity. White, as `EdgeColor` gives when it can't read the
+    /// picture, when the copy can't be made.
+    static func autoEdgeColor(of document: AnnotationDocument, base: CGImage, cache: RenderCache?) -> RGBAColor {
+        autoEdgeColor(of: redactedBase(base, redactions: RedactionKey.all(in: document.visualOrder),
+                                       pixelScale: document.pixelScale, cache: cache)?.image,
+                      cache: cache)
+    }
+
+    /// `autoEdgeColor(of:base:cache:)` of a redacted base already made (nil when it couldn't be).
+    static func autoEdgeColor(of redacted: CGImage?, cache: RenderCache?) -> RGBAColor {
+        guard let redacted else { return .white }
+        if let cached = cache?.edgeColor, cached.base === redacted { return cached.color }
+        let color = EdgeColor.dominant(in: redacted)
+        cache?.edgeColor = (redacted, color)
+        return color
     }
 
     /// Dims everything outside the spotlights, in one fill: the canvas and the union of the lit shapes make one path,

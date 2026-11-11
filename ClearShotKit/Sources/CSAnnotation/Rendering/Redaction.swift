@@ -124,8 +124,9 @@ enum Redaction {
 /// Every effect but Erase reads the pixels under its own region from `base`: they are what it hides. An Erase reads
 /// a ring outside its region, which may lie under another redaction, so it reads `surroundings` instead: the base with
 /// every redaction that isn't an Erase drawn in (their effects, or black), whatever their order, and leaves out the ring
-/// pixels in `excluded`, the other Erases' areas (two Erases can't each be made from the other). So no Erase reads a
-/// pixel another redaction hides, and none depends on the order of the redactions (`Renderer.redactionInput`).
+/// pixels in `excluded`, the other Erases' areas (two Erases can't each be made from the other), and for one word of a
+/// text-only Erase its other words (`Renderer.wordInput`). So no Erase reads a pixel another redaction, or another word
+/// of its own, hides, and none depends on the order of the redactions (`Renderer.redactionInput`).
 struct RedactionInput {
     var base: CGImage
     var surroundings: CGImage

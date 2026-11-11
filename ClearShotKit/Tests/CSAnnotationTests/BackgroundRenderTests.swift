@@ -554,24 +554,28 @@ struct BackgroundRenderTests {
         #expect(cache.contentAnalysis == nil)
     }
 
-    @Test func theTrimsIgnoreRedactions() throws {
-        // A pixelate over the top margin: measured, its noise would make the margin uneven and leave it untrimmed.
+    @Test func theTrimsAreMeasuredWithTheRedactions() throws {
+        // A Black Out over the top margin and into the block: measured with it, the block starts at the top edge, so the
+        // top isn't trimmed. Measured without it, what the margin under it holds would decide.
         let base = margined(200, 160, margin: 40, edge: TestBitmaps.white, inside: TestBitmaps.black)
         let (plain, images) = backgrounded(base, style { $0.autoBalance = true; $0.fill = .blurredScreenshot })
         var redacted = plain
-        redacted.objects = [redaction(.pixelate, CGRect(x: 0, y: 0, width: 200, height: 60))]
-        let trims = EdgeTrims(top: 40, left: 40, bottom: 40, right: 40)
+        redacted.objects = [redaction(.blackOut, CGRect(x: 40, y: 0, width: 120, height: 60))]
+        let trims = EdgeTrims(top: 0, left: 40, bottom: 40, right: 40)
         #expect(Renderer.balanceTrims(for: redacted, images: images, cache: nil) == trims)
-        // With a cache, adding the redaction keeps the measured trims (a marked entry stays) and makes the blur again.
+        // With a cache, adding the redaction measures the trims again (a marked entry goes) and makes the blur again.
         let cache = RenderCache()
         _ = try drawn(plain, images, cache: cache)
         let blurred = cache.contentAnalysis?.blur?.image
-        let marked = EdgeTrims(top: 1, left: 2, bottom: 3, right: 4)
-        cache.contentAnalysis?.trims = marked
+        cache.contentAnalysis?.trims = EdgeTrims(top: 1, left: 2, bottom: 3, right: 4)
         _ = try drawn(redacted, images, cache: cache)
-        #expect(cache.contentAnalysis?.trims == marked)
+        #expect(cache.contentAnalysis?.trims == trims)
         #expect(cache.contentAnalysis?.blur?.image != nil)
         #expect(cache.contentAnalysis?.blur?.image !== blurred)
+        // The next frame reads them from the cache: a marked entry stays.
+        let marked = EdgeTrims(top: 1, left: 2, bottom: 3, right: 4)
+        cache.contentAnalysis?.trims = marked
+        #expect(Renderer.balanceTrims(for: redacted, images: images, cache: cache) == marked)
     }
 
     @Test func oneContentAnalysisServesTheTrimsAndTheBlur() {

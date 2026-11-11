@@ -28,8 +28,8 @@ extension Renderer {
 
     /// The canvas as rendered without any objects, redactions included, and without the background: the base after its
     /// image operations, over the canvas fill, cut to the canvas. It is exactly the canvas (`canvasBounds`), so the trims
-    /// auto-balance measures in its pixels apply from the canvas's origin. (The blurred screenshot is made from the content
-    /// with its redactions instead, `redactedContent`, so it never shows what they hide.)
+    /// auto-balance measures in its pixels apply from the canvas's origin. (With redactions, the trims and the blurred
+    /// screenshot are taken from the content with them instead, `redactedContent`, so neither tells what they hide.)
     public static func renderContent(_ document: AnnotationDocument, images: ImageStore) -> CGImage? {
         var content = document
         content.objects = []
@@ -38,7 +38,8 @@ extension Renderer {
     }
 
     /// Auto-balance's trims for the document's background: `.zero` unless the background has auto-balance on. Measured on
-    /// `renderContent` and kept in `cache` while the content is unchanged; measured every time without a cache.
+    /// the content with its redactions and kept in `cache` while the content and the redactions are unchanged; measured
+    /// every time without a cache.
     public static func balanceTrims(for document: AnnotationDocument, images: ImageStore, cache: RenderCache?) -> EdgeTrims {
         guard document.background?.style.autoBalance == true else { return .zero }
         return contentAnalysis(for: document, images: images, cache: cache, trims: true, blurred: false).trims
@@ -58,11 +59,10 @@ extension Renderer {
         return contentAnalysis(for: document, images: images, cache: cache, trims: style.autoBalance, blurred: blurred)
     }
 
-    /// The trims and the blurred content asked for. The trims are measured on the content without its redactions
-    /// (`renderContent`); the blur is made from the content with them (`redactedContent`), or from the same render when
-    /// there are none. The cache's entry for this content supplies what it has (the blur only while the redactions and the
-    /// pixel scale are the ones it was made with); what it lacks is made and kept in it. A content render that fails isn't
-    /// remembered, so the next call tries again.
+    /// The trims and the blurred content asked for, both from the content with its redactions (`redactedContent`), or
+    /// `renderContent` when there are none: so neither tells anything of what a redaction hides. The cache's entry for this
+    /// content supplies what it has (each only while the redactions and the pixel scale are the ones it was made with);
+    /// what it lacks is made and kept in it. A content render that fails isn't remembered, so the next call tries again.
     private static func contentAnalysis(for document: AnnotationDocument, images: ImageStore, cache: RenderCache?,
                                         trims wantsTrims: Bool, blurred wantsBlurred: Bool) -> ContentAnalysis {
         guard wantsTrims || wantsBlurred, let base = images[document.base] else { return ContentAnalysis(trims: .zero) }
@@ -70,17 +70,24 @@ extension Renderer {
             ?? CachedContentAnalysis(base: base, imageOps: document.imageOps, canvasBounds: document.canvasBounds,
                                      canvasFill: document.canvasFill)
         let redactions = RedactionKey.all(in: document.visualOrder)
-        let blurIsCurrent = entry.blur.map { $0.redactions == redactions && $0.pixelScale == document.pixelScale } ?? false
-        let needsTrims = wantsTrims && entry.trims == nil
+        let pixelScale = document.pixelScale
+        let blurIsCurrent = entry.blur.map { $0.redactions == redactions && $0.pixelScale == pixelScale } ?? false
+        let trimsAreCurrent = entry.trims != nil && entry.trimsRedactions == redactions && entry.trimsPixelScale == pixelScale
+        let needsTrims = wantsTrims && !trimsAreCurrent
         let needsBlurred = wantsBlurred && !blurIsCurrent
-        // A blur made under other redactions is never shown, even when a new one can't be made.
+        // Neither made under other redactions is used, even when a new one can't be made.
         if needsBlurred { entry.blur = nil }
-        let content = needsTrims || (needsBlurred && redactions.isEmpty) ? renderContent(document, images: images) : nil
-        if needsTrims, let content { entry.trims = AutoBalance.trims(of: content) }
-        if needsBlurred,
-           let source = redactions.isEmpty ? content : redactedContent(document, base: base, redactions: redactions, cache: cache),
-           let image = BackgroundBlur.blurred(source) {
-            entry.blur = CachedBlur(redactions: redactions, pixelScale: document.pixelScale, image: image)
+        if needsTrims { entry.trims = nil }
+        let content = !(needsTrims || needsBlurred) ? nil
+            : redactions.isEmpty ? renderContent(document, images: images)
+            : redactedContent(document, base: base, redactions: redactions, cache: cache)
+        if needsTrims, let content {
+            entry.trims = AutoBalance.trims(of: content)
+            entry.trimsRedactions = redactions
+            entry.trimsPixelScale = pixelScale
+        }
+        if needsBlurred, let content, let image = BackgroundBlur.blurred(content) {
+            entry.blur = CachedBlur(redactions: redactions, pixelScale: pixelScale, image: image)
         }
         cache?.contentAnalysis = entry
         return ContentAnalysis(trims: wantsTrims ? entry.trims ?? .zero : .zero, blurred: wantsBlurred ? entry.blur?.image : nil)
@@ -210,7 +217,7 @@ extension Renderer {
         context.addPath(roundedRect(layout.box, radius: layout.cornerRadius))
         context.clip()
         if layout.inset > 0 {
-            context.setFillColor(insetColor(style.insetColor, base: layer.base, cache: cache).cgColor)
+            context.setFillColor(insetColor(style.insetColor, document: layer.document, base: layer.base, cache: cache).cgColor)
             context.fill(layout.box)
         }
         context.clip(to: layout.content)
@@ -294,16 +301,12 @@ extension Renderer {
         }
     }
 
-    /// The inset's colour: the picture's edge colour (`EdgeColor`, kept in `cache`) for Auto.
-    private static func insetColor(_ color: InsetColor, base: CGImage, cache: RenderCache?) -> RGBAColor {
+    /// The inset's colour: for Auto, the redacted picture's edge colour (`autoEdgeColor`).
+    private static func insetColor(_ color: InsetColor, document: AnnotationDocument, base: CGImage,
+                                   cache: RenderCache?) -> RGBAColor {
         switch color {
-        case .color(let color):
-            return color
-        case .auto:
-            if let cached = cache?.edgeColor, cached.base === base { return cached.color }
-            let color = EdgeColor.dominant(in: base)
-            cache?.edgeColor = (base, color)
-            return color
+        case .color(let color): color
+        case .auto: autoEdgeColor(of: document, base: base, cache: cache)
         }
     }
 

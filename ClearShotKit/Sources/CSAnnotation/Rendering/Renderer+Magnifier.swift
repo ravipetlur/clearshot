@@ -28,13 +28,7 @@ extension Renderer {
         case .color(let color):
             backdrop = color
         case .auto:
-            if let cached = cache?.edgeColor, cached.base === base {
-                backdrop = cached.color
-            } else {
-                let color = EdgeColor.dominant(in: base)
-                cache?.edgeColor = (base, color)
-                backdrop = color
-            }
+            backdrop = autoEdgeColor(of: redacted?.image, cache: cache)
         }
         return MagnifiedPicture(base: redacted?.image, baseSize: document.baseSize,
                                 images: order.filter { if case .image = $0.kind { true } else { false } },

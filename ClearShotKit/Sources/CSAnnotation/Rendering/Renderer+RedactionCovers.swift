@@ -75,6 +75,11 @@ extension Renderer {
     /// The effect of `redact`'s style on each of `regions` (whole base pixels), from `cache` while nothing they are made from
     /// has changed. Each region has a seed of its own (`seed(_:for:)`), so no two words share their noise. Kept only when
     /// every one was made.
+    ///
+    /// An Erase's ring around one word may fall on another word of the same redaction, which its surroundings still show as
+    /// it is (they hold only the redactions that aren't Erases), so every other region is left out of that word's ring too
+    /// (`wordInput`). The gaps between the words aren't: they show the picture as it is anyway. Those holes are a function
+    /// of `regions`, which the cache already compares.
     private static func wordEffects(_ redact: RedactObject, id: UUID, regions: [CGRect], input: RedactionInput,
                                     pixelScale: Double, cache: RenderCache?) -> [CGImage?] {
         let base = input.base
@@ -83,10 +88,11 @@ extension Renderer {
             return cached.images
         }
         let effect = cache?.effect ?? Redaction.image
-        let images = regions.map { region -> CGImage? in
+        let images = regions.enumerated().map { index, region -> CGImage? in
             var piece = redact
             piece.rect = region
-            return effect(piece, region, input, pixelScale, seed(id, for: region))
+            return effect(piece, region, wordInput(input, style: redact.style, regions: regions, word: index), pixelScale,
+                          seed(id, for: region))
         }
         let made = images.compactMap(\.self)
         cache?.wordRedactions[id] = made.count == images.count
@@ -94,6 +100,14 @@ extension Renderer {
                                   excluded: input.excluded, pixelScale: pixelScale, images: made)
             : nil
         return images
+    }
+
+    /// What the effect of word `word` of `regions` reads: `input`, and for an Erase every other word's region left out of
+    /// its ring as well, as another Erase's area is (`RedactionInput.excluded`), so no word's fill reads what another hides.
+    static func wordInput(_ input: RedactionInput, style: RedactStyle, regions: [CGRect], word: Int) -> RedactionInput {
+        guard style == .erase, regions.count > 1 else { return input }
+        let others = regions.enumerated().filter { $0.offset != word }.map(\.element)
+        return RedactionInput(base: input.base, surroundings: input.surroundings, excluded: input.excluded + others)
     }
 
     /// The noise seed of one word area of redaction `id`: the redaction's id mixed with the area, so every area has noise of

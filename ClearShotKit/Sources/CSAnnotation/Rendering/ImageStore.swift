@@ -63,8 +63,12 @@ struct CachedContentAnalysis {
     var imageOps: [ImageOp]
     var canvasBounds: CGRect
     var canvasFill: CanvasFill
-    /// Auto-balance's trims (`AutoBalance.trims(of:)`), measured on the content without its redactions.
+    /// Auto-balance's trims (`AutoBalance.trims(of:)`), measured on the content with its redactions
+    /// (`Renderer.redactedContent`), so they tell nothing of what the redactions hide.
     var trims: EdgeTrims?
+    /// The redactions, in drawing order, and the pixel scale `trims` were measured with: other ones measure them again.
+    var trimsRedactions: [RedactionKey] = []
+    var trimsPixelScale: Double = 1
     /// The Blurred screenshot fill's picture.
     var blur: CachedBlur?
 
@@ -110,7 +114,7 @@ struct RedactionKey: Equatable {
 /// - redacted regions, by object, and the base with all the redactions in it;
 /// - shadowed objects' rasters, by object (see `CachedObjectRaster`);
 /// - the background's layer: everything a background draws under the objects, as one raster (see `CachedBackgroundLayer`);
-/// - the base's edge color;
+/// - the redacted base's edge color (`Renderer.autoEdgeColor`), by that copy's identity;
 /// - what the background takes from the content: auto-balance's trims and the blurred screenshot.
 ///
 /// The rasters (the objects' and the layer's) share one budget (`rasterBudget`, `RasterBudget`). Use one cache per canvas,

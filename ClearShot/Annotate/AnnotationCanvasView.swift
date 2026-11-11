@@ -264,7 +264,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         // The editor's cache: the frame `displayRect` measured is the one drawn, from the same auto-balance measurement.
         Renderer.draw(document, images: editor.images, in: context, cache: editor.renderCache,
                       hiding: editor.editingTextID.map { [$0] } ?? [], deviceScale: Double(window?.backingScaleFactor ?? 1),
-                      useObjectCache: true)
+                      useObjectCache: true, rulerUnit: editor.rulerUnit)
         context.restoreGState()
         drawSelection(in: context, shown: shown)
         drawPixelSelection(in: context, shown: shown)
@@ -348,7 +348,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
                 sources.append(viewRect(fromBase: magnifier.source, shown: shown))
                 continue
             }
-            context.addRect(viewRect(fromBase: ObjectGeometry.bounds(of: object), shown: shown))
+            context.addRect(viewRect(fromBase: editor.document.paintedBounds(of: object, rulerUnit: editor.rulerUnit), shown: shown))
         }
         context.setLineDash(phase: 0, lengths: [4 / zoom, 3 / zoom])
         context.strokePath()
@@ -1113,7 +1113,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     @objc func copy(_ sender: Any?) {
         let objects = editor.selectedObjects
         guard !objects.isEmpty else { copyWholeImage?(); return }
-        ObjectClipboard.write(objects, document: editor.document, images: editor.images)
+        ObjectClipboard.write(objects, document: editor.document, images: editor.images, rulerUnit: editor.rulerUnit)
     }
 
     @objc func cut(_ sender: Any?) {

@@ -277,4 +277,57 @@ struct RulerTests {
         let wild = try JSONDecoder().decode(AnnotateToolSettings.self, from: Data(#"{"rulerTolerance":900}"#.utf8))
         #expect(wild.rulerTolerance == 64)
     }
+
+    // MARK: The unit and the label's bounds
+
+    @Test func theRendererLabelsInTheUnitItIsGiven() throws {
+        var (document, images) = TestBitmaps.document(base: TestBitmaps.solid(160, 80, TestBitmaps.white))
+        document.pixelScale = 2
+        document.objects = [AnnotationObject(kind: .ruler(RulerObject(start: CGPoint(x: 10, y: 60), end: CGPoint(x: 130, y: 60))),
+                                             style: ObjectStyle(color: RGBAColor(red: 1, green: 0, blue: 0), lineWidth: 4, shadow: false))]
+        #expect(try rulerKind(of: document.drawingOrder(rulerUnit: .points)[0]).label == "60 pt")
+        #expect(try rulerKind(of: document.drawingOrder(rulerUnit: .pixels)[0]).label == "120 px")
+        // The order itself carries no label: only a draw does.
+        #expect(try rulerKind(of: document.visualOrder[0]).label == nil)
+        let points = try #require(Renderer.render(document, images: images, rulerUnit: .points))
+        let pixels = try #require(Renderer.render(document, images: images, rulerUnit: .pixels))
+        #expect(TestBitmaps.bytes(points) != TestBitmaps.bytes(pixels))
+        // Without a unit, the setting's default: points.
+        let unsaid = try #require(Renderer.render(document, images: images))
+        #expect(SizeUnit.rulerDefault == .points)
+        #expect(TestBitmaps.bytes(unsaid) == TestBitmaps.bytes(points))
+    }
+
+    @Test func theBoundsHoldTheLabelsPlate() throws {
+        var document = AnnotationDocument(baseSize: CGSize(width: 200, height: 100), pixelScale: 1)
+        let object = rulerObject()
+        document.objects = [object]
+        let line = ObjectGeometry.bounds(of: object)
+        for unit in SizeUnit.allCases {
+            let labeled = document.labelingRulers([object], in: unit)[0]
+            let plate = try #require(RulerGeometry.labelPlate(of: rulerKind(of: labeled), lineWidth: 4)).frame
+            let bounds = ObjectGeometry.bounds(of: labeled)
+            #expect(bounds.contains(plate) && bounds.contains(line))
+            #expect(plate.minY < line.minY)
+            #expect(document.paintedBounds(of: object, rulerUnit: unit) == bounds)
+            // Without a unit the bounds hold the label in either.
+            #expect(document.paintedBounds(of: object).contains(bounds))
+        }
+    }
+
+    @Test func theCanvasGrowsToHoldTheLabel() throws {
+        var document = AnnotationDocument(baseSize: CGSize(width: 200, height: 100), pixelScale: 1)
+        // The line and its caps are inside the picture; the label above it is not.
+        let object = AnnotationObject(kind: .ruler(RulerObject(start: CGPoint(x: 40, y: 15), end: CGPoint(x: 160, y: 15))),
+                                      style: ObjectStyle(color: .white, lineWidth: 4, shadow: false))
+        #expect(ObjectGeometry.bounds(of: object).minY > 0)
+        document.objects = [object]
+        #expect(document.outputBounds(of: object).minY < 0)
+        let expanded = document.expandedToFit()
+        let canvas = try #require(expanded.canvasRect)
+        #expect(canvas.contains(document.outputBounds(of: object)))
+        // Moved into the canvas, it is the label that is kept inside.
+        let clamped = document.clampedIntoCanvas([object])
+        #expect(document.canvasBounds.contains(document.outputBounds(of: clamped[0])))
+    }
 }

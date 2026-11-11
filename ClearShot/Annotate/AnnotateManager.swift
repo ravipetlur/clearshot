@@ -26,9 +26,9 @@ final class AnnotateManager {
     private var windows: [EditorWindowController] = []
     /// Documents being loaded, by item id or project path, so a fast second open can't make a second editor on one folder.
     private var opening: Set<String> = []
-    /// The drag file last made for each editor, with the document it shows, so dragging an unchanged document again
-    /// starts at once. Internal for AnnotateManager+Output.swift.
-    var dragFiles: [ObjectIdentifier: (document: AnnotationDocument, file: URL)] = [:]
+    /// The drag file last made for each editor, with the document it shows and the unit its rulers are labeled in, so
+    /// dragging an unchanged document again starts at once. Internal for AnnotateManager+Output.swift.
+    var dragFiles: [ObjectIdentifier: (document: AnnotationDocument, rulerUnit: SizeUnit, file: URL)] = [:]
     /// Area selection for Add Image › Take Screenshot: the picture and its pixels per point. The coordinator supplies it,
     /// because the capture flow is made after this manager. It calls `beforeSelecting` once the capture is allowed to start
     /// (no other is running, screen recording is allowed) and just before the selection begins, which is where the editor
@@ -207,6 +207,7 @@ final class AnnotateManager {
         // What is written is this snapshot; the person may keep drawing while it is.
         let document = editor.document
         let images = editor.images
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         // Read before the write: the first apply compares with the document the editor opened with.
         let addsCoverage = document.onlyAddsCoverage(since: editor.appliedDocument)
         switch editor.source {
@@ -221,7 +222,10 @@ final class AnnotateManager {
             let root = history.root
             let quality = preferences[Prefs.imageQuality]
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<(item: HistoryItem, savedFileError: (any Error)?), any Error> in
-                Result { try HistoryItemActions.writeDocument(document, images: images, to: current, root: root, quality: quality) }
+                Result {
+                    try HistoryItemActions.writeDocument(document, images: images, to: current, root: root, quality: quality,
+                                                         rulerUnit: rulerUnit)
+                }
             }.value
             switch outcome {
             case .success(let (updated, savedFileError)):
@@ -250,7 +254,9 @@ final class AnnotateManager {
         case .project(let url):
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Void, any Error> in
                 Result {
-                    guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
+                    guard let rendered = Renderer.render(document, images: images, rulerUnit: rulerUnit) else {
+                        throw CaptureError.cannotTransform
+                    }
                     try DocumentPackage.write(document, images: images, rendered: rendered, to: url)
                 }
             }.value
@@ -290,9 +296,12 @@ final class AnnotateManager {
             let root = history.root
             let createdAt = Date()
             let sourcePath = url.path(percentEncoded: false)
+            let rulerUnit = preferences[Prefs.annotateSizeUnit]
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<HistoryItem, any Error> in
                 Result {
-                    guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
+                    guard let rendered = Renderer.render(document, images: images, rulerUnit: rulerUnit) else {
+                        throw CaptureError.cannotTransform
+                    }
                     // The transparency check reads every pixel, so it belongs here and not on the main actor.
                     let details = HistoryWriter.Details(origin: .file, captureKind: .selection, displayName: name, savedURL: nil,
                                                         scale: document.renderedScale, appName: nil,

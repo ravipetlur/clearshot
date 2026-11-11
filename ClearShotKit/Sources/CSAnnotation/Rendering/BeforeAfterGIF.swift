@@ -43,9 +43,12 @@ public enum BeforeAfterGIF {
 
     /// The two frames, both at one size: the export without the topmost image, then the full export. When removing the
     /// image changes the output's size (a background that trims to its content), the smaller frame is centered on white.
-    public static func frames(for document: AnnotationDocument, images: ImageStore) throws -> [CGImage] {
+    /// Rulers are labeled in `rulerUnit`.
+    public static func frames(for document: AnnotationDocument, images: ImageStore,
+                              rulerUnit: SizeUnit = .rulerDefault) throws -> [CGImage] {
         guard let without = withoutTopmostImage(document) else { throw Failure.noImage }
-        guard let before = Renderer.render(without, images: images), let after = Renderer.render(document, images: images) else {
+        guard let before = Renderer.render(without, images: images, rulerUnit: rulerUnit),
+              let after = Renderer.render(document, images: images, rulerUnit: rulerUnit) else {
             throw Failure.cannotRender
         }
         let width = max(before.width, after.width), height = max(before.height, after.height)
@@ -53,8 +56,8 @@ public enum BeforeAfterGIF {
     }
 
     /// The GIF's bytes: the two frames, one global palette over both, looping forever.
-    public static func data(for document: AnnotationDocument, images: ImageStore) throws -> Data {
-        let frames = try frames(for: document, images: images).map(gifFrame)
+    public static func data(for document: AnnotationDocument, images: ImageStore, rulerUnit: SizeUnit = .rulerDefault) throws -> Data {
+        let frames = try frames(for: document, images: images, rulerUnit: rulerUnit).map(gifFrame)
         let palette = GIFQuantizer.palette(from: frames, colors: 255)
         var writer = try GIFWriter(sink: DataSink(), width: frames[0].width, height: frames[0].height, globalPalette: palette)
         for frame in frames {

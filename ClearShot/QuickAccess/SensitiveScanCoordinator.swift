@@ -333,10 +333,11 @@ final class SensitiveScanCoordinator {
         let size = entry.scannedSize
         let root = history.root
         let quality = preferences[Prefs.imageQuality]
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         let outcome = await Task.detached(priority: .userInitiated) {
             Result {
                 try SensitiveMasking.apply(findings, scannedSize: size, scannedPicture: scannedPicture, to: item, root: root,
-                                           quality: quality)
+                                           quality: quality, rulerUnit: rulerUnit)
             }
         }.value
         switch outcome {
@@ -385,8 +386,9 @@ final class SensitiveScanCoordinator {
         let ids = Set(entry.maskIDs)
         let root = history.root
         let quality = preferences[Prefs.imageQuality]
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         let outcome = await Task.detached(priority: .userInitiated) {
-            Result { try SensitiveMasking.remove(ids, from: item, root: root, quality: quality) }
+            Result { try SensitiveMasking.remove(ids, from: item, root: root, quality: quality, rulerUnit: rulerUnit) }
         }.value
         switch outcome {
         case .success(let removal):

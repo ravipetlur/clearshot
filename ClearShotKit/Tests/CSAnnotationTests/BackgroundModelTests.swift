@@ -89,7 +89,7 @@ struct BackgroundModelTests {
         document.isWindowShot = true
         let data = try JSONEncoder().encode(document)
         let saved = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(AnnotationDocument.currentVersion == 2)
+        #expect(AnnotationDocument.baseVersion == 2)
         #expect(saved["version"] as? Int == 2)
         #expect(saved["isWindowShot"] as? Bool == true)
         #expect(saved["background"] != nil)

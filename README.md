@@ -8,7 +8,7 @@ A screenshot and screen recording app for macOS that lives in the menu bar. It w
 
 - **Screenshots:** Capture Area, Capture Window (with or without its shadow and wallpaper), Capture Fullscreen, Capture Previous Area and a Self-Timer, plus All-In-One, one overlay for every kind of capture. A 10× lens, a slowed pointer and WASD keys help place a selection to the pixel, and the file format can be Automatic: PNG or JPEG, whichever suits the picture.
 - **Quick Access Overlay:** each capture appears as a thumbnail you can drag into any app, copy, save, annotate, pin or delete.
-- **Annotate:** an editor with shapes, lines and arrows, text, redaction (blur and pixelate), spotlight, counters, pen and highlighter, crop and resize, images, and a background tool (gradients, wallpapers, padding, shadow and rounded corners). Projects save as editable `.clearshot` documents.
+- **Annotate:** an editor with shapes, lines and arrows, text, redaction (pixelate, blur, black out, erase, and text only), spotlight, counters, pen and highlighter, crop and resize, images, and a background tool (gradients, wallpapers, padding, shadow and rounded corners). Projects save as editable `.clearshot` documents.
 - **Pixel tools in Annotate:** measure and sample the picture. A ruler, guides, colour copy, a contrast readout, a pixel selection with smart selection and zoom, and a magnifier callout. Shapes can be filled or hand-drawn, arrows bend, an added image can be made see-through, and File › Export Before/After GIF… writes a two-frame GIF.
 - **Capture Text:** reads the text (and QR codes) in an area or a window and copies it.
 - **Scrolling Capture:** stitches a page longer than the screen, scrolling by hand or by itself.
@@ -315,17 +315,20 @@ Annotate can measure and sample the picture. Everything here reads the picture a
 - **Magnifier** (`M`): drag over the part to magnify (⇧ for a square), or click for a 40 pt square. A callout of it appears beside it, at 3×, joined by a connector. Drag the callout's corners to resize it (the zoom changes), the middle of the source to move the source, and the source's bottom-right corner to resize the source. The property bar has Shape (Circle or Rounded square), Border and a Zoom stepper, 2× to 8×. The callout shows the picture with its redactions and added images, and never what a redaction hides; the other annotations aren't in it.
 - **Known limits:** the contrast readout can take an anti-aliasing shade of thin text as the text's colour, and so misstates the ratio; select a heavier part of the text. The ruler, colour copy and contrast don't see the annotations drawn on the picture, or the background. A flat region that is a gradient, or a photo, selects less than you expect, because only colours near the clicked one count.
 
-<!-- pending: erase -->
 ### Erase
 
-The **Erase** redaction style (with Pixelate, the blurs and Black out, in Redact's Style list) removes what is under it by filling the area from the pixels around it. **Delete on a pixel selection erases it:** the key adds an Erase redaction over the selection, as one undo step, so Undo brings the pixels back and the redaction stays editable. The fill is made from the picture with every other redaction already applied, so it never copies what another redaction hides.
-<!-- /pending: erase -->
+The **Erase** redaction style (with Pixelate, the blurs and Black out, in Redact's Style list) removes what is under it by filling the area from the pixels around it: flat when the surroundings are one colour, otherwise blended across from each side, so a gradient carries on through it. **Delete on a pixel selection** (with no object selected) erases it: the key adds an Erase redaction over the selection, as one undo step, so Undo brings the pixels back and the redaction stays editable. ⌘X never erases.
 
-<!-- pending: text-only -->
+- The fill is made from the picture with every other redaction already applied, so it never copies what another redaction hides; another Erase's area is left out of it. Moving, resizing or restyling a redaction beside an Erase makes its fill again.
+- **Known limits:** busy surroundings (text, photos) blend into a smear rather than a believable background; an Erase over the whole picture is black.
+
 ### Redact: Text only
 
-**Text only** is a switch on Redact. With it on, the chosen style (Pixelate, a blur, Black out or Erase) covers only the words in the area, and the picture between them is left alone. ClearShot reads the area for words; until it has found them, and when it finds none, the whole area is covered, so a redaction is never less than you drew. The words' positions are stored in the redaction and belong to that picture, so a project reopens with the same words covered without reading the picture again.
-<!-- /pending: text-only -->
+**Text only** is a switch on Redact (remembered for new redactions). With it on, the chosen style (Pixelate, a blur, Black out or Erase) covers only the words in the area, each with a margin that grows with the text's height, and the picture between them is left alone; each word gets noise of its own.
+
+- ClearShot reads the area for words on your Mac. Until it has found them, the whole area is covered, so a redaction is never less than you drew. When it finds none, the whole area stays covered and "No text found; covering the whole area" shows.
+- The words' positions are stored in the redaction with a fingerprint of the pixels they were read from, so a project reopens with the same words covered without reading the picture again. If the pixels under the area change, or the redaction is pasted, duplicated or ⌥-dragged, the whole area is covered until the words are read again where it now is.
+- **Known limits:** pressing Done before the words are found saves the whole area covered; they are read again when the capture is reopened, which marks it as changed.
 
 ## Sensitive info
 

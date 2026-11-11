@@ -26,7 +26,7 @@ Out of scope: uploading to a cloud bucket. ClearShot promises that nothing is up
 |---|---|
 | Colour copy | Tab copies the colour under the cursor, ⇧Tab the darkest colour in 20×20 (text colour), C a selection's average; a chip by the cursor shows the value; the copy format is a setting |
 | Ruler | Holding an arrow key measures from the cursor to the nearest edge each way along that axis (⇧ for the outer size, the scroll wheel sets the tolerance); a click imprints it as an editable ruler annotation |
-| Smart selection | ⌘-click selects a flat-colour region; A trims a selection to its content (⌥ previews); a click on one edge trims that edge; a padding stepper |
+| Smart selection | ⌘-click selects a flat-colour region; ⌥A fits a selection to its content (⌥ previews); a click on one edge trims that edge; a padding stepper |
 | Magnifier annotation | A zoomed callout of part of the picture, 2×–8×, round or rounded square, with a connector; it never shows what a redaction hides |
 | Object removal | A new redaction style, Erase, that fills an area from the pixels around it; Delete on a pixel selection applies it |
 | Text-only redaction | A "Text only" switch: the chosen style covers only the words in the area |

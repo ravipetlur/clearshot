@@ -113,6 +113,8 @@ struct RedactionKey: Equatable {
 /// from one actor.
 public final class RenderCache {
     var redactions: [UUID: CachedRedaction] = [:]
+    /// Text-only redactions' word effects, by object (`Renderer.redactionCovers`).
+    var wordRedactions: [UUID: CachedWordRedaction] = [:]
     var redactedBase: CachedRedactedBase?
     var objectRasters: [UUID: CachedObjectRaster] = [:]
     var backgroundLayer: CachedBackgroundLayer?

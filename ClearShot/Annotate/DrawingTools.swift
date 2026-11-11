@@ -66,7 +66,8 @@ final class ShapeTool: ToolController {
         case .rectangle: .rectangle(rect)
         case .filledRectangle: .filledRectangle(rect)
         case .ellipse: .ellipse(rect)
-        case .redact: .redact(RedactObject(rect: rect, style: settings.redactStyle, intensity: settings.redactIntensity))
+        case .redact: .redact(RedactObject(rect: rect, style: settings.redactStyle, intensity: settings.redactIntensity,
+                                           textOnly: settings.redactTextOnly))
         case .spotlight: .spotlight(SpotlightObject(rect: rect, shape: settings.spotlightShape, opacity: settings.spotlightOpacity))
         }
         return AnnotationObject(id: previewID, kind: kind, style: style)

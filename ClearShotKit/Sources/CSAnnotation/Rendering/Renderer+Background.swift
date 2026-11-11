@@ -225,13 +225,11 @@ extension Renderer {
         context.saveGState()
         context.concatenate(baseToOutput)
         var complete = true
-        let covers = redactions.compactMap { object -> (target: CGRect, effect: CGImage?)? in
-            guard case .redact(let redact) = object.kind else { return nil }
-            guard redact.style != .blackOut else { return (deviceAligned(redact.rect.standardized.integral, in: context), nil) }
-            guard let effect = redactionEffect(redact, id: object.id, base: base, pixelScale: document.pixelScale, cache: cache)
-            else { return nil }
-            if effect.image == nil { complete = false }
-            return (deviceAligned(effect.region, in: context), effect.image)
+        let covers = redactions.flatMap { object -> [(target: CGRect, effect: CGImage?)] in
+            guard case .redact(let redact) = object.kind else { return [] }
+            let drawn = redactionCovers(redact, id: object.id, base: base, pixelScale: document.pixelScale, cache: cache)
+            if !drawn.complete { complete = false }
+            return drawn.covers.map { (deviceAligned($0.region, in: context), $0.image) }
         }
         context.restoreGState()
 
@@ -274,6 +272,9 @@ extension Renderer {
         let live = Set(document.objects.map(\.id))
         if cache.redactions.keys.contains(where: { !live.contains($0) }) {
             cache.redactions = cache.redactions.filter { live.contains($0.key) }
+        }
+        if cache.wordRedactions.keys.contains(where: { !live.contains($0) }) {
+            cache.wordRedactions = cache.wordRedactions.filter { live.contains($0.key) }
         }
         if !cache.objectRasters.isEmpty {
             let shadowed = Set(objects.lazy.filter(\.style.shadow).map(\.id))

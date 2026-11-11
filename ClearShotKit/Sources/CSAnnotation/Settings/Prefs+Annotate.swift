@@ -9,6 +9,8 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     public var textStyle = TextStyle.standard
     public var redactStyle = RedactStyle.pixelate
     public var redactIntensity = 5
+    /// Whether new redactions cover only the words in their area ("Text only").
+    public var redactTextOnly = false
     public var spotlightShape = SpotlightShape.rectangle
     public var spotlightOpacity = 0.6
     public var counterStyle = CounterStyle.numbers
@@ -26,6 +28,7 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     private enum CodingKeys: String, CodingKey {
         case color, sizeLevel, arrowStyle, textStyle, redactStyle, redactIntensity, spotlightShape, spotlightOpacity
         case counterStyle, counterStart, highlightOpacity, smartHighlighter, handDrawn, fillColor, fillOpacity
+        case redactTextOnly
     }
 
     /// Every field is optional on disk and falls back to its default. A stored value from before a field existed keeps
@@ -40,6 +43,7 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         textStyle = try container.decodeIfPresent(TextStyle.self, forKey: .textStyle) ?? textStyle
         redactStyle = try container.decodeIfPresent(RedactStyle.self, forKey: .redactStyle) ?? redactStyle
         redactIntensity = try container.decodeIfPresent(Int.self, forKey: .redactIntensity) ?? redactIntensity
+        redactTextOnly = try container.decodeIfPresent(Bool.self, forKey: .redactTextOnly) ?? redactTextOnly
         spotlightShape = try container.decodeIfPresent(SpotlightShape.self, forKey: .spotlightShape) ?? spotlightShape
         spotlightOpacity = try container.decodeIfPresent(Double.self, forKey: .spotlightOpacity) ?? spotlightOpacity
         counterStyle = try container.decodeIfPresent(CounterStyle.self, forKey: .counterStyle) ?? counterStyle

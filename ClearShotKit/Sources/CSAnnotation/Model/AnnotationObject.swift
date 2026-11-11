@@ -330,6 +330,7 @@ public enum ObjectKind: Codable, Equatable, Sendable {
     case image(ImageObject)
     /// A measurement: a line with end caps and its length (`RulerObject`).
     case ruler(RulerObject)
+    case magnifier(MagnifierObject)
 }
 
 /// One annotation. Geometry is in base pixels.
@@ -369,6 +370,7 @@ public struct AnnotationObject: Codable, Equatable, Sendable, Identifiable {
             return highlight.points.flatMap(point) + highlight.rects.flatMap(rect) + [highlight.width, highlight.opacity]
         case .image(let image): return rect(image.rect) + [image.opacity]
         case .ruler(let ruler): return point(ruler.start) + point(ruler.end)
+        case .magnifier(let magnifier): return rect(magnifier.source) + rect(magnifier.callout)
         }
     }
 }

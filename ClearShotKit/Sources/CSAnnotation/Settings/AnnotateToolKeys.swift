@@ -48,6 +48,7 @@ public enum AnnotateKeyTarget: Hashable, Sendable, Identifiable {
         switch self {
         case .tool(.redact): ["pixelate", "blur", "hide"]
         case .tool(.highlighter): ["marker"]
+        case .tool(.magnifier): ["zoom", "callout", "enlarge"]
         case .tool(.pen): ["draw", "freehand"]
         case .tool(.counter): ["number", "step"]
         case .tool(.spotlight): ["focus", "dim"]

@@ -22,6 +22,9 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     public var fillOpacity = 0.0
     /// How far two colors may differ, on any channel, and still count as one run to the ruler (`RulerGeometry.toleranceRange`).
     public var rulerTolerance = RulerGeometry.defaultTolerance
+    /// A new magnifier's shape, and whether its callout has a border.
+    public var magnifierShape = MagnifierShape.circle
+    public var magnifierBorder = true
 
     public init() {}
 
@@ -29,6 +32,7 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         case color, sizeLevel, arrowStyle, textStyle, redactStyle, redactIntensity, spotlightShape, spotlightOpacity
         case counterStyle, counterStart, highlightOpacity, smartHighlighter, handDrawn, fillColor, fillOpacity
         case rulerTolerance
+        case magnifierShape, magnifierBorder
     }
 
     /// Every field is optional on disk and falls back to its default. A stored value from before a field existed keeps
@@ -54,6 +58,8 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         fillOpacity = try container.decodeIfPresent(Double.self, forKey: .fillOpacity) ?? fillOpacity
         rulerTolerance = RulerGeometry.clampedTolerance(
             try container.decodeIfPresent(Int.self, forKey: .rulerTolerance) ?? rulerTolerance)
+        magnifierShape = try container.decodeIfPresent(MagnifierShape.self, forKey: .magnifierShape) ?? magnifierShape
+        magnifierBorder = try container.decodeIfPresent(Bool.self, forKey: .magnifierBorder) ?? magnifierBorder
     }
 }
 

@@ -27,6 +27,7 @@ public enum ObjectGeometry {
         case .redact(let redact): redact.rect
         case .spotlight(let spotlight): spotlight.rect
         case .image(let image): image.rect
+        case .magnifier(let magnifier): magnifier.callout
         case .text(let text): TextLayout.frame(of: text)
         case .counter(let counter):
             CGRect(x: counter.center.x - counter.diameter / 2, y: counter.center.y - counter.diameter / 2,
@@ -65,6 +66,9 @@ public enum ObjectGeometry {
             guard object.style.handDrawn else { return shape }
             let reach = RoughPath.reachFactor * RoughPath.amplitude(lineWidth: width, extent: min(shape.width, shape.height))
             return shape.insetBy(dx: -reach, dy: -reach)
+        case .magnifier(let magnifier):
+            // The callout with its border, the connector and the source it reaches for.
+            return magnifier.callout.standardized.insetBy(dx: -width / 2, dy: -width / 2).union(magnifier.source.standardized)
         default:
             return rect(of: object.kind) ?? .null
         }
@@ -122,6 +126,10 @@ public enum ObjectGeometry {
             return hypot(point.x - counter.center.x, point.y - counter.center.y) <= counter.diameter / 2 + tolerance
         case .filledRectangle, .redact, .image, .text:
             return (rect(of: object.kind) ?? .null).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+        case .magnifier(let magnifier):
+            // The callout, which looks filled, anywhere inside; not the source, which is the picture itself.
+            let callout = magnifier.callout.standardized.insetBy(dx: -tolerance, dy: -tolerance)
+            return MagnifierGeometry.path(of: magnifier.shape, in: callout).contains(point)
         }
     }
 
@@ -166,6 +174,10 @@ public enum ObjectGeometry {
         case .image(var image):
             image.rect = move(image.rect)
             copy.kind = .image(image)
+        case .magnifier(var magnifier):
+            // The callout moves; the source stays on the pixels it magnifies (its own handle moves it).
+            magnifier.callout = move(magnifier.callout)
+            copy.kind = .magnifier(magnifier)
         }
         return copy
     }
@@ -180,6 +192,7 @@ public enum ObjectGeometry {
         case .line, .ruler: [.start, .end]
         case .arrow: [.start, .end, .control]
         case .counter: []
+        case .magnifier: MagnifierGeometry.handles
         }
     }
 
@@ -242,6 +255,7 @@ public enum ObjectGeometry {
         case (.start, .arrow(let arrow)): return arrow.start
         case (.end, .arrow(let arrow)): return arrow.end
         case (.control, .arrow(let arrow)): return ArrowGeometry.midpoint(of: arrow)
+        case (_, .magnifier(let magnifier)): return MagnifierGeometry.handlePoint(handle, of: magnifier)
         case (.corner, _), (.edge, _):
             return point(of: handle, in: handleFrame(of: object))
         default:
@@ -302,6 +316,8 @@ public enum ObjectGeometry {
             let aspect: Double? = constrained && stretch.horizontal && stretch.vertical ? frame.width / frame.height : nil
             let target = resized(frame, handle: handle, to: point, aspect: aspect)
             return scaled(object, from: frame, to: target)
+        case .magnifier(let magnifier):
+            copy.kind = .magnifier(MagnifierGeometry.dragging(handle, of: magnifier, to: point))
         default:
             guard let rect = rect(of: object.kind) else { return object }
             let aspect: Double? = constrained && rect.height > 0 ? rect.width / rect.height : nil

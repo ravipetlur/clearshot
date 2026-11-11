@@ -54,6 +54,10 @@ public enum ObjectScaling {
         case .image(var image):
             image.rect = rect(image.rect)
             copy.kind = .image(image)
+        case .magnifier(var magnifier):
+            magnifier.source = rect(magnifier.source)
+            magnifier.callout = rect(magnifier.callout)
+            copy.kind = .magnifier(magnifier)
         }
         return copy
     }

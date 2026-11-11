@@ -156,6 +156,34 @@ extension AnnotationEditor {
         }
     }
 
+    /// The opacity of the one selected image, when the Select tool is in use and no text is being edited; nil otherwise.
+    /// What the property bar's slider shows, and what the digit keys act on.
+    public var selectedImageOpacity: Double? {
+        guard tool == .select, editingTextID == nil, selection.count == 1, let object = selectedObjects.first,
+              case .image(let image) = object.kind else { return nil }
+        return image.opacity
+    }
+
+    /// Sets the selected images' opacity (clamped to `ImageObject.opacityRange`). The slider's drag is one undo step
+    /// (`sliderEditingChanged`); a key press is one of its own, or one for a held key with `coalescing`.
+    public func setImageOpacity(_ opacity: Double, coalescing: Bool = false) {
+        let opacity = min(max(opacity, ImageObject.opacityRange.lowerBound), ImageObject.opacityRange.upperBound)
+        restyleSelection("Change Opacity", coalescing: coalescing) { object, _ in
+            guard case .image(var image) = object.kind else { return }
+            image.opacity = opacity
+            object.kind = .image(image)
+        }
+    }
+
+    /// Digit keys on a selected image: 1–9 set 10%–90% and 0 sets 100%. False (the key is not taken) when no image is
+    /// selected under the Select tool, or text is being edited, so the digits stay the size keys then.
+    @discardableResult
+    public func handleImageOpacityKey(_ character: Character) -> Bool {
+        guard selectedImageOpacity != nil, let digit = character.wholeNumberValue, (0...9).contains(digit) else { return false }
+        setImageOpacity(digit == 0 ? 1 : Double(digit) / 10, coalescing: true)
+        return true
+    }
+
     public func setSmartHighlighter(_ on: Bool) {
         settings.smartHighlighter = on
     }

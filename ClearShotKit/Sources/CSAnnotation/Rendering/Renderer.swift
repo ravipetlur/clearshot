@@ -188,6 +188,8 @@ public enum Renderer {
             }
         case .image(let image):
             if let picture = images[image.image] {
+                // A shadow follows the image's own opacity, as it does for a translucent color.
+                context.setAlpha(min(max(image.opacity, 0), 1))
                 drawImage(picture, in: image.rect, context: context)
             }
         }

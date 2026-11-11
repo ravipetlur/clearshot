@@ -77,6 +77,7 @@ enum MainMenu {
         withoutDialog.isAlternate = true
         menu.addItem(withoutDialog)
         menu.addItem(item("Save and Close", #selector(EditorWindowController.saveAndClose(_:)), ""))
+        menu.addItem(item("Export Before/After GIF…", #selector(EditorWindowController.exportBeforeAfterGIF(_:)), ""))
         menu.addItem(.separator())
         menu.addItem(item("Copy Image", #selector(EditorWindowController.copyImage(_:)), "c", [.command, .shift]))
         menu.addItem(item("Send to Raycast AI Chat", #selector(EditorWindowController.sendToRaycast(_:)), "r"))

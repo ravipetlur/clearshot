@@ -221,12 +221,35 @@ public struct HighlightObject: Codable, Equatable, Sendable {
 }
 
 public struct ImageObject: Codable, Equatable, Sendable {
+    /// The least and most an image can show through (1 = opaque).
+    public static let opacityRange: ClosedRange<Double> = 0.05...1
+
     public var rect: CGRect
     public var image: ImageRef
+    public var opacity: Double
 
-    public init(rect: CGRect, image: ImageRef) {
+    public init(rect: CGRect, image: ImageRef, opacity: Double = 1) {
         self.rect = rect
         self.image = image
+        self.opacity = opacity
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rect, image, opacity
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rect = try container.decode(CGRect.self, forKey: .rect)
+        image = try container.decode(ImageRef.self, forKey: .image)
+        opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(rect, forKey: .rect)
+        try container.encode(image, forKey: .image)
+        try container.encode(opacity, forKey: .opacity)
     }
 }
 
@@ -279,7 +302,7 @@ public struct AnnotationObject: Codable, Equatable, Sendable, Identifiable {
         case .stroke(let stroke): return stroke.points.flatMap(point)
         case .highlight(let highlight):
             return highlight.points.flatMap(point) + highlight.rects.flatMap(rect) + [highlight.width, highlight.opacity]
-        case .image(let image): return rect(image.rect)
+        case .image(let image): return rect(image.rect) + [image.opacity]
         }
     }
 }

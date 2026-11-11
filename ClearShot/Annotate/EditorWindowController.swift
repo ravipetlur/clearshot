@@ -222,6 +222,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
     }
 
+    /// File › Export Before/After GIF…: needs an image object in the document.
+    @objc func exportBeforeAfterGIF(_ sender: Any?) {
+        guard !isKeyRepeat else { return }
+        run { await $0.manager.exportBeforeAfterGIF($0.editor) }
+    }
+
     @objc func copyImage(_ sender: Any?) {
         guard !isKeyRepeat else { return }
         makeActions().copy()
@@ -571,6 +577,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             !editor.isSaving
         case #selector(pinToScreen(_:)):
             !editor.isApplying
+        case #selector(exportBeforeAfterGIF(_:)):
+            !editor.isSaving && BeforeAfterGIF.isAvailable(for: editor.document)
         case #selector(revertToOriginal(_:)):
             editor.document.canRevertToOriginal && window?.attachedSheet == nil
         // The Resize sheet is modal to the editor: nothing may change the canvas under it, or its sizes go stale. Opening

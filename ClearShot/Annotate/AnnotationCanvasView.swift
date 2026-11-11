@@ -679,6 +679,8 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         case nil:
             break
         }
+        // A selected image has no size, so its digits set its opacity (1–9 = 10%–90%, 0 = 100%).
+        if editor.handleImageOpacityKey(character) { return true }
         if let level = character.wholeNumberValue, ToolSizes.levels.contains(level) {
             editor.setSizeLevel(level, coalescing: true)
             return true

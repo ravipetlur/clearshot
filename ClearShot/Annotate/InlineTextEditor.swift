@@ -63,7 +63,7 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate {
         textView.setBoundsSize(frame.size)
         let padding = TextLayout.padding(for: text.style, fontSize: text.fontSize)
         textView.textContainerInset = NSSize(width: padding.width, height: padding.height)
-        textView.font = TextLayout.font(for: text.style, size: text.fontSize)
+        textView.font = TextLayout.font(for: text.style, size: text.fontSize, handDrawn: text.handDrawn)
         let fill = text.style.hasBox ? object.style.color.contrastingTextColor : object.style.color
         textView.textColor = NSColor(cgColor: fill.cgColor)
         textView.insertionPointColor = NSColor(cgColor: fill.cgColor) ?? .textColor

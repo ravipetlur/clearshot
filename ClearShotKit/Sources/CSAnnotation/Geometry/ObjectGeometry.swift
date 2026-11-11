@@ -45,7 +45,11 @@ public enum ObjectGeometry {
         case .arrow(let arrow):
             let head = ArrowGeometry.headLength(for: width)
             // A fancy arrow's body flares to 60% of the head length either side of its axis.
-            let margin = arrow.style == .fancy ? max(width / 2, head * 0.6) : max(width, head) / 2
+            var margin = arrow.style == .fancy ? max(width / 2, head * 0.6) : max(width, head) / 2
+            if object.style.handDrawn {
+                let chord = hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y)
+                margin += RoughPath.reachFactor * RoughPath.amplitude(lineWidth: width, extent: chord)
+            }
             return box(around: ArrowGeometry.spine(of: arrow)).insetBy(dx: -margin, dy: -margin)
         case .stroke(let stroke):
             return box(around: stroke.points).insetBy(dx: -width / 2, dy: -width / 2)
@@ -54,6 +58,11 @@ public enum ObjectGeometry {
                 return box(around: highlight.points).insetBy(dx: -highlight.width / 2, dy: -highlight.width / 2)
             }
             return highlight.rects.dropFirst().reduce(first) { $0.union($1) }
+        case .rectangle(let shape), .ellipse(let shape):
+            // A hand-drawn outline strays a little past the rect.
+            guard object.style.handDrawn else { return shape }
+            let reach = RoughPath.reachFactor * RoughPath.amplitude(lineWidth: width, extent: min(shape.width, shape.height))
+            return shape.insetBy(dx: -reach, dy: -reach)
         default:
             return rect(of: object.kind) ?? .null
         }
@@ -159,7 +168,7 @@ public enum ObjectGeometry {
         case .stroke, .highlight: freehandHandles(of: object)
         case .text: [.edge(.left), .edge(.right)]
         case .line: [.start, .end]
-        case .arrow(let arrow): arrow.style == .curved ? [.start, .end, .control] : [.start, .end]
+        case .arrow: [.start, .end, .control]
         case .counter: []
         }
     }
@@ -220,7 +229,7 @@ public enum ObjectGeometry {
         case (.end, .line(_, let end)): return end
         case (.start, .arrow(let arrow)): return arrow.start
         case (.end, .arrow(let arrow)): return arrow.end
-        case (.control, .arrow(let arrow)): return ArrowGeometry.controlPoint(of: arrow)
+        case (.control, .arrow(let arrow)): return ArrowGeometry.midpoint(of: arrow)
         case (.corner, _), (.edge, _):
             return point(of: handle, in: handleFrame(of: object))
         default:
@@ -243,7 +252,11 @@ public enum ObjectGeometry {
             switch handle {
             case .start: arrow.start = constrained ? ShapeConstraints.snapped(point, from: arrow.end) : point
             case .end: arrow.end = constrained ? ShapeConstraints.snapped(point, from: arrow.start) : point
-            case .control: arrow.control = point
+            case .control:
+                // Dragged back onto the chord (or just clicked), it is straight again: no control point.
+                let control = ArrowGeometry.control(throughMidpoint: point, of: arrow)
+                let middle = CGPoint(x: (arrow.start.x + arrow.end.x) / 2, y: (arrow.start.y + arrow.end.y) / 2)
+                arrow.control = hypot(control.x - middle.x, control.y - middle.y) < 0.25 ? nil : control
             default: break
             }
             copy.kind = .arrow(arrow)

@@ -5,9 +5,78 @@ import Foundation
 /// Tool settings: each setter updates the remembered setting and restyles the selected objects it fits.
 extension AnnotationEditor {
     /// The style for a new object: current color, `lineWidthPoints` in base pixels, and the shadow setting.
-    public func newStyle(lineWidthPoints: Double) -> ObjectStyle {
-        ObjectStyle(color: settings.color, lineWidth: document.pixels(fromPoints: lineWidthPoints),
-                    shadow: preferences[Prefs.annotateObjectShadows])
+    ///
+    /// `handDrawable` for the objects that can be drawn by hand (rectangle, ellipse, arrow): the style then follows the
+    /// remembered Hand-drawn setting, with a seed of its own.
+    public func newStyle(lineWidthPoints: Double, handDrawable: Bool = false) -> ObjectStyle {
+        let handDrawn = handDrawable && settings.handDrawn
+        return ObjectStyle(color: settings.color, lineWidth: document.pixels(fromPoints: lineWidthPoints),
+                           shadow: preferences[Prefs.annotateObjectShadows], handDrawn: handDrawn,
+                           seed: handDrawn ? Self.freshSeed() : 0)
+    }
+
+    /// A seed for a new hand-drawn shape. The only place the hand-drawn look takes anything from the system: once the
+    /// seed is stored in the object, every draw of it is the same.
+    static func freshSeed() -> UInt32 {
+        UInt32.random(in: 1...UInt32.max)
+    }
+
+    /// Whether `kind` has a hand-drawn look (filled rectangles, counters and the like don't).
+    public static func canBeHandDrawn(_ kind: ObjectKind) -> Bool {
+        if case .text = kind { return true }
+        return hasRoughStrokes(kind)
+    }
+
+    /// Whether `kind` is hand-drawn as strokes, which a seed fixes (text just changes font).
+    static func hasRoughStrokes(_ kind: ObjectKind) -> Bool {
+        switch kind {
+        case .rectangle, .ellipse, .arrow: true
+        default: false
+        }
+    }
+
+    /// The Hand-drawn toggle: the setting for new objects, and the selected ones it fits. Text takes a handwriting font; the
+    /// others get a seed the first time they are drawn by hand.
+    public func setHandDrawn(_ on: Bool) {
+        settings.handDrawn = on
+        restyleSelection(on ? "Make Hand-drawn" : "Make Clean") { object, _ in
+            switch object.kind {
+            case .text(var text):
+                text.handDrawn = on
+                object.kind = .text(text)
+            case .rectangle, .ellipse, .arrow:
+                object.style.handDrawn = on
+                if on, object.style.seed == 0 { object.style.seed = Self.freshSeed() }
+            default: break
+            }
+        }
+    }
+
+    /// Whether Reroll Hand-drawn has anything to do: a selected object drawn by hand that has a stroke to redraw (not text).
+    public var canRerollHandDrawn: Bool {
+        selectedObjects.contains { Self.hasRoughStrokes($0.kind) && $0.style.handDrawn }
+    }
+
+    /// Redraws the selected hand-drawn shapes with new seeds, as one undo step.
+    public func rerollHandDrawn() {
+        guard canRerollHandDrawn else { return }
+        let ids = selection
+        change("Reroll Hand-drawn") { document in
+            for index in document.objects.indices where ids.contains(document.objects[index].id) {
+                guard Self.hasRoughStrokes(document.objects[index].kind), document.objects[index].style.handDrawn else { continue }
+                document.objects[index].style.seed = Self.freshSeed()
+            }
+        }
+    }
+
+    /// Straightens a bent arrow (double-clicking its bend handle).
+    public func straightenArrow(_ id: UUID) {
+        guard let object = object(id), case .arrow(var arrow) = object.kind, arrow.control != nil else { return }
+        change("Straighten Arrow") { document in
+            guard let index = document.objects.firstIndex(where: { $0.id == id }) else { return }
+            arrow.control = nil
+            document.objects[index].kind = .arrow(arrow)
+        }
     }
 
     /// Which tool's controls the property bar shows: the current tool, or with Select, the one selected object's kind.
@@ -223,12 +292,14 @@ extension AnnotationEditor {
         case .text(let text):
             adopted.sizeLevel = nearestLevel(text.fontSize, ToolSizes.fontSize)
             adopted.textStyle = text.style
+            adopted.handDrawn = text.handDrawn
         case .counter(let counter):
             adopted.sizeLevel = nearestLevel(counter.diameter, ToolSizes.counterDiameter)
             adopted.counterStyle = counter.style
         case .arrow(let arrow):
             adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
             adopted.arrowStyle = arrow.style
+            adopted.handDrawn = object.style.handDrawn
         case .redact(let redact):
             adopted.redactStyle = redact.style
             adopted.redactIntensity = redact.intensity
@@ -241,6 +312,7 @@ extension AnnotationEditor {
             break
         default:
             adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
+            if Self.hasRoughStrokes(object.kind) { adopted.handDrawn = object.style.handDrawn }
         }
         if adopted != settings { settings = adopted }
     }

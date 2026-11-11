@@ -154,10 +154,16 @@ extension Renderer {
         context.clip(to: layout.frame)
         context.concatenate(document.transform.transform)
         var spotlightsDrawn = false
+        var magnified: MagnifiedPicture?
         for object in objects {
             switch object.kind {
             case .redact:
                 continue // Drawn with the content.
+            case .magnifier(let magnifier):
+                // The picture the callouts show, with the redactions in it, made once for them all.
+                let picture = magnified ?? magnifiedPicture(of: document, base: base, cache: cache)
+                magnified = picture
+                drawMagnifier(object, magnifier, picture: picture, pixelScale: document.pixelScale, images: images, in: context)
             case .spotlight:
                 // All the spotlights dim together, over the whole frame, where the first of them comes in the order.
                 if !spotlightsDrawn { drawSpotlights(objects, covering: layout.frame.applying(document.transform.inverse), in: context) }

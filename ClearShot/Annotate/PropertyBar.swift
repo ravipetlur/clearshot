@@ -55,7 +55,7 @@ struct PropertyBar: View {
                     .help("Draw with a rough, sketched look. Reroll it with ⇧⌘R.")
             }
             Spacer()
-            if context != .redact, context != .spotlight, context != .highlighter {
+            if context != .redact, context != .spotlight, context != .highlighter, context != .magnifier {
                 Toggle("Shadow", isOn: Binding(get: { editor.preferences[Prefs.annotateObjectShadows] }, set: { editor.setShadows($0) }))
                     .toggleStyle(.checkbox)
             }
@@ -122,6 +122,8 @@ struct PropertyBar: View {
                 .frame(width: 120)
         case .rectangle, .ellipse:
             FillControl(editor: editor)
+        case .magnifier:
+            MagnifierControls(editor: editor)
         case .pen:
             Toggle("Smooth", isOn: Binding(get: { editor.preferences[Prefs.annotateSmoothDrawing] }, set: { editor.setSmoothDrawing($0) }))
                 .toggleStyle(.checkbox)

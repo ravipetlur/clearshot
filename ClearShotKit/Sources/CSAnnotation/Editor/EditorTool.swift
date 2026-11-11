@@ -1,6 +1,6 @@
 /// The Annotate tools and Crop & Resize, each with a default letter; Settings can change the letters.
 public enum EditorTool: String, CaseIterable, Identifiable, Sendable {
-    case select, rectangle, filledRectangle, ellipse, line, arrow, text, redact, spotlight, counter, pen, highlighter, crop
+    case select, rectangle, filledRectangle, ellipse, line, arrow, text, redact, spotlight, counter, pen, highlighter, magnifier, crop
 
     public var id: String { rawValue }
 
@@ -18,6 +18,7 @@ public enum EditorTool: String, CaseIterable, Identifiable, Sendable {
         case .counter: "Counter"
         case .pen: "Pen"
         case .highlighter: "Highlighter"
+        case .magnifier: "Magnifier"
         case .crop: "Crop & Resize"
         }
     }
@@ -36,6 +37,7 @@ public enum EditorTool: String, CaseIterable, Identifiable, Sendable {
         case .counter: "1.circle"
         case .pen: "pencil.tip"
         case .highlighter: "highlighter"
+        case .magnifier: "plus.magnifyingglass"
         case .crop: "crop"
         }
     }
@@ -55,6 +57,7 @@ public enum EditorTool: String, CaseIterable, Identifiable, Sendable {
         case .counter: "n"
         case .pen: "p"
         case .highlighter: "h"
+        case .magnifier: "m"
         case .crop: "c"
         }
     }

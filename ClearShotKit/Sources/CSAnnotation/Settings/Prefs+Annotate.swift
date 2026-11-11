@@ -20,12 +20,16 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     /// The fill of a new rectangle or ellipse: its color (nil: the stroke's) and opacity (0: none).
     public var fillColor: RGBAColor?
     public var fillOpacity = 0.0
+    /// A new magnifier's shape, and whether its callout has a border.
+    public var magnifierShape = MagnifierShape.circle
+    public var magnifierBorder = true
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case color, sizeLevel, arrowStyle, textStyle, redactStyle, redactIntensity, spotlightShape, spotlightOpacity
         case counterStyle, counterStart, highlightOpacity, smartHighlighter, handDrawn, fillColor, fillOpacity
+        case magnifierShape, magnifierBorder
     }
 
     /// Every field is optional on disk and falls back to its default. A stored value from before a field existed keeps
@@ -49,6 +53,8 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         handDrawn = try container.decodeIfPresent(Bool.self, forKey: .handDrawn) ?? handDrawn
         fillColor = try container.decodeIfPresent(RGBAColor.self, forKey: .fillColor)
         fillOpacity = try container.decodeIfPresent(Double.self, forKey: .fillOpacity) ?? fillOpacity
+        magnifierShape = try container.decodeIfPresent(MagnifierShape.self, forKey: .magnifierShape) ?? magnifierShape
+        magnifierBorder = try container.decodeIfPresent(Bool.self, forKey: .magnifierBorder) ?? magnifierBorder
     }
 }
 

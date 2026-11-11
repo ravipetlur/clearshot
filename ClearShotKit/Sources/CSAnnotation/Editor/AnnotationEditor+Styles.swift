@@ -105,6 +105,7 @@ extension AnnotationEditor {
         case .stroke: .pen
         case .highlight: .highlighter
         case .image: .select
+        case .magnifier: .magnifier
         }
     }
 
@@ -301,7 +302,7 @@ extension AnnotationEditor {
         preferences[Prefs.annotateObjectShadows] = on
         restyleSelection(on ? "Add Shadow" : "Remove Shadow") { object, _ in
             switch object.kind {
-            case .redact, .spotlight, .highlight: break
+            case .redact, .spotlight, .highlight, .magnifier: break
             default: object.style.shadow = on
             }
         }
@@ -349,6 +350,10 @@ extension AnnotationEditor {
             adopted.highlightOpacity = highlight.opacity
         case .image:
             break
+        case .magnifier(let magnifier):
+            adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
+            adopted.magnifierShape = magnifier.shape
+            adopted.magnifierBorder = magnifier.border
         case .rectangle, .ellipse:
             adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
             adopted.fillColor = object.style.fillColor

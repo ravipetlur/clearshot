@@ -164,20 +164,22 @@ public struct AnnotationDocument: Codable, Equatable, Sendable {
 
     /// Objects in the exact order the renderer draws them, bottom first: redactions (which replace the picture), then
     /// the spotlights (whose dimming covers what is under it), then everything else in creation order, then the
+    /// magnifiers (a callout is a view of the picture laid over the marks, so none of them covers it), then the
     /// counters. `Renderer.draw` iterates this, and clicks look for objects in its reverse, so the object a click picks
     /// is the one on top.
     public var visualOrder: [AnnotationObject] {
         var redactions: [AnnotationObject] = [], spotlights: [AnnotationObject] = []
-        var others: [AnnotationObject] = [], counters: [AnnotationObject] = []
+        var others: [AnnotationObject] = [], magnifiers: [AnnotationObject] = [], counters: [AnnotationObject] = []
         for object in objects {
             switch object.kind {
             case .redact: redactions.append(object)
             case .spotlight: spotlights.append(object)
+            case .magnifier: magnifiers.append(object)
             case .counter: counters.append(object)
             default: others.append(object)
             }
         }
-        return redactions + spotlights + others + counters
+        return redactions + spotlights + others + magnifiers + counters
     }
 
     /// The next counter's value: one more than the highest so far, or `start` for the first.

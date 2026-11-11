@@ -328,6 +328,7 @@ public enum ObjectKind: Codable, Equatable, Sendable {
     case stroke(StrokeObject)
     case highlight(HighlightObject)
     case image(ImageObject)
+    case magnifier(MagnifierObject)
 }
 
 /// One annotation. Geometry is in base pixels.
@@ -366,6 +367,7 @@ public struct AnnotationObject: Codable, Equatable, Sendable, Identifiable {
         case .highlight(let highlight):
             return highlight.points.flatMap(point) + highlight.rects.flatMap(rect) + [highlight.width, highlight.opacity]
         case .image(let image): return rect(image.rect) + [image.opacity]
+        case .magnifier(let magnifier): return rect(magnifier.source) + rect(magnifier.callout)
         }
     }
 }

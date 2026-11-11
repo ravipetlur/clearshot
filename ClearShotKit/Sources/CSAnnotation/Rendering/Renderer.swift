@@ -60,11 +60,19 @@ public enum Renderer {
         context.saveGState()
         context.concatenate(document.transform.transform)
         var spotlightsDrawn = false
+        var magnified: MagnifiedPicture?
         for object in objects {
             if case .spotlight = object.kind {
                 // All the spotlights dim together, in one fill, where the first of them comes in the order.
                 if !spotlightsDrawn { drawSpotlights(objects, covering: canvas.applying(document.transform.inverse), in: context) }
                 spotlightsDrawn = true
+                continue
+            }
+            if case .magnifier(let magnifier) = object.kind {
+                // The picture the callouts show, with the redactions in it, made once for them all.
+                let picture = magnified ?? magnifiedPicture(of: document, base: base, cache: cache)
+                magnified = picture
+                drawMagnifier(object, magnifier, picture: picture, pixelScale: document.pixelScale, images: images, in: context)
                 continue
             }
             if useObjectCache, let cache, object.style.shadow, castsShadow(object.kind) {
@@ -214,6 +222,10 @@ public enum Renderer {
                 context.setAlpha(min(max(image.opacity, 0), 1))
                 drawImage(picture, in: image.rect, context: context)
             }
+        case .magnifier(let magnifier):
+            // Without the document there is no redacted picture to show: the callout is black (`drawMagnifier`). The
+            // document's own drawing passes it the picture.
+            drawMagnifier(object, magnifier, picture: nil, pixelScale: pixelScale, images: images, in: context)
         }
     }
 
@@ -237,6 +249,12 @@ public enum Renderer {
         // The canvas's order (`AnnotationDocument.visualOrder`): redactions first, then everything else, counters last.
         // A spotlight draws nothing on its own.
         for object in document.visualOrder where ids.contains(object.id) {
+            if case .magnifier(let magnifier) = object.kind {
+                // The callout shows the document's picture with its redactions, as on the canvas.
+                let picture = base.map { magnifiedPicture(of: document, base: $0, cache: nil) }
+                drawMagnifier(object, magnifier, picture: picture, pixelScale: document.pixelScale, images: images, in: context)
+                continue
+            }
             draw(object, pixelScale: document.pixelScale, base: base, images: images, in: context)
         }
         return context.makeImage()
@@ -266,7 +284,7 @@ public enum Renderer {
 
     static func castsShadow(_ kind: ObjectKind) -> Bool {
         switch kind {
-        case .redact, .spotlight, .highlight: false
+        case .redact, .spotlight, .highlight, .magnifier: false
         default: true
         }
     }
@@ -281,7 +299,7 @@ public enum Renderer {
 
     private static func usesColorAlpha(_ kind: ObjectKind) -> Bool {
         switch kind {
-        case .highlight, .redact, .spotlight, .image: false
+        case .highlight, .redact, .spotlight, .image, .magnifier: false
         default: true
         }
     }

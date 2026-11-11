@@ -308,12 +308,27 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         context.saveGState()
         context.setStrokeColor(accent)
         context.setLineWidth(1 / zoom)
+        var sources: [CGRect] = []
         for object in editor.selectedObjects {
+            if case .magnifier(let magnifier) = object.kind {
+                // The callout gets the dashed box; the area it magnifies, a thin outline of its own.
+                context.addRect(viewRect(fromBase: magnifier.callout, shown: shown))
+                sources.append(viewRect(fromBase: magnifier.source, shown: shown))
+                continue
+            }
             context.addRect(viewRect(fromBase: ObjectGeometry.bounds(of: object), shown: shown))
         }
         context.setLineDash(phase: 0, lengths: [4 / zoom, 3 / zoom])
         context.strokePath()
         context.setLineDash(phase: 0, lengths: [])
+        for source in sources {
+            context.setStrokeColor(NSColor.white.cgColor)
+            context.setLineWidth(2 / zoom)
+            context.stroke(source)
+            context.setStrokeColor(accent)
+            context.setLineWidth(1 / zoom)
+            context.stroke(source)
+        }
         if editor.selection.count == 1, let object = editor.selectedObjects.first {
             let size = 8 / zoom
             for handle in ObjectGeometry.handles(of: object) {

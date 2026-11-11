@@ -49,6 +49,33 @@ public enum ImageFormat: String, CaseIterable, Sendable, Identifiable, PrefValue
     public var supportsTransparency: Bool { self != .jpeg }
 }
 
+/// The File format setting: one of the image formats, or Automatic, which picks PNG or JPEG for each screenshot from its
+/// pixels (`ExportFormatPolicy`). Stored under the same strings as `ImageFormat`, so a saved choice reads back as before.
+public enum FileFormatChoice: String, CaseIterable, Sendable, Identifiable, PrefValue {
+    case automatic, png, jpeg, heic, webp
+
+    public var id: String { rawValue }
+
+    public init(_ format: ImageFormat) {
+        self = FileFormatChoice(rawValue: format.rawValue) ?? .png
+    }
+
+    public var title: String {
+        imageFormat?.title ?? "Automatic"
+    }
+
+    /// The fixed format, or nil for Automatic.
+    public var imageFormat: ImageFormat? { ImageFormat(rawValue: rawValue) }
+
+    /// The extension a file name preview shows: Automatic ends in either.
+    public var fileExtensionPreview: String {
+        imageFormat?.fileExtension ?? "\(ImageFormat.png.fileExtension)/\(ImageFormat.jpeg.fileExtension)"
+    }
+
+    /// Whether the quality setting can apply. Automatic does: its photographic pictures are JPEG.
+    public var supportsQuality: Bool { imageFormat?.supportsQuality ?? true }
+}
+
 public enum CrosshairMode: String, CaseIterable, Sendable, Identifiable, PrefValue {
     case always, whileCommandHeld, off
 
@@ -145,7 +172,7 @@ public extension Prefs {
     static let selfTimerChoices = [3, 5, 10]
 
     // Output (Screenshots pane)
-    static let imageFormat = PrefKey("imageFormat", default: ImageFormat.jpeg)
+    static let imageFormat = PrefKey("imageFormat", default: FileFormatChoice.jpeg)
     static let imageQuality = PrefKey("imageQuality", default: 0.9)
     static let convertToSRGB = PrefKey("convertToSRGB", default: false)
     static let scaleRetinaTo1x = PrefKey("scaleRetinaTo1x", default: false)

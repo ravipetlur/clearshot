@@ -146,12 +146,13 @@ final class HistoryItemActions {
     /// saved as a copy of its working copy, keeping its extension, never re-encoded.
     func save(_ item: HistoryItem, name: String? = nil) async -> HistoryItem? {
         let directory = preferences[Prefs.exportLocation]
-        let format = ExportFormatPolicy.format(preferred: preferences[Prefs.imageFormat], isTransparent: item.isTransparent)
+        let choice = preferences[Prefs.imageFormat]
         let quality = preferences[Prefs.imageQuality]
         let baseName = FileNamer.sanitize(name ?? item.displayName,
                                           removeIllegalCharacters: preferences[Prefs.fileNameRemoveIllegalCharacters])
         let source = workingCopy(for: item)
         let isMedia = item.kind != .screenshot
+        let isTransparent = item.isTransparent
         let screenCapture = item.screenCaptureTag
         history.holds.hold(item.id)
         defer { history.holds.release(item.id) }
@@ -159,6 +160,7 @@ final class HistoryItemActions {
             Result {
                 if isMedia { return try Exporter.saveCopy(of: source, in: directory, baseName: baseName) }
                 guard let image = ImageOps.load(source) else { throw CaptureError.imageMissing }
+                let format = ExportFormatPolicy.format(preferred: choice, image: image, isTransparent: isTransparent)
                 return try Exporter.save(ExportRequest(image: image, format: format, quality: quality, pixelsPerPoint: item.scale,
                                                        directory: directory, baseName: baseName, screenCapture: screenCapture))
             }
@@ -171,7 +173,7 @@ final class HistoryItemActions {
     /// writes the one chosen. A video or GIF is a copy of its working copy in that file's own type, so an opened `.mov`
     /// stays a QuickTime movie.
     func saveAs(_ item: HistoryItem) async -> HistoryItem? {
-        let preferred = ExportFormatPolicy.format(preferred: preferences[Prefs.imageFormat], isTransparent: item.isTransparent)
+        let choice = preferences[Prefs.imageFormat]
         let quality = preferences[Prefs.imageQuality]
         let source = workingCopy(for: item)
         let folder = preferences[Prefs.exportLocation]
@@ -190,9 +192,11 @@ final class HistoryItemActions {
             guard panel.runModal() == .OK, let chosen = panel.url else { return nil }
             url = chosen
             // Not used: a copy keeps its bytes.
-            format = preferred
+            format = .png
         } else {
-            // The image formats only, starting on the one Save would use.
+            // The image formats only, starting on the one Save would use. Automatic reads the picture to say which.
+            let preferred = ExportFormatPolicy.format(preferred: choice, image: ImageOps.load(source),
+                                                      isTransparent: item.isTransparent)
             guard let chosen = SaveAsPanel.run(name: item.displayName, folder: folder, format: AnnotateSaveFormat(preferred),
                                                formats: AnnotateSaveFormat.imageFormats),
                   let imageFormat = chosen.format.imageFormat else { return nil }

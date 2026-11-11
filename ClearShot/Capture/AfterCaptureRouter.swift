@@ -41,7 +41,7 @@ nonisolated struct RawCapture: Sendable {
 
 /// The output preferences, read on the main actor before the work leaves it.
 nonisolated struct OutputSettings: Sendable {
-    var preferredFormat: ImageFormat
+    var preferredFormat: FileFormatChoice
     var quality: Double
     var exportDirectory: URL
     var template: FileNameTemplate
@@ -63,7 +63,8 @@ nonisolated struct OutputSettings: Sendable {
     func exportRequest(for result: CaptureResult, in directory: URL) -> ExportRequest {
         let context = nameContext(date: result.createdAt, appName: result.appName, windowTitle: result.windowTitle)
         return ExportRequest(image: result.image,
-                             format: ExportFormatPolicy.format(preferred: preferredFormat, isTransparent: result.isTransparent),
+                             format: ExportFormatPolicy.format(preferred: preferredFormat, image: result.image,
+                                                         isTransparent: result.isTransparent),
                              quality: quality, pixelsPerPoint: Double(result.scale), directory: directory, template: template,
                              nameContext: context, retinaSuffix: addRetinaSuffix && result.scale > 1,
                              screenCapture: ScreenCaptureTag(kind: result.kind, globalRect: result.globalRect))

@@ -10,7 +10,7 @@ struct ScreenshotsPane: View {
         Form {
             Section("Output") {
                 Picker("File format", selection: prefs.binding(Prefs.imageFormat)) {
-                    ForEach(ImageFormat.allCases) { Text($0.title).tag($0) }
+                    ForEach(FileFormatChoice.allCases) { Text($0.title).tag($0) }
                 }
                 if prefs[Prefs.imageFormat].supportsQuality {
                     LabeledContent("Quality") {

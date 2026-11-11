@@ -128,14 +128,17 @@ struct FormatClassifierTests {
         #expect(ExportFormatPolicy.format(preferred: .webp, image: nil, isTransparent: false) == .webp)
     }
 
-    /// A 6K capture (6016 x 3384) classified well inside 20 ms. Measured on Apple Silicon at about 1 to 3 ms; the bound
-    /// here is looser so a busy test machine doesn't make it flaky.
+    /// A 6K capture (6016 x 3384) classified well inside 20 ms. Measured on Apple Silicon at about 1 to 3 ms. The time is
+    /// the calling thread's CPU time, best of five, so a busy test machine doesn't make it flaky.
     @Test func aSixKCaptureClassifiesQuickly() {
         let image = Self.uiMock(width: 6016, height: 3384)
         _ = FormatClassifier.classify(image)  // warm up
-        let clock = ContinuousClock()
-        let elapsed = clock.measure { _ = FormatClassifier.classify(image) }
-        print("FormatClassifier 6K: \(elapsed)")
-        #expect(elapsed < .milliseconds(20))
+        let best = (0..<5).map { _ in
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            _ = FormatClassifier.classify(image)
+            return Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
+        }.min() ?? .infinity
+        print("FormatClassifier 6K: \(best) ms of CPU")
+        #expect(best < 20)
     }
 }

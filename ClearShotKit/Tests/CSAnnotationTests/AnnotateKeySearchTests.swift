@@ -16,7 +16,7 @@ struct AnnotateKeySearchTests {
 
     @Test func theGroupTitleFindsEveryTarget() {
         #expect(AnnotateKeyTarget.groupTitle == "Annotate tools")
-        #expect(AnnotateKeyTarget.matching("annotate tools").count == 14)
+        #expect(AnnotateKeyTarget.matching("annotate tools").count == 15)
         #expect(AnnotateKeyTarget.matching("Annotate Tools") == AnnotateKeyTarget.allCases)
         // A blank query finds everything, as `ClearShotAction.matching` does; nonsense finds nothing.
         #expect(AnnotateKeyTarget.matching("") == AnnotateKeyTarget.allCases)

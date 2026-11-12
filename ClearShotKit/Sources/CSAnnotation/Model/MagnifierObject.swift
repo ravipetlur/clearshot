@@ -18,7 +18,7 @@ public enum MagnifierShape: String, Codable, CaseIterable, Sendable {
 /// `zoomRange` (`MagnifierGeometry`).
 ///
 /// The callout shows the picture as it is shown, with the redactions and the pasted images on it, and never what a
-/// redaction hides (`Renderer.drawMagnifier`). The other annotations aren't in it.
+/// redaction hides or the crop leaves out (`Renderer.drawMagnifier`). The other annotations aren't in it.
 public struct MagnifierObject: Codable, Equatable, Sendable {
     /// The least and most a callout magnifies.
     public static let zoomRange: ClosedRange<Double> = 2...8

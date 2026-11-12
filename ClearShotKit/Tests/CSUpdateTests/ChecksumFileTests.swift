@@ -3,50 +3,38 @@ import Testing
 import CSUpdate
 
 struct ChecksumFileTests {
-    let name = "ClearShot-1.2.0.dmg"
+    let name = Self.fileName
     /// SHA-256 of the three bytes "abc" (FIPS 180-4 example).
-    let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    let abc = Self.abcHash
     /// SHA-256 of nothing.
     let nothing = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    let other = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    let other = Self.otherHash
+
+    static let fileName = "ClearShot-1.2.0.dmg"
+    static let abcHash = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    static let otherHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     // MARK: Parsing: a good line
 
-    @Test func readsTheHashFromTheShasumFormat() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc)  \(name)\n", forFile: name) == abc)
-    }
-
-    @Test func aMissingFinalNewlineIsFine() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc)  \(name)", forFile: name) == abc)
-    }
-
-    @Test func oneSpaceIsFine() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc) \(name)\n", forFile: name) == abc)
-    }
-
-    @Test func aStarMarksBinaryModeAndIsIgnored() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc) *\(name)\n", forFile: name) == abc)
-        #expect(ChecksumFile.expectedHash(in: "\(abc)  *\(name)\n", forFile: name) == abc)
-    }
-
-    @Test func upperCaseHexIsReadAndReturnedInLowerCase() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc.uppercased())  \(name)\n", forFile: name) == abc)
+    /// The shasum format, with or without a final newline, one space or two, a star for binary mode (ignored), upper or
+    /// mixed case hex (returned in lower case), and Windows line endings.
+    static let goodLines: [String] = {
+        let (abc, name, other) = (abcHash, fileName, otherHash)
         let mixed = String(abc.prefix(30)).uppercased() + String(abc.dropFirst(30))
-        #expect(ChecksumFile.expectedHash(in: "\(mixed)  \(name)\n", forFile: name) == abc)
-    }
+        return [
+            "\(abc)  \(name)\n", "\(abc)  \(name)", "\(abc) \(name)\n", "\(abc) *\(name)\n", "\(abc)  *\(name)\n",
+            "\(abc.uppercased())  \(name)\n", "\(mixed)  \(name)\n", "\(abc)  \(name)\r\n", "\(other)  Other.dmg\r\n\(abc)  \(name)\r\n",
+        ]
+    }()
 
-    @Test func windowsLineEndingsAreFine() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc)  \(name)\r\n", forFile: name) == abc)
-        #expect(ChecksumFile.expectedHash(in: "\(other)  Other.dmg\r\n\(abc)  \(name)\r\n", forFile: name) == abc)
+    @Test(arguments: goodLines)
+    func readsTheHashFromAGoodLine(text: String) {
+        #expect(ChecksumFile.expectedHash(in: text, forFile: name) == abc)
     }
 
     // MARK: Parsing: the wrong name or hash
 
-    @Test func theWrongNameGivesNothing() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc)  \(name)\n", forFile: "ClearShot-1.2.1.dmg") == nil)
-    }
-
-    @Test(arguments: ["clearshot-1.2.0.dmg", "ClearShot-1.2.0.dmg.sha256", "ClearShot-1.2.0", "learShot-1.2.0.dmg", "ClearShot-1.2.0.dmg ", "./ClearShot-1.2.0.dmg", "dist/ClearShot-1.2.0.dmg", ""])
+    @Test(arguments: ["ClearShot-1.2.1.dmg", "clearshot-1.2.0.dmg", "ClearShot-1.2.0.dmg.sha256", "ClearShot-1.2.0", "learShot-1.2.0.dmg", "ClearShot-1.2.0.dmg ", "./ClearShot-1.2.0.dmg", "dist/ClearShot-1.2.0.dmg", ""])
     func theNameMustMatchExactly(asked: String) {
         #expect(ChecksumFile.expectedHash(in: "\(abc)  \(name)\n", forFile: asked) == nil)
     }
@@ -65,23 +53,11 @@ struct ChecksumFileTests {
         #expect(ChecksumFile.expectedHash(in: "\(hash)  \(name)\n", forFile: name) == nil)
     }
 
-    @Test func aSixtyFiveDigitHashDoesNotLeakItsFirstSixtyFour() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc)b  \(name)\n", forFile: name) == nil)
-    }
-
     // MARK: Parsing: the separator
 
     @Test(arguments: ["", "   ", "\t", " \t", "\t\t", "\u{a0}", "\u{3000}", ":", " = ", ","])
     func onlyOneOrTwoSpacesSeparate(separator: String) {
         #expect(ChecksumFile.expectedHash(in: "\(abc)\(separator)\(name)\n", forFile: name) == nil)
-    }
-
-    @Test func aStarAfterThreeSpacesIsNotASeparator() {
-        #expect(ChecksumFile.expectedHash(in: "\(abc)   *\(name)\n", forFile: name) == nil)
-    }
-
-    @Test func aLeadingSpaceOnTheLineIsMalformed() {
-        #expect(ChecksumFile.expectedHash(in: " \(abc)  \(name)\n", forFile: name) == nil)
     }
 
     @Test func aLineWithoutANameIsMalformed() {
@@ -123,13 +99,19 @@ struct ChecksumFileTests {
 
     // MARK: Parsing: malformed text
 
-    @Test(arguments: ["", "\n", "   \n", "garbage", "hello world", "{\"sha256\": \"abc\"}", "<html>404</html>", "\0\0\0"])
+    /// Text that isn't a checksum line, and lines that are nearly one: a 65-digit hash (its first 64 must not leak), a
+    /// star after three spaces (not a separator), a leading space on the line, and the BSD style.
+    static let malformed: [String] = {
+        let (abc, name) = (abcHash, fileName)
+        return [
+            "", "\n", "   \n", "garbage", "hello world", "{\"sha256\": \"abc\"}", "<html>404</html>", "\0\0\0",
+            "\(abc)b  \(name)\n", "\(abc)   *\(name)\n", " \(abc)  \(name)\n", "SHA256 (\(name)) = \(abc)\n",
+        ]
+    }()
+
+    @Test(arguments: malformed)
     func malformedTextGivesNothing(text: String) {
         #expect(ChecksumFile.expectedHash(in: text, forFile: name) == nil)
-    }
-
-    @Test func theBSDStyleIsNotUnderstood() {
-        #expect(ChecksumFile.expectedHash(in: "SHA256 (\(name)) = \(abc)\n", forFile: name) == nil)
     }
 
     @Test func theRealFilesShape() {
@@ -180,23 +162,9 @@ struct ChecksumFileTests {
         Data((0..<count).map { UInt8(truncatingIfNeeded: ($0 &* 31) ^ ($0 >> 8) ^ ($0 >> 17)) })
     }
 
-    @Test func hashesAFileLikeTheSameBytesInMemory() throws {
-        try withScratchFolder { folder in
-            let url = folder.appendingPathComponent("small.bin")
-            try Data("abc".utf8).write(to: url)
-            #expect(try ChecksumFile.sha256(ofFileAt: url) == abc)
-        }
-    }
-
-    @Test func hashesAnEmptyFile() throws {
-        try withScratchFolder { folder in
-            let url = folder.appendingPathComponent("empty.bin")
-            try Data().write(to: url)
-            #expect(try ChecksumFile.sha256(ofFileAt: url) == nothing)
-        }
-    }
-
-    @Test(arguments: [1, 65_535, 65_536, 65_537, 1_048_575, 1_048_576, 1_048_577, 2_621_443, 5_000_000])
+    /// A file is read a megabyte at a time. Empty, a few bytes, and either side of the 64 KiB and 1 MiB boundaries all
+    /// hash as the same bytes in memory do (which `hashesKnownData` ties to the known hashes).
+    @Test(arguments: [0, 1, 3, 65_535, 65_536, 65_537, 1_048_575, 1_048_576, 1_048_577])
     func streamsFilesOfAnySizeToTheSameHash(size: Int) throws {
         try withScratchFolder { folder in
             let bytes = pattern(count: size)
@@ -221,9 +189,13 @@ struct ChecksumFileTests {
 
     // MARK: The two together
 
+    /// Just over the megabyte the file is read in, so these files take two reads, the second a short one.
+    static let pastOneChunk = 1_048_576 + 4_096
+    static let inTheSecondChunk = 1_048_576 + 1_000
+
     @Test func aFileMatchesItsPublishedChecksum() throws {
         try withScratchFolder { folder in
-            let bytes = pattern(count: 1_500_000)
+            let bytes = pattern(count: Self.pastOneChunk)
             let dmg = folder.appendingPathComponent(name)
             try bytes.write(to: dmg)
             let published = "\(ChecksumFile.sha256(of: bytes))  \(name)\n"
@@ -234,10 +206,10 @@ struct ChecksumFileTests {
 
     @Test func oneChangedByteBreaksTheMatch() throws {
         try withScratchFolder { folder in
-            var bytes = pattern(count: 1_500_000)
+            var bytes = pattern(count: Self.pastOneChunk)
             let published = "\(ChecksumFile.sha256(of: bytes))  \(name)\n"
             let expected = try #require(ChecksumFile.expectedHash(in: published, forFile: name))
-            bytes[1_234_567] ^= 0x01
+            bytes[Self.inTheSecondChunk] ^= 0x01
             let dmg = folder.appendingPathComponent(name)
             try bytes.write(to: dmg)
             #expect(try !ChecksumFile.matches(fileAt: dmg, expectedHash: expected))
@@ -246,7 +218,7 @@ struct ChecksumFileTests {
 
     @Test func aTruncatedFileDoesNotMatch() throws {
         try withScratchFolder { folder in
-            let bytes = pattern(count: 1_500_000)
+            let bytes = pattern(count: Self.pastOneChunk)
             let expected = ChecksumFile.sha256(of: bytes)
             let dmg = folder.appendingPathComponent(name)
             try bytes.dropLast().write(to: dmg)

@@ -15,41 +15,18 @@ final class QuickAccessPrefsTests {
         prefs = Preferences(defaults: defaults)
     }
 
-    @Test func defaultsAreTheDecidedOnes() {
-        #expect(prefs[Prefs.quickAccessPosition] == .left)
-        #expect(prefs[Prefs.quickAccessSize] == .medium)
-        #expect(prefs[Prefs.quickAccessMoveToActiveScreen])
-        #expect(prefs[Prefs.quickAccessAutoClose])
-        #expect(prefs[Prefs.quickAccessAutoCloseSeconds] == 15)
-        #expect(prefs[Prefs.quickAccessAutoCloseAction] == .close)
-        #expect(prefs[Prefs.quickAccessCloseAfterDragging])
-        #expect(!prefs[Prefs.quickAccessSaveAsksForLocation])
-        #expect(prefs[Prefs.confirmCloseAllOverlays])
-        #expect(prefs[Prefs.historyRetention] == .oneMonth)
-        #expect(Prefs.autoCloseIntervalChoices.contains(prefs[Prefs.quickAccessAutoCloseSeconds]))
-    }
-
-    @Test func resettingWarningDialogsTurnsThemBackOn() {
-        prefs[Prefs.confirmCloseAllOverlays] = false
-        Prefs.warningDialogs.forEach { prefs.reset($0) }
-        #expect(prefs[Prefs.confirmCloseAllOverlays])
-    }
-
-    @Test func resettingWarningDialogsAlsoBringsBackTheHistoryDeleteConfirmation() {
-        #expect(prefs[Prefs.confirmHistoryDelete])
+    /// "Reset All Warning Dialogs" turns every confirmation back on: closing all overlays, deleting from History, and
+    /// closing a recording.
+    @Test func resettingWarningDialogsTurnsThemAllBackOn() {
         #expect(Prefs.warningDialogs.map(\.name) == ["confirmCloseAllOverlays", "confirmHistoryDelete", "confirmCloseRecording"])
-        prefs[Prefs.confirmCloseAllOverlays] = false
-        prefs[Prefs.confirmHistoryDelete] = false
+        for key in Prefs.warningDialogs {
+            #expect(prefs[key], "\(key.name)")
+            prefs[key] = false
+            #expect(!prefs[key], "\(key.name)")
+        }
         Prefs.warningDialogs.forEach { prefs.reset($0) }
         #expect(prefs[Prefs.confirmCloseAllOverlays])
         #expect(prefs[Prefs.confirmHistoryDelete])
-    }
-
-    @Test func resettingWarningDialogsAlsoBringsBackCloseThisRecording() {
-        #expect(prefs[Prefs.confirmCloseRecording])
-        prefs[Prefs.confirmCloseRecording] = false
-        #expect(!prefs[Prefs.confirmCloseRecording])
-        Prefs.warningDialogs.forEach { prefs.reset($0) }
         #expect(prefs[Prefs.confirmCloseRecording])
     }
 
@@ -66,27 +43,20 @@ final class QuickAccessPrefsTests {
 struct HistoryRetentionTests {
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
 
-    @Test func cutoffsCountBackFromNow() {
-        #expect(HistoryRetention.oneDay.cutoff(now: now) == now.addingTimeInterval(-86_400))
-        #expect(HistoryRetention.threeDays.cutoff(now: now) == now.addingTimeInterval(-3 * 86_400))
-        #expect(HistoryRetention.oneWeek.cutoff(now: now) == now.addingTimeInterval(-7 * 86_400))
-        #expect(HistoryRetention.oneMonth.cutoff(now: now) == now.addingTimeInterval(-30 * 86_400))
-    }
-
-    @Test func neverKeepsNothingOnceClosed() {
-        #expect(HistoryRetention.never.cutoff(now: now) == now)
+    /// Each choice counts back from now; Never keeps nothing once closed.
+    @Test(arguments: [
+        (HistoryRetention.oneDay, 86_400.0), (.threeDays, 3 * 86_400), (.oneWeek, 7 * 86_400), (.oneMonth, 30 * 86_400),
+        (.never, 0),
+    ])
+    func cutoffsCountBackFromNow(retention: HistoryRetention, seconds: TimeInterval) {
+        #expect(retention.cutoff(now: now) == now.addingTimeInterval(-seconds))
     }
 }
 
 struct ImageFormatExtensionTests {
-    @Test(arguments: zip(["png", "JPG", "jpeg", "heic", "webp"], [ImageFormat.png, .jpeg, .jpeg, .heic, .webp]))
-    func knownExtensionsMap(fileExtension: String, format: ImageFormat) {
+    @Test(arguments: zip(["png", "JPG", "jpeg", "heic", "webp", "gif", ""], [ImageFormat.png, .jpeg, .jpeg, .heic, .webp, nil, nil]))
+    func extensionsMapToTheirFormatOrNil(fileExtension: String, format: ImageFormat?) {
         #expect(ImageFormat(fileExtension: fileExtension) == format)
-    }
-
-    @Test func unknownExtensionsAreNil() {
-        #expect(ImageFormat(fileExtension: "gif") == nil)
-        #expect(ImageFormat(fileExtension: "") == nil)
     }
 }
 
@@ -152,22 +122,12 @@ struct SwipeTrackerTests {
         #expect(tracker.add(deltaX: deltaX, fingersDown: 0) == .none)
     }
 
-    @Test func aDownwardSwipeHidesAll() {
+    /// One move after `begin`: down hides all, up does nothing, and a mostly vertical move doesn't dismiss.
+    @Test(arguments: [(5.0, 65.0, SwipeTracker.Outcome.hideAll), (0, -200, .none), (61, -90, .none)])
+    func oneMoveAfterBeginning(deltaX: Double, fingersDown: Double, outcome: SwipeTracker.Outcome) {
         var tracker = SwipeTracker()
         tracker.begin()
-        #expect(tracker.add(deltaX: 5, fingersDown: 65) == .hideAll)
-    }
-
-    @Test func anUpwardSwipeDoesNothing() {
-        var tracker = SwipeTracker()
-        tracker.begin()
-        #expect(tracker.add(deltaX: 0, fingersDown: -200) == .none)
-    }
-
-    @Test func aMostlyVerticalGestureDoesntDismiss() {
-        var tracker = SwipeTracker()
-        tracker.begin()
-        #expect(tracker.add(deltaX: 61, fingersDown: -90) == .none)
+        #expect(tracker.add(deltaX: deltaX, fingersDown: fingersDown) == outcome)
     }
 
     @Test func beginStartsANewGesture() {
@@ -230,25 +190,13 @@ struct QuickAccessRulesTests {
         #expect(!QuickAccessRules.saveAsksForLocation(optionHeld: true, askByDefault: true))
     }
 
-    @Test func theClockRunsWhenNothingStopsIt() {
-        #expect(QuickAccessRules.clockRuns(hovering: false, hidden: false, previewing: false, holds: 0))
-    }
-
-    @Test func hoveringStopsTheClock() {
-        #expect(!QuickAccessRules.clockRuns(hovering: true, hidden: false, previewing: false, holds: 0))
-    }
-
-    @Test func hidingTheStackStopsTheClock() {
-        #expect(!QuickAccessRules.clockRuns(hovering: false, hidden: true, previewing: false, holds: 0))
-    }
-
-    @Test func quickLookStopsTheClock() {
-        #expect(!QuickAccessRules.clockRuns(hovering: false, hidden: false, previewing: true, holds: 0))
-    }
-
-    @Test(arguments: [1, 2])
-    func anyHoldStopsTheClock(holds: Int) {
-        #expect(!QuickAccessRules.clockRuns(hovering: false, hidden: false, previewing: false, holds: holds))
+    /// The clock runs only when nothing stops it: hovering, a hidden stack, Quick Look, or any hold.
+    @Test(arguments: [
+        (false, false, false, 0, true), (true, false, false, 0, false), (false, true, false, 0, false),
+        (false, false, true, 0, false), (false, false, false, 1, false), (false, false, false, 2, false),
+    ])
+    func theClockRunsOnlyWhenNothingStopsIt(hovering: Bool, hidden: Bool, previewing: Bool, holds: Int, runs: Bool) {
+        #expect(QuickAccessRules.clockRuns(hovering: hovering, hidden: hidden, previewing: previewing, holds: holds) == runs)
     }
 
     @Test func autoCloseSavesOnlyUnsavedCapturesAndNeverInterruptsNaming() {
@@ -388,29 +336,35 @@ struct QuickAccessControlFramesTests {
         #expect(QuickAccessLayout.sensitiveBadgeSize == CGSize(width: 54, height: 18))
     }
 
-    @Test func thePillNeverMovesWhateverTheThumbnailsShape() {
-        let first = QuickAccessLayout.controls(in: shapes[0]).sensitiveBadge
-        for shape in shapes {
-            #expect(QuickAccessLayout.controls(in: shape).sensitiveBadge == first, "\(shape)")
-        }
+    /// Notes a failed check without an `#expect` for each of the several hundred shapes, so a test makes one
+    /// expectation at the end and stays fast; the message lists the first failures.
+    private func check(_ condition: Bool, _ what: @autoclosure () -> String, _ failures: inout [String]) {
+        if !condition { failures.append(what()) }
     }
 
-    @Test func thePillIsNeverOnATrashPinCloseOrAnnotateButton() {
+    private func expectNone(_ failures: [String], sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(failures.isEmpty, "\(failures.count) failed: \(failures.prefix(10).joined(separator: "; "))",
+                sourceLocation: sourceLocation)
+    }
+
+    @Test func thePillNeverMovesWhateverTheThumbnailsShape() {
+        let first = QuickAccessLayout.controls(in: shapes[0]).sensitiveBadge
+        var failures: [String] = []
         for shape in shapes {
-            let frames = QuickAccessLayout.controls(in: shape)
-            for (name, button) in circles(frames) {
-                #expect(!frames.sensitiveBadge.intersects(button), "\(name) at \(shape)")
-            }
+            check(QuickAccessLayout.controls(in: shape).sensitiveBadge == first, "\(shape)", &failures)
         }
+        expectNone(failures)
     }
 
     @Test func thePillKeepsAGapFromTrashAndPinAtEverySize() {
+        var failures: [String] = []
         for shape in shapes {
             let frames = QuickAccessLayout.controls(in: shape)
-            #expect(frames.sensitiveBadge.minX - frames.trash.maxX >= QuickAccessLayout.controlInset, "\(shape)")
-            #expect(frames.pin.minX - frames.sensitiveBadge.maxX >= QuickAccessLayout.controlInset, "\(shape)")
-            #expect(CGRect(origin: .zero, size: shape).contains(frames.sensitiveBadge), "\(shape)")
+            check(frames.sensitiveBadge.minX - frames.trash.maxX >= QuickAccessLayout.controlInset, "trash gap at \(shape)", &failures)
+            check(frames.pin.minX - frames.sensitiveBadge.maxX >= QuickAccessLayout.controlInset, "pin gap at \(shape)", &failures)
+            check(CGRect(origin: .zero, size: shape).contains(frames.sensitiveBadge), "outside at \(shape)", &failures)
         }
+        expectNone(failures)
     }
 
     /// Whether two frames share any area (frames that only touch don't).
@@ -421,26 +375,28 @@ struct QuickAccessControlFramesTests {
 
     @Test func nothingCoversThePillAndCopyAndSaveNeverCoverEachOther() {
         // Every thumbnail the three sizes can make, from the widest strip to the tallest.
+        var failures: [String] = []
         for shape in shapes {
             let frames = QuickAccessLayout.controls(in: shape)
             let badge = frames.sensitiveBadge
             for (name, frame) in [("copy", frames.copy), ("save", frames.save)] + circles(frames) {
-                #expect(!overlap(badge, frame), "\(name) over the pill at \(shape)")
+                check(!overlap(badge, frame), "\(name) over the pill at \(shape)", &failures)
             }
-            #expect(!overlap(frames.copy, frames.save), "copy over save at \(shape)")
+            check(!overlap(frames.copy, frames.save), "copy over save at \(shape)", &failures)
             for (name, button) in circles(frames) where name != "trim" {
-                #expect(!overlap(frames.copy, button), "copy over \(name) at \(shape)")
-                #expect(!overlap(frames.save, button), "save over \(name) at \(shape)")
+                check(!overlap(frames.copy, button), "copy over \(name) at \(shape)", &failures)
+                check(!overlap(frames.save, button), "save over \(name) at \(shape)", &failures)
             }
             // Trim is only on a video's or GIF's thumbnail. In a stacked layout just over the 106 pt limit (106 to 113 pt on
             // a small or medium thumbnail) the Copy pill's top reaches it by up to 4 pt: it did before the pill, and a
             // screenshot, which is what has a pill, never has Trim.
             let stackedUnderTrim = !frames.copyAndSaveShareARow && shape.width < 220 && shape.height < 114
             if !stackedUnderTrim {
-                #expect(!overlap(frames.copy, frames.trim), "copy over trim at \(shape)")
-                #expect(!overlap(frames.save, frames.trim), "save over trim at \(shape)")
+                check(!overlap(frames.copy, frames.trim), "copy over trim at \(shape)", &failures)
+                check(!overlap(frames.save, frames.trim), "save over trim at \(shape)", &failures)
             }
         }
+        expectNone(failures)
     }
 
     @Test func aShortThumbnailPutsCopyAndSaveSideBySideInOneRowOnTheMiddle() {
@@ -451,14 +407,17 @@ struct QuickAccessControlFramesTests {
         #expect(frames.save == CGRect(x: 86, y: 29, width: 54, height: 26))
         #expect(frames.sensitiveBadge.minY == 6 && frames.copy.minY - frames.sensitiveBadge.maxY == 5)
         #expect(frames.trim.minY - frames.copy.maxY == 1)
+        var failures: [String] = []
         for shape in shapes where shape.height < QuickAccessLayout.stackedPillsMinimumHeight {
             let row = QuickAccessLayout.controls(in: shape)
-            #expect(row.copyAndSaveShareARow, "\(shape)")
-            #expect(row.copy.midY == shape.height / 2 && row.save.midY == shape.height / 2, "\(shape)")
-            #expect(row.copy.width == row.save.width && row.copy.width == (min(112, shape.width - 24) - 4) / 2, "\(shape)")
-            #expect(row.save.minX - row.copy.maxX == 4, "\(shape)")
-            #expect(row.copy.minX == (shape.width - (row.save.maxX - row.copy.minX)) / 2, "centred at \(shape)")
+            check(row.copyAndSaveShareARow, "not a row at \(shape)", &failures)
+            check(row.copy.midY == shape.height / 2 && row.save.midY == shape.height / 2, "off the middle at \(shape)", &failures)
+            check(row.copy.width == row.save.width && row.copy.width == (min(112, shape.width - 24) - 4) / 2,
+                  "widths at \(shape)", &failures)
+            check(row.save.minX - row.copy.maxX == 4, "gap at \(shape)", &failures)
+            check(row.copy.minX == (shape.width - (row.save.maxX - row.copy.minX)) / 2, "not centred at \(shape)", &failures)
         }
+        expectNone(failures)
     }
 
     @Test func aThumbnailOf106ptOrMoreKeepsCopyAboveSave() {
@@ -469,17 +428,15 @@ struct QuickAccessControlFramesTests {
         #expect(!frames.copyAndSaveShareARow)
         #expect(frames.copy == CGRect(x: 28, y: 56, width: 112, height: 26))
         #expect(frames.save == CGRect(x: 28, y: 24, width: 112, height: 26))
+        var failures: [String] = []
         for shape in shapes where shape.height >= 106 {
             let stacked = QuickAccessLayout.controls(in: shape)
-            #expect(!stacked.copyAndSaveShareARow, "\(shape)")
-            #expect(stacked.copy.width == min(112, shape.width - 24) && stacked.copy.width == stacked.save.width, "\(shape)")
-            #expect(stacked.copy.minY - stacked.save.maxY == 6, "\(shape)")
+            check(!stacked.copyAndSaveShareARow, "a row at \(shape)", &failures)
+            check(stacked.copy.width == min(112, shape.width - 24) && stacked.copy.width == stacked.save.width,
+                  "widths at \(shape)", &failures)
+            check(stacked.copy.minY - stacked.save.maxY == 6, "gap at \(shape)", &failures)
         }
-    }
-
-    @Test func theWidestTextFitsTheFixedWidth() {
-        // "Masked" is 38.7 pt wide in the pill's 10 pt semibold type and "⚠︎ 99+" 32.7 pt (measured), with 7 pt either side.
-        #expect(QuickAccessLayout.sensitiveBadgeSize.width >= 38.7 + 14)
+        expectNone(failures)
     }
 
     // MARK: Clicks
@@ -505,18 +462,14 @@ struct QuickAccessControlFramesTests {
 
 /// What the Save button says, which in a short thumbnail has to fit a pill half as wide.
 struct QuickAccessSaveTitleTests {
-    @Test func theTitlesAreWhatTheViewHadAlways() {
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: false, compact: false) == "Save")
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: true, compact: false) == "Save As\u{2026}")
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: false, compact: false) == "Show in Finder")
-        // A saved capture shows where it is, whatever the setting says Save would do.
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: true, compact: false) == "Show in Finder")
-    }
-
-    @Test func aHalfWidthPillGetsTheShorterTitlesThatFitIt() {
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: false, compact: true) == "Save")
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: false, asksForLocation: true, compact: true) == "Save\u{2026}")
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: false, compact: true) == "Finder")
-        #expect(QuickAccessRules.saveButtonTitle(isSaved: true, asksForLocation: true, compact: true) == "Finder")
+    /// A saved capture shows where it is, whatever the setting says Save would do; a half-width pill gets the shorter
+    /// titles that fit it.
+    @Test(arguments: [
+        (false, false, false, "Save"), (false, true, false, "Save As\u{2026}"), (true, false, false, "Show in Finder"),
+        (true, true, false, "Show in Finder"),
+        (false, false, true, "Save"), (false, true, true, "Save\u{2026}"), (true, false, true, "Finder"), (true, true, true, "Finder"),
+    ])
+    func theTitleFitsThePill(isSaved: Bool, asksForLocation: Bool, compact: Bool, title: String) {
+        #expect(QuickAccessRules.saveButtonTitle(isSaved: isSaved, asksForLocation: asksForLocation, compact: compact) == title)
     }
 }

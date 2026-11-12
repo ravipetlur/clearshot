@@ -110,54 +110,34 @@ final class LegacyShortcutMigrationTests {
 
     // MARK: What is skipped
 
-    @Test func malformedJSONIsSkipped() {
-        expectSkipped("not json at all", for: .recordScreen, "text")
-    }
-
-    @Test func aStringOfEmptyJSONOrWrongShapeIsSkipped() {
-        expectSkipped("", for: .recordScreen, "empty string")
-        expectSkipped("{}", for: .selfTimer, "empty object")
-        expectSkipped("[21,768]", for: .captureWindow, "array")
-    }
-
-    @Test func aJSONStringMissingTheKeyCodeIsSkipped() {
-        expectSkipped(#"{"carbonModifiers":768}"#, for: .captureArea, "missing key code")
-    }
-
-    @Test func aJSONStringMissingTheModifiersIsSkipped() {
-        expectSkipped(#"{"carbonKeyCode":21}"#, for: .captureArea, "missing modifiers")
-    }
-
-    @Test func aJSONStringWithWrongTypesIsSkipped() {
-        expectSkipped(#"{"carbonKeyCode":"21","carbonModifiers":768}"#, for: .recordScreen, "text key code")
-        expectSkipped(#"{"carbonKeyCode":21.5,"carbonModifiers":768}"#, for: .recordScreen, "fractional key code")
-        expectSkipped(#"{"carbonKeyCode":true,"carbonModifiers":768}"#, for: .recordScreen, "boolean key code")
-        expectSkipped(#"{"carbonKeyCode":21,"carbonModifiers":null}"#, for: .recordScreen, "null modifiers")
-    }
-
-    @Test func aJSONStringOutOfRangeIsSkipped() {
-        expectSkipped(#"{"carbonKeyCode":-1,"carbonModifiers":768}"#, for: .recordScreen, "negative key code")
-        expectSkipped(#"{"carbonKeyCode":21,"carbonModifiers":99999999999}"#, for: .recordScreen, "huge modifiers")
-    }
-
-    @Test func theNumberZeroIsNotAClear() {
-        // UserDefaults hands back a stored false as an NSNumber, so a stored 0 must not pass for it.
-        expectSkipped(0, for: .captureArea, "number 0")
-    }
-
-    @Test func otherNumbersAreSkipped() {
-        expectSkipped(21, for: .recordScreen, "number 21")
-        expectSkipped(1.5, for: .selfTimer, "fraction")
-    }
-
-    @Test func trueIsSkipped() {
-        expectSkipped(true, for: .captureArea, "true")
-    }
-
-    @Test func otherTypesAreSkipped() {
-        expectSkipped(["carbonKeyCode": 21, "carbonModifiers": 768], for: .recordScreen, "dictionary")
-        expectSkipped([21, 768], for: .selfTimer, "array")
-        expectSkipped(Data("{}".utf8), for: .captureWindow, "data")
+    /// Anything but v1.0.0's JSON text or `false` is skipped: text that isn't the JSON object, one missing a field, with
+    /// a field of the wrong type or out of range, any number (UserDefaults hands back a stored false as an NSNumber, so a
+    /// stored 0 must not pass for it), `true`, and any other type.
+    @Test func everyOtherValueIsSkipped() {
+        let values: [(value: Any, action: ClearShotAction, description: String)] = [
+            ("not json at all", .recordScreen, "text"),
+            ("", .recordScreen, "empty string"),
+            ("{}", .selfTimer, "empty object"),
+            ("[21,768]", .captureWindow, "array"),
+            (#"{"carbonModifiers":768}"#, .captureArea, "missing key code"),
+            (#"{"carbonKeyCode":21}"#, .captureArea, "missing modifiers"),
+            (#"{"carbonKeyCode":"21","carbonModifiers":768}"#, .recordScreen, "text key code"),
+            (#"{"carbonKeyCode":21.5,"carbonModifiers":768}"#, .recordScreen, "fractional key code"),
+            (#"{"carbonKeyCode":true,"carbonModifiers":768}"#, .recordScreen, "boolean key code"),
+            (#"{"carbonKeyCode":21,"carbonModifiers":null}"#, .recordScreen, "null modifiers"),
+            (#"{"carbonKeyCode":-1,"carbonModifiers":768}"#, .recordScreen, "negative key code"),
+            (#"{"carbonKeyCode":21,"carbonModifiers":99999999999}"#, .recordScreen, "huge modifiers"),
+            (0, .captureArea, "number 0"),
+            (21, .recordScreen, "number 21"),
+            (1.5, .selfTimer, "fraction"),
+            (true, .captureArea, "true"),
+            (["carbonKeyCode": 21, "carbonModifiers": 768], .recordScreen, "dictionary"),
+            ([21, 768], .selfTimer, "array"),
+            (Data("{}".utf8), .captureWindow, "data"),
+        ]
+        for (value, action, description) in values {
+            expectSkipped(value, for: action, description)
+        }
     }
 
     // MARK: The new key wins

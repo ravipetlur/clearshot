@@ -287,13 +287,14 @@ struct ReleaseNotesTests {
         }
     }
 
-    @Test func webLinksStayLinks() {
-        #expect(links(in: "See [the notes](https://example.com/notes) and [old](http://example.com/old).")
-                == [URL(string: "https://example.com/notes")!, URL(string: "http://example.com/old")!])
-    }
-
-    @Test func aBareWebAddressStaysALink() {
-        #expect(links(in: "Changelog: https://example.com/compare/a...b") == [URL(string: "https://example.com/compare/a...b")!])
+    /// Web links stay links, written as links or as a bare address.
+    @Test(arguments: [
+        ("See [the notes](https://example.com/notes) and [old](http://example.com/old).",
+         ["https://example.com/notes", "http://example.com/old"]),
+        ("Changelog: https://example.com/compare/a...b", ["https://example.com/compare/a...b"]),
+    ])
+    func webLinksStayLinks(markdown: String, expected: [String]) {
+        #expect(links(in: markdown) == expected.map { URL(string: $0)! })
     }
 
     /// Notes can't make a click open a file, run a script or reach into another app: only web links are links. The words

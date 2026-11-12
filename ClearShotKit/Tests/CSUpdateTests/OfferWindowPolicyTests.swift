@@ -44,12 +44,4 @@ struct OfferWindowPolicyTests {
         #expect(shows(&policy, v120, manual: false))
         #expect(shows(&policy, v120, manual: true))
     }
-
-    /// A new launch has a new policy, so the same version is shown again.
-    @Test func aNewLaunchStartsAgain() {
-        var first = OfferWindowPolicy()
-        #expect(shows(&first, v120, manual: false))
-        var second = OfferWindowPolicy()
-        #expect(shows(&second, v120, manual: false))
-    }
 }

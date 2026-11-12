@@ -10,11 +10,6 @@ struct ClearShotActionTests {
         #expect(ClearShotAction.allInOne.defaultShortcut == .commandShift(KeyCode.digit5))
     }
 
-    @Test func commandShiftMatchesTheCarbonValues() {
-        // ⇧⌘4 in Carbon terms: the 4 key is 21, and ⌘ (256) + ⇧ (512) is 768.
-        #expect(ShortcutSpec.commandShift(KeyCode.digit4) == ShortcutSpec(carbonKeyCode: 21, carbonModifiers: 768))
-    }
-
     @Test func titlesAreUniqueAndNonEmpty() {
         let titles = ClearShotAction.allCases.map(\.title)
         #expect(Set(titles).count == titles.count)

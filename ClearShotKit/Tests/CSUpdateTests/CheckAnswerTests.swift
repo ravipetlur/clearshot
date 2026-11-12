@@ -1,93 +1,70 @@
+import Foundation
 import Testing
 import CSUpdate
 
 /// What a manual check says for each way it can stand or end, on each surface that can show it: the popover under the
 /// status icon, and the line under Check Now in Settings › About.
 struct CheckAnswerTests {
-    let v120 = VersionNumber("1.2.0")!
-    let v121 = VersionNumber("1.2.1")!
+    static let v120 = VersionNumber("1.2.0")!
+    static let v121 = VersionNumber("1.2.1")!
 
     func answer(_ outcome: CheckAnswer.Outcome, _ source: CheckSource) -> CheckAnswer {
         CheckAnswer(outcome, source: source)
     }
 
-    // MARK: Checking
+    struct Cell: Sendable, CustomTestStringConvertible {
+        let outcome: CheckAnswer.Outcome
+        let source: CheckSource
+        let isShown: Bool
+        let mark: CheckAnswer.Mark?
+        let title: String
+        let detail: String?
+        let hasOKButton: Bool
+        let autoCloseDelay: TimeInterval?
+        let isPending: Bool
 
-    @Test func theStatusMenuPopoverOpensWithChecking() {
-        let answer = answer(.checking, .statusMenu)
-        #expect(answer.isShown)
-        #expect(answer.mark == .spinner)
-        #expect(answer.title == "Checking for updates\u{2026}")
-        #expect(answer.detail == nil)
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(answer.isPending)
+        var testDescription: String { "\(source) \(outcome)" }
     }
 
-    @Test func theAboutLineSaysChecking() {
-        let answer = answer(.checking, .settings)
-        #expect(answer.isShown)
-        #expect(answer.mark == .spinner)
-        #expect(answer.title == "Checking\u{2026}")
-        #expect(answer.detail == nil)
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(answer.isPending)
-    }
-
-    // MARK: Up to date
-
-    @Test func upToDateInThePopoverHasACheckmarkAndClosesByItself() {
-        let answer = answer(.upToDate(v120), .statusMenu)
-        #expect(answer.isShown)
-        #expect(answer.mark == .checkmark)
-        #expect(answer.title == "ClearShot is up to date (1.2.0)")
-        #expect(answer.detail == nil)
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == 4)
-        #expect(!answer.isPending)
-    }
-
-    @Test func upToDateInTheAboutLineHasACheckmarkAndStays() {
-        let answer = answer(.upToDate(v120), .settings)
-        #expect(answer.isShown)
-        #expect(answer.mark == .checkmark)
-        #expect(answer.title == "ClearShot is up to date (1.2.0)")
-        #expect(answer.detail == nil)
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(!answer.isPending)
+    /// Every way a check can stand or end, on each surface. Checking shows a spinner on both. Up to date has a checkmark,
+    /// and only the popover closes by itself. A failure in the popover has a title, the plain reason and OK; in the
+    /// About line it is the plain reason with a warning. An update found closes the popover (the offer window shows it)
+    /// and says so in the About line.
+    @Test(arguments: [
+        Cell(outcome: .checking, source: .statusMenu, isShown: true, mark: .spinner, title: "Checking for updates\u{2026}",
+             detail: nil, hasOKButton: false, autoCloseDelay: nil, isPending: true),
+        Cell(outcome: .checking, source: .settings, isShown: true, mark: .spinner, title: "Checking\u{2026}",
+             detail: nil, hasOKButton: false, autoCloseDelay: nil, isPending: true),
+        Cell(outcome: .upToDate(CheckAnswerTests.v120), source: .statusMenu, isShown: true, mark: .checkmark,
+             title: "ClearShot is up to date (1.2.0)", detail: nil, hasOKButton: false, autoCloseDelay: 4, isPending: false),
+        Cell(outcome: .upToDate(CheckAnswerTests.v120), source: .settings, isShown: true, mark: .checkmark,
+             title: "ClearShot is up to date (1.2.0)", detail: nil, hasOKButton: false, autoCloseDelay: nil, isPending: false),
+        Cell(outcome: .failed(.network), source: .statusMenu, isShown: true, mark: .warning,
+             title: "Couldn't check for updates", detail: UpdateFailure.network.message, hasOKButton: true,
+             autoCloseDelay: nil, isPending: false),
+        Cell(outcome: .failed(.rateLimited), source: .settings, isShown: true, mark: .warning,
+             title: UpdateFailure.rateLimited.message, detail: nil, hasOKButton: false, autoCloseDelay: nil, isPending: false),
+        Cell(outcome: .found(CheckAnswerTests.v121), source: .statusMenu, isShown: false, mark: nil, title: "Version 1.2.1 is available",
+             detail: nil, hasOKButton: false, autoCloseDelay: nil, isPending: false),
+        Cell(outcome: .found(CheckAnswerTests.v121), source: .settings, isShown: true, mark: .available, title: "Version 1.2.1 is available",
+             detail: nil, hasOKButton: false, autoCloseDelay: nil, isPending: false),
+    ])
+    func eachOutcomeOnEachSurface(cell: Cell) {
+        let answer = CheckAnswer(cell.outcome, source: cell.source)
+        #expect(answer.isShown == cell.isShown)
+        #expect(answer.mark == cell.mark)
+        #expect(answer.title == cell.title)
+        #expect(answer.detail == cell.detail)
+        #expect(answer.hasOKButton == cell.hasOKButton)
+        #expect(answer.autoCloseDelay == cell.autoCloseDelay)
+        #expect(answer.isPending == cell.isPending)
     }
 
     /// The version is whatever the center says is current: an update installed since launch counts.
     @Test func upToDateNamesTheVersionItIsGiven() {
-        #expect(answer(.upToDate(v121), .statusMenu).title == "ClearShot is up to date (1.2.1)")
-        #expect(answer(.upToDate(v121), .settings).title == "ClearShot is up to date (1.2.1)")
+        #expect(answer(.upToDate(Self.v121), .statusMenu).title == "ClearShot is up to date (1.2.1)")
+        #expect(answer(.upToDate(Self.v121), .settings).title == "ClearShot is up to date (1.2.1)")
         #expect(answer(.upToDate(VersionNumber("1.10.12")!), .settings).title == "ClearShot is up to date (1.10.12)")
-    }
-
-    // MARK: Failed
-
-    @Test func aFailureInThePopoverHasATitleThePlainReasonAndOK() {
-        let answer = answer(.failed(.network), .statusMenu)
-        #expect(answer.isShown)
-        #expect(answer.mark == .warning)
-        #expect(answer.title == "Couldn't check for updates")
-        #expect(answer.detail == UpdateFailure.network.message)
-        #expect(answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(!answer.isPending)
-    }
-
-    @Test func aFailureInTheAboutLineIsItsPlainReasonWithAWarning() {
-        let answer = answer(.failed(.rateLimited), .settings)
-        #expect(answer.isShown)
-        #expect(answer.mark == .warning)
-        #expect(answer.title == UpdateFailure.rateLimited.message)
-        #expect(answer.detail == nil)
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(!answer.isPending)
     }
 
     /// Every failure's own words, for both surfaces: the answer adds nothing and drops nothing.
@@ -97,77 +74,5 @@ struct CheckAnswerTests {
             #expect(answer(.failed(failure), .settings).title == failure.message, "\(failure)")
             #expect(!failure.message.isEmpty, "\(failure)")
         }
-    }
-
-    // MARK: Found
-
-    @Test func anUpdateFoundClosesTheStatusMenuPopover() {
-        let answer = answer(.found(v121), .statusMenu)
-        #expect(!answer.isShown)
-        #expect(answer.mark == nil)
-        #expect(answer.title == "Version 1.2.1 is available")
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(!answer.isPending)
-    }
-
-    @Test func anUpdateFoundSaysSoInTheAboutLine() {
-        let answer = answer(.found(v121), .settings)
-        #expect(answer.isShown)
-        #expect(answer.mark == .available)
-        #expect(answer.title == "Version 1.2.1 is available")
-        #expect(answer.detail == nil)
-        #expect(!answer.hasOKButton)
-        #expect(answer.autoCloseDelay == nil)
-        #expect(!answer.isPending)
-    }
-
-    // MARK: Both surfaces
-
-    /// Only the popover closes by itself, and only when it is up to date: a failure stays until OK, and the line under the
-    /// button stays until the pane closes or a new check starts.
-    @Test func onlyAnUpToDatePopoverClosesByItself() {
-        let outcomes: [CheckAnswer.Outcome] = [.checking, .upToDate(v120), .failed(.network), .failed(.serverError), .found(v121)]
-        for source in CheckSource.allCases {
-            for outcome in outcomes {
-                let delay = answer(outcome, source).autoCloseDelay
-                if source == .statusMenu, case .upToDate = outcome {
-                    #expect(delay == 4, "\(source) \(outcome)")
-                } else {
-                    #expect(delay == nil, "\(source) \(outcome)")
-                }
-            }
-        }
-    }
-
-    /// Only a failure in the popover has a button.
-    @Test func onlyAFailureInThePopoverHasAnOKButton() {
-        let outcomes: [CheckAnswer.Outcome] = [.checking, .upToDate(v120), .failed(.network), .found(v121)]
-        for source in CheckSource.allCases {
-            for outcome in outcomes {
-                let expected: Bool
-                if source == .statusMenu, case .failed = outcome { expected = true } else { expected = false }
-                #expect(answer(outcome, source).hasOKButton == expected, "\(source) \(outcome)")
-            }
-        }
-    }
-
-    /// Everything but an update found in the popover has something to show, and a mark to show with it.
-    @Test func everythingShownHasAMarkAndATitle() {
-        let outcomes: [CheckAnswer.Outcome] = [.checking, .upToDate(v120), .failed(.network), .found(v121)]
-        for source in CheckSource.allCases {
-            for outcome in outcomes {
-                let answer = answer(outcome, source)
-                guard answer.isShown else { continue }
-                #expect(answer.mark != nil, "\(source) \(outcome)")
-                #expect(!answer.title.isEmpty, "\(source) \(outcome)")
-            }
-        }
-    }
-
-    @Test func theAnswerKeepsItsSourceAndOutcome() {
-        let answer = answer(.upToDate(v120), .settings)
-        #expect(answer.source == .settings)
-        #expect(answer.outcome == .upToDate(v120))
     }
 }

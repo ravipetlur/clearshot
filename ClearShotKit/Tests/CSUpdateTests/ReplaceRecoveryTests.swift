@@ -18,63 +18,60 @@ struct ReplaceRecoveryTests {
                              backupExists: backup, stagedExists: staged)
     }
 
-    // MARK: Something is at the app's place
+    // MARK: Every combination
 
-    /// No key, something at the app's place: it is the old app, nothing moved, and the staged copy can go.
-    @Test func anAppThatIsStillInPlaceNeedsNothingRestored() {
-        #expect(plan(inPlace: true) == .discardStaged)
-        #expect(plan(inPlace: true, backup: true) == .discardStaged)
-        #expect(plan(inPlace: true, staged: false) == .discardStaged)
-    }
+    /// The whole table. Something at the app's place without the key is the old app, nothing moved, and the staged copy
+    /// can go. With the key, the swap took effect: nothing is deleted or put back, the new copy stays, and the old one
+    /// (where the key says) is deleted as after a clean swap. With nothing at the app's place, an old copy is restored
+    /// first, from where the error says it is, else from its backup name (a key whose place has nothing in it doesn't
+    /// stop the backup name being looked at), whether or not the staged copy is there. When neither old copy can be
+    /// found the verified staged copy takes the app's place, and only with nothing to put there is the app lost.
+    @Test(arguments: [
+        // (app in place, original location reported, original location exists, backup exists, staged exists, plan)
+        (false, false, false, false, false, .appLost),
+        (false, false, false, false, true, .promoteStaged),
+        (false, false, false, true, false, .restoreFromBackup),
+        (false, false, false, true, true, .restoreFromBackup),
+        (false, false, true, false, false, .appLost),
+        (false, false, true, false, true, .promoteStaged),
+        (false, false, true, true, false, .restoreFromBackup),
+        (false, false, true, true, true, .restoreFromBackup),
+        (false, true, false, false, false, .appLost),
+        (false, true, false, false, true, .promoteStaged),
+        (false, true, false, true, false, .restoreFromBackup),
+        (false, true, false, true, true, .restoreFromBackup),
+        (false, true, true, false, false, .restoreFromOriginalLocation),
+        (false, true, true, false, true, .restoreFromOriginalLocation),
+        (false, true, true, true, false, .restoreFromOriginalLocation),
+        (false, true, true, true, true, .restoreFromOriginalLocation),
+        (true, false, false, false, false, .discardStaged),
+        (true, false, false, false, true, .discardStaged),
+        (true, false, false, true, false, .discardStaged),
+        (true, false, false, true, true, .discardStaged),
+        (true, false, true, false, false, .discardStaged),
+        (true, false, true, false, true, .discardStaged),
+        (true, false, true, true, false, .discardStaged),
+        (true, false, true, true, true, .discardStaged),
+        (true, true, false, false, false, .keepNewCopy),
+        (true, true, false, false, true, .keepNewCopy),
+        (true, true, false, true, false, .keepNewCopy),
+        (true, true, false, true, true, .keepNewCopy),
+        (true, true, true, false, false, .keepNewCopy),
+        (true, true, true, false, true, .keepNewCopy),
+        (true, true, true, true, false, .keepNewCopy),
+        (true, true, true, true, true, .keepNewCopy),
 
-    /// Key and something at the app's place: the swap took effect. Nothing is deleted or put back; the new copy stays,
-    /// and the old one (where the key says) is deleted as after a clean swap.
-    @Test func aSwapThatTookEffectKeepsTheNewCopy() {
-        #expect(plan(inPlace: true, reported: true) == .keepNewCopy)
-        #expect(plan(inPlace: true, reported: true, original: true) == .keepNewCopy)
-        #expect(plan(inPlace: true, reported: true, original: true, backup: true) == .keepNewCopy)
-        #expect(plan(inPlace: true, reported: true, staged: false) == .keepNewCopy)
-    }
-
-    // MARK: Nothing is at the app's place
-
-    @Test func anAppMovedAwayIsRestoredFromWhereTheErrorSaysItIs() {
-        #expect(plan(reported: true, original: true) == .restoreFromOriginalLocation)
-        #expect(plan(reported: true, original: true, backup: true) == .restoreFromOriginalLocation)
-    }
-
-    @Test func anAppMovedToItsBackupNameIsRestoredFromThere() {
-        #expect(plan(backup: true) == .restoreFromBackup)
-        // A key whose place has nothing in it doesn't stop the backup name being looked at.
-        #expect(plan(reported: true, original: false, backup: true) == .restoreFromBackup)
-    }
-
-    /// Neither old copy can be found: the verified staged copy takes the app's place.
-    @Test func whenNoOldCopyCanBeFoundTheStagedCopyTakesItsPlace() {
-        #expect(plan() == .promoteStaged)
-        #expect(plan(reported: true) == .promoteStaged)
-    }
-
-    /// Nothing at the app's place and nothing to put there: the one case that leaves the app missing.
-    @Test func whenThereIsNothingToPutInItsPlaceTheAppIsLost() {
-        #expect(plan(staged: false) == .appLost)
-        #expect(plan(reported: true, staged: false) == .appLost)
-    }
-
-    /// The staged copy doesn't matter while an old copy can be restored: that comes first.
-    @Test func anOldCopyIsRestoredWhetherOrNotTheStagedCopyIsThere() {
-        #expect(plan(reported: true, original: true, staged: false) == .restoreFromOriginalLocation)
-        #expect(plan(backup: true, staged: false) == .restoreFromBackup)
+    ] as [(Bool, Bool, Bool, Bool, Bool, Plan)])
+    func everyCombinationHasItsPlan(inPlace: Bool, reported: Bool, original: Bool, backup: Bool, staged: Bool,
+                                    expected: Plan) {
+        #expect(plan(inPlace: inPlace, reported: reported, original: original, backup: backup, staged: staged) == expected)
     }
 
     // MARK: When the restore itself fails
 
-    @Test func aFailedRestoreFallsBackToTheStagedCopy() {
-        #expect(ReplaceRecovery.planAfterFailedRestore(stagedExists: true) == .promoteStaged)
-    }
-
-    @Test func aFailedRestoreWithNoStagedCopyLeavesTheAppLost() {
-        #expect(ReplaceRecovery.planAfterFailedRestore(stagedExists: false) == .appLost)
+    @Test(arguments: [(true, Plan.promoteStaged), (false, .appLost)])
+    func aFailedRestoreFallsBackToTheStagedCopyIfThereIsOne(stagedExists: Bool, expected: Plan) {
+        #expect(ReplaceRecovery.planAfterFailedRestore(stagedExists: stagedExists) == expected)
     }
 
     // MARK: The running app is never the old copy
@@ -127,31 +124,5 @@ struct ReplaceRecoveryTests {
         #expect(ReplaceRecovery.isRunningApp(URL(filePath: "/Users/someone/Apps/x/../ClearShot.app"), running: running))
         #expect(!ReplaceRecovery.isRunningApp(URL(filePath: "/Users/someone/Apps/ClearShot 1.1.app"), running: running))
         #expect(!ReplaceRecovery.isRunningApp(URL(filePath: "/Users/someone/Apps"), running: running))
-    }
-
-    // MARK: Every combination
-
-    /// The staged copy is deleted only when the old app is in place and nothing happened to it; the new copy is kept
-    /// only when the key says the swap happened; the app is lost only when nothing is at its place and nothing can be.
-    @Test func everyCombinationHasTheRightPlan() {
-        for inPlace in [false, true] {
-            for reported in [false, true] {
-                for original in [false, true] {
-                    for backup in [false, true] {
-                        for staged in [false, true] {
-                            let result = plan(inPlace: inPlace, reported: reported, original: original, backup: backup,
-                                              staged: staged)
-                            let context = "inPlace \(inPlace), reported \(reported), original \(original), backup \(backup), staged \(staged)"
-                            #expect((result == .discardStaged) == (inPlace && !reported), "\(context)")
-                            #expect((result == .keepNewCopy) == (inPlace && reported), "\(context)")
-                            let restores = !inPlace && ((reported && original) || backup)
-                            #expect((result == .restoreFromOriginalLocation || result == .restoreFromBackup) == restores, "\(context)")
-                            #expect((result == .appLost) == (!inPlace && !restores && !staged), "\(context)")
-                            #expect((result == .promoteStaged) == (!inPlace && !restores && staged), "\(context)")
-                        }
-                    }
-                }
-            }
-        }
     }
 }

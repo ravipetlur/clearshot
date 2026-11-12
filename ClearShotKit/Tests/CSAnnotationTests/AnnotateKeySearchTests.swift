@@ -3,15 +3,11 @@ import Testing
 
 /// The Annotate tool letters' rows in Settings › Shortcuts, found by title, keyword or section title.
 struct AnnotateKeySearchTests {
-    @Test func pixelateFindsRedact() {
-        #expect(AnnotateKeyTarget.matching("pixelate") == [.tool(.redact)])
-        #expect(AnnotateKeyTarget.matching("Blur") == [.tool(.redact)])
-        #expect(AnnotateKeyTarget.matching("REDACT") == [.tool(.redact)])
-    }
-
-    @Test func markerFindsTheHighlighter() {
-        #expect(AnnotateKeyTarget.matching("marker") == [.tool(.highlighter)])
-        #expect(AnnotateKeyTarget.matching("wallpaper") == [.backgroundPanel])
+    /// A keyword or a title, in any case, finds its row: pixelate finds Redact, marker the highlighter.
+    @Test(arguments: [("pixelate", AnnotateKeyTarget.tool(.redact)), ("Blur", .tool(.redact)), ("REDACT", .tool(.redact)),
+                      ("marker", .tool(.highlighter)), ("wallpaper", .backgroundPanel)])
+    func aKeywordFindsItsTarget(query: String, target: AnnotateKeyTarget) {
+        #expect(AnnotateKeyTarget.matching(query) == [target])
     }
 
     @Test func theGroupTitleFindsEveryTarget() {

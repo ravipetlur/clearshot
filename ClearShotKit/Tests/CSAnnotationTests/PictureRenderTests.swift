@@ -137,44 +137,83 @@ struct PictureRenderTests {
 
     // MARK: A mask lands on the text, whatever was done to the picture
 
-    @Test func aPlainPicturesMaskIsOverTheBlock() throws {
-        let (document, images) = document()
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 0)
+    enum Change: String, CaseIterable {
+        case nothing
+        /// Each with an annotation and a background, which the picture leaves out.
+        case rotateLeft, rotateRight, flipHorizontal, flipVertical
+        case turnedTwiceAndFlipped
+        /// The render is the crop.
+        case aCrop
+        /// Output pixels: the turned picture is 80 x 120.
+        case aCropOfATurnedPicture
+        case aResize
+        case aCanvasOnPartPixels
+        case anExpandedCanvas
+        case everythingAtOnceOnARetinaCapture
+
+        /// How far inside the block the mask may stop, in base pixels.
+        var tolerance: CGFloat {
+            switch self {
+            case .aResize: 1.5
+            case .aCanvasOnPartPixels: 1
+            case .everythingAtOnceOnARetinaCapture: 2
+            default: 0
+            }
+        }
     }
 
-    @Test(arguments: [ImageOp.rotateLeft, .rotateRight, .flipHorizontal, .flipVertical])
-    func aTurnedOrFlippedPicturesMaskIsOverTheBlockInTheBase(op: ImageOp) throws {
-        var (document, images) = document()
-        document.imageOps = [op]
-        // With an annotation and a background, which the picture leaves out.
-        document.objects = [annotation()]
-        document.background = background()
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 0)
+    /// The document with `change` made to it.
+    private func changed(_ change: Change) -> (AnnotationDocument, ImageStore) {
+        var (document, images) = document(scale: change == .everythingAtOnceOnARetinaCapture ? 2 : 1)
+        switch change {
+        case .nothing: break
+        case .rotateLeft, .rotateRight, .flipHorizontal, .flipVertical:
+            let op: ImageOp = switch change {
+            case .rotateLeft: .rotateLeft
+            case .rotateRight: .rotateRight
+            case .flipHorizontal: .flipHorizontal
+            default: .flipVertical
+            }
+            document.imageOps = [op]
+            document.objects = [annotation()]
+            document.background = background()
+        case .turnedTwiceAndFlipped:
+            document.imageOps = [.rotateRight, .flipHorizontal, .rotateLeft, .flipVertical, .rotateRight]
+        case .aCrop:
+            document.canvasRect = CGRect(x: 10, y: 5, width: 80, height: 60)
+            document.objects = [annotation()]
+        case .aCropOfATurnedPicture:
+            document.imageOps = [.rotateRight]
+            document.canvasRect = CGRect(x: 5, y: 10, width: 60, height: 100)
+            document.background = background(autoBalance: true)
+            document.objects = [annotation()]
+        case .aResize:
+            document.imageOps = [.resize(width: 60, height: 40)]
+        case .aCanvasOnPartPixels:
+            document.canvasRect = CGRect(x: 10.4, y: 5.6, width: 79.7, height: 59.9)
+        case .anExpandedCanvas:
+            document.canvasRect = CGRect(x: -20, y: -10, width: 170, height: 110)
+            document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
+        case .everythingAtOnceOnARetinaCapture:
+            document.imageOps = [.rotateLeft, .resize(width: 70, height: 100)]
+            document.canvasRect = CGRect(x: -4, y: 3, width: 82, height: 96)
+            document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
+            document.background = background(padding: 12)
+            document.objects = [annotation()]
+        }
+        return (document, images)
     }
 
-    @Test func aPictureTurnedTwiceAndFlippedIsStillOverTheBlock() throws {
-        var (document, images) = document()
-        document.imageOps = [.rotateRight, .flipHorizontal, .rotateLeft, .flipVertical, .rotateRight]
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 0)
-    }
-
-    @Test func aCroppedPicturesMaskIsOverTheBlockInTheBase() throws {
-        var (document, images) = document()
-        document.canvasRect = CGRect(x: 10, y: 5, width: 80, height: 60)
-        document.objects = [annotation()]
+    @Test(arguments: Change.allCases)
+    func aMaskIsOverTheBlockInTheBase(_ change: Change) throws {
+        let (document, images) = changed(change)
         let picture = try #require(Renderer.renderPicture(of: document, images: images))
-        #expect(picture.image.width == 80 && picture.image.height == 60, "the render is the crop")
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 0)
-    }
-
-    @Test func aCropOfATurnedPictureIsOverTheBlockInTheBase() throws {
-        var (document, images) = document()
-        document.imageOps = [.rotateRight]
-        // Output pixels: the turned picture is 80 x 120.
-        document.canvasRect = CGRect(x: 5, y: 10, width: 60, height: 100)
-        document.background = background(autoBalance: true)
-        document.objects = [annotation()]
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 0)
+        switch change {
+        case .aCrop: #expect(picture.image.width == 80 && picture.image.height == 60, "the render is the crop")
+        case .aResize: #expect(picture.image.width == 60 && picture.image.height == 40)
+        default: break
+        }
+        try expectMaskLandsOnTheBlock(document, images, tolerance: change.tolerance)
     }
 
     @Test func aCropTightOnTheBlockStillHasTheBlockWhole() throws {
@@ -184,36 +223,5 @@ struct PictureRenderTests {
         let picture = try #require(Renderer.renderPicture(of: document, images: images))
         #expect(blueBounds(in: picture.image) == CGRect(origin: .zero, size: marker.size))
         #expect(CGRect(origin: .zero, size: marker.size).applying(picture.mapping.toBase) == marker)
-    }
-
-    @Test func aResizedPicturesMaskIsOverTheBlockInTheBase() throws {
-        var (document, images) = document()
-        document.imageOps = [.resize(width: 60, height: 40)]
-        let picture = try #require(Renderer.renderPicture(of: document, images: images))
-        #expect(picture.image.width == 60 && picture.image.height == 40)
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 1.5)
-    }
-
-    @Test func aCanvasOnPartPixelsMapsToTheSameWholePixels() throws {
-        var (document, images) = document()
-        document.canvasRect = CGRect(x: 10.4, y: 5.6, width: 79.7, height: 59.9)
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 1)
-    }
-
-    @Test func anExpandedCanvasMapsBackToo() throws {
-        var (document, images) = document()
-        document.canvasRect = CGRect(x: -20, y: -10, width: 170, height: 110)
-        document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 0)
-    }
-
-    @Test func everythingAtOnceOnARetinaCaptureMapsBack() throws {
-        var (document, images) = document(scale: 2)
-        document.imageOps = [.rotateLeft, .resize(width: 70, height: 100)]
-        document.canvasRect = CGRect(x: -4, y: 3, width: 82, height: 96)
-        document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
-        document.background = background(padding: 12)
-        document.objects = [annotation()]
-        try expectMaskLandsOnTheBlock(document, images, tolerance: 2)
     }
 }

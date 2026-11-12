@@ -50,12 +50,6 @@ struct MagnifierTests {
         #expect(decoded.magnifierBorder)
     }
 
-    @Test func magnifierLetterIsFreeByDefault() {
-        let keys = AnnotateToolKeys()
-        #expect(keys.tool(for: "m") == .magnifier)
-        #expect(keys.tool(for: "M") == .magnifier)
-    }
-
     // MARK: Geometry
 
     @Test func zoomIsClamped() {

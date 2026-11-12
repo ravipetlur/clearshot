@@ -63,124 +63,101 @@ struct RenderedBaseMappingTests {
 
     // MARK: Nothing changed
 
-    @Test func aPlainDocumentsRenderIsTheBase() throws {
-        let (document, images) = document()
+    /// A plain document's render is the base, and so is a Retina one's: pixelScale 2 makes the base 120 x 80 pixels, 60 x 40
+    /// points, and the render and the mapping are in pixels.
+    @Test(arguments: [1.0, 2.0])
+    func anUnchangedDocumentsRenderIsTheBase(scale: Double) throws {
+        let (document, images) = document(scale: scale)
         let mapping = try #require(Renderer.baseMapping(of: document, images: images))
         #expect(mapping.toBase == .identity)
         #expect(mapping.renderedSize == CGSize(width: 120, height: 80))
         try expectMapsBack(document, images, tolerance: 0)
     }
 
-    @Test func aRetinaDocumentsMappingIsInPixelsNotPoints() throws {
-        // pixelScale 2: the base is 120 x 80 pixels, 60 x 40 points. The render is in pixels, and so is the mapping.
-        let (document, images) = document(scale: 2)
+    // MARK: Changes that are undone
+
+    enum Change: String, CaseIterable {
+        // Image operations.
+        case rotateLeft, rotateRight, flipHorizontal, flipVertical
+        case severalOperationsInARow
+        case aResize
+        case aResizeAfterATurn
+        // The canvas.
+        case aCroppedCanvas
+        case anExpandedCanvas
+        /// The render's bounds are rounded out to whole pixels (as `Renderer.render` does), and the mapping with them.
+        case aCanvasOnPartPixels
+        /// Output pixels: the turned picture is 80 x 120.
+        case aCropAfterATurn
+        // A background.
+        case aBackgroundsFrame
+        case aBackgroundOnARetinaCapture
+        case aBackgroundWithATallRatio
+        case aBackgroundWithAWideRatio
+        /// Auto-balance trims uniform margins off the picture first, which moves the frame: the white around the block goes.
+        case aBackgroundWithAutoBalance
+        case everythingAtOnce
+
+        /// How far the block may land from where it is in the base, in base pixels.
+        var tolerance: CGFloat {
+            switch self {
+            case .rotateLeft, .rotateRight, .flipHorizontal, .flipVertical, .severalOperationsInARow, .aCroppedCanvas,
+                 .anExpandedCanvas, .aCropAfterATurn, .aBackgroundsFrame: 0
+            case .aCanvasOnPartPixels, .aBackgroundOnARetinaCapture, .aBackgroundWithATallRatio, .aBackgroundWithAWideRatio,
+                 .aBackgroundWithAutoBalance: 1
+            case .aResize, .aResizeAfterATurn: 1.5
+            case .everythingAtOnce: 2
+            }
+        }
+    }
+
+    /// The document with `change` made to it.
+    private func changed(_ change: Change) -> (AnnotationDocument, ImageStore) {
+        let retina = [.aBackgroundOnARetinaCapture, .everythingAtOnce].contains(change)
+        var (document, images) = document(scale: retina ? 2 : 1)
+        switch change {
+        case .rotateLeft: document.imageOps = [.rotateLeft]
+        case .rotateRight: document.imageOps = [.rotateRight]
+        case .flipHorizontal: document.imageOps = [.flipHorizontal]
+        case .flipVertical: document.imageOps = [.flipVertical]
+        case .severalOperationsInARow: document.imageOps = [.rotateRight, .flipHorizontal, .rotateLeft, .flipVertical]
+        case .aResize: document.imageOps = [.resize(width: 60, height: 40)]
+        case .aResizeAfterATurn: document.imageOps = [.rotateRight, .resize(width: 50, height: 90)]
+        case .aCroppedCanvas: document.canvasRect = CGRect(x: 10, y: 5, width: 80, height: 60)
+        case .anExpandedCanvas:
+            document.canvasRect = CGRect(x: -20, y: -10, width: 170, height: 110)
+            document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
+        case .aCanvasOnPartPixels: document.canvasRect = CGRect(x: 10.4, y: 5.6, width: 79.7, height: 59.9)
+        case .aCropAfterATurn:
+            document.imageOps = [.rotateRight]
+            document.canvasRect = CGRect(x: 5, y: 10, width: 60, height: 100)
+        case .aBackgroundsFrame: document.background = background()
+        case .aBackgroundOnARetinaCapture: document.background = background(padding: 17.3)
+        case .aBackgroundWithATallRatio: document.background = background(ratio: .r9x16)
+        case .aBackgroundWithAWideRatio: document.background = background(ratio: .r16x9)
+        case .aBackgroundWithAutoBalance: document.background = background(autoBalance: true)
+        case .everythingAtOnce:
+            document.imageOps = [.rotateLeft, .resize(width: 70, height: 100)]
+            document.canvasRect = CGRect(x: -4, y: 3, width: 82, height: 96)
+            document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
+            document.background = background(padding: 12, ratio: .r4x3)
+        }
+        return (document, images)
+    }
+
+    @Test(arguments: Change.allCases)
+    func aChangeIsUndone(_ change: Change) throws {
+        let (document, images) = changed(change)
         let mapping = try #require(Renderer.baseMapping(of: document, images: images))
-        #expect(mapping.toBase == .identity)
-        #expect(mapping.renderedSize == CGSize(width: 120, height: 80))
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    // MARK: Image operations
-
-    @Test(arguments: [ImageOp.rotateLeft, .rotateRight, .flipHorizontal, .flipVertical])
-    func aTurnOrFlipIsUndone(op: ImageOp) throws {
-        var (document, images) = document()
-        document.imageOps = [op]
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    @Test func severalOperationsInARowAreUndone() throws {
-        var (document, images) = document()
-        document.imageOps = [.rotateRight, .flipHorizontal, .rotateLeft, .flipVertical]
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    @Test func aResizeIsUndone() throws {
-        var (document, images) = document()
-        document.imageOps = [.resize(width: 60, height: 40)]
-        let mapping = try #require(Renderer.baseMapping(of: document, images: images))
-        #expect(mapping.renderedSize == CGSize(width: 60, height: 40))
-        try expectMapsBack(document, images)
-    }
-
-    @Test func aResizeAfterATurnIsUndone() throws {
-        var (document, images) = document()
-        document.imageOps = [.rotateRight, .resize(width: 50, height: 90)]
-        try expectMapsBack(document, images)
-    }
-
-    // MARK: The canvas
-
-    @Test func aCroppedCanvasIsUndone() throws {
-        var (document, images) = document()
-        document.canvasRect = CGRect(x: 10, y: 5, width: 80, height: 60)
-        let mapping = try #require(Renderer.baseMapping(of: document, images: images))
-        #expect(mapping.renderedSize == CGSize(width: 80, height: 60))
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    @Test func anExpandedCanvasIsUndone() throws {
-        var (document, images) = document()
-        document.canvasRect = CGRect(x: -20, y: -10, width: 170, height: 110)
-        document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
-        let mapping = try #require(Renderer.baseMapping(of: document, images: images))
-        #expect(mapping.renderedSize == CGSize(width: 170, height: 110))
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    @Test func aCanvasOnPartPixelsIsUndoneToTheSameWholePixels() throws {
-        // The render's bounds are rounded out to whole pixels (as `Renderer.render` does), and the mapping with them.
-        var (document, images) = document()
-        document.canvasRect = CGRect(x: 10.4, y: 5.6, width: 79.7, height: 59.9)
-        try expectMapsBack(document, images, tolerance: 1)
-    }
-
-    @Test func aCropAfterATurnIsUndone() throws {
-        var (document, images) = document()
-        document.imageOps = [.rotateRight]
-        // Output pixels: the turned picture is 80 x 120.
-        document.canvasRect = CGRect(x: 5, y: 10, width: 60, height: 100)
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    // MARK: A background
-
-    @Test func aBackgroundsFrameIsUndone() throws {
-        var (document, images) = document()
-        document.background = background()
-        let mapping = try #require(Renderer.baseMapping(of: document, images: images))
-        #expect(mapping.renderedSize.width > 120 && mapping.renderedSize.height > 80, "the frame is around the picture")
-        try expectMapsBack(document, images, tolerance: 0)
-    }
-
-    @Test func aBackgroundOnARetinaCaptureIsUndone() throws {
-        var (document, images) = document(scale: 2)
-        document.background = background(padding: 17.3)
-        try expectMapsBack(document, images, tolerance: 1)
-    }
-
-    @Test func aBackgroundWithAFixedRatioIsUndone() throws {
-        var (document, images) = document()
-        document.background = background(ratio: .r9x16)
-        try expectMapsBack(document, images, tolerance: 1)
-        document.background = background(ratio: .r16x9)
-        try expectMapsBack(document, images, tolerance: 1)
-    }
-
-    @Test func aBackgroundWithAutoBalanceIsUndone() throws {
-        // Auto-balance trims uniform margins off the picture first, which moves the frame: the white around the block goes.
-        var (document, images) = document()
-        document.background = background(autoBalance: true)
-        try expectMapsBack(document, images, tolerance: 1)
-    }
-
-    @Test func everythingAtOnceIsUndone() throws {
-        var (document, images) = document(scale: 2)
-        document.imageOps = [.rotateLeft, .resize(width: 70, height: 100)]
-        document.canvasRect = CGRect(x: -4, y: 3, width: 82, height: 96)
-        document.canvasFill = .color(RGBAColor(red: 1, green: 1, blue: 1))
-        document.background = background(padding: 12, ratio: .r4x3)
-        try expectMapsBack(document, images, tolerance: 2)
+        switch change {
+        case .aResize: #expect(mapping.renderedSize == CGSize(width: 60, height: 40))
+        case .aCroppedCanvas: #expect(mapping.renderedSize == CGSize(width: 80, height: 60))
+        case .anExpandedCanvas: #expect(mapping.renderedSize == CGSize(width: 170, height: 110))
+        case .aBackgroundsFrame:
+            #expect(mapping.renderedSize.width > 120 && mapping.renderedSize.height > 80, "the frame is around the picture")
+        default: break
+        }
+        try expectMapsBack(document, images, tolerance: change.tolerance)
     }
 
     // MARK: Nothing to map

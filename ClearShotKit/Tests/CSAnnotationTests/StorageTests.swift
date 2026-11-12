@@ -110,25 +110,23 @@ final class DocumentPackageTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) == ["Again.clearshot"])
     }
 
-    @Test func aNewerVersionIsRejectedWithAClearError() throws {
-        let url = folder.appending(path: "Future.clearshot", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try Data(#"{"version": 99}"#.utf8).write(to: url.appending(path: DocumentPackage.documentFileName))
-        #expect(throws: DocumentError.newerVersion) { try DocumentPackage.readDocument(from: url) }
-    }
+    /// A package that can't be opened says why: a newer version with a clear error, a corrupt document as unreadable, and a
+    /// missing base image as missing.
+    @Test func aPackageThatCannotBeOpenedSaysWhy() throws {
+        let future = folder.appending(path: "Future.clearshot", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: future, withIntermediateDirectories: true)
+        try Data(#"{"version": 99}"#.utf8).write(to: future.appending(path: DocumentPackage.documentFileName))
+        #expect(throws: DocumentError.newerVersion) { try DocumentPackage.readDocument(from: future) }
 
-    @Test func aCorruptDocumentIsUnreadable() throws {
-        let url = folder.appending(path: "Broken.clearshot", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try Data("not json".utf8).write(to: url.appending(path: DocumentPackage.documentFileName))
-        #expect(throws: DocumentError.self) { try DocumentPackage.readDocument(from: url) }
-    }
+        let broken = folder.appending(path: "Broken.clearshot", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: broken.appending(path: DocumentPackage.documentFileName))
+        #expect(throws: DocumentError.self) { try DocumentPackage.readDocument(from: broken) }
 
-    @Test func aMissingBaseImageIsReported() throws {
         let (document, _) = sample()
-        let url = folder.appending(path: "NoBase.clearshot", directoryHint: .isDirectory)
-        try DocumentPackage.writeContents(document, images: ImageStore(), to: url)
-        #expect(throws: DocumentError.missingBase) { try DocumentPackage.read(from: url) }
+        let noBase = folder.appending(path: "NoBase.clearshot", directoryHint: .isDirectory)
+        try DocumentPackage.writeContents(document, images: ImageStore(), to: noBase)
+        #expect(throws: DocumentError.missingBase) { try DocumentPackage.read(from: noBase) }
     }
 
     @Test func aSaveThatFailsLeavesTheOldPackageReadable() throws {

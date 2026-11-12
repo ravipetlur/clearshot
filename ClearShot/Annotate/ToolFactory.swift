@@ -17,6 +17,7 @@ enum ToolFactory {
         case .pen: PenTool(editor: editor, canvas: canvas)
         case .highlighter: HighlighterTool(editor: editor, canvas: canvas)
         case .counter: CounterTool(editor: editor)
+        case .magnifier: MagnifierTool(editor: editor, canvas: canvas)
         case .crop: CropTool(editor: editor, canvas: canvas)
         }
     }

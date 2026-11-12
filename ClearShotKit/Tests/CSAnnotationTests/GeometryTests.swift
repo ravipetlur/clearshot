@@ -206,10 +206,10 @@ struct BoundsAndMovesTests {
         #expect(result.width == 60)
     }
 
-    @Test func draggingTheControlPointBendsTheArrow() {
+    @Test func draggingTheBendHandleBendsTheCurveThroughThePoint() {
         let arrow = object(.arrow(ArrowShape(start: .zero, end: CGPoint(x: 100, y: 0), control: CGPoint(x: 50, y: 10), style: .curved)))
         let dragged = ObjectGeometry.dragging(.control, of: arrow, to: CGPoint(x: 40, y: 60), constrained: false)
-        #expect(dragged.kind == .arrow(ArrowShape(start: .zero, end: CGPoint(x: 100, y: 0), control: CGPoint(x: 40, y: 60), style: .curved)))
+        #expect(dragged.kind == .arrow(ArrowShape(start: .zero, end: CGPoint(x: 100, y: 0), control: CGPoint(x: 30, y: 120), style: .curved)))
     }
 
     @Test(arguments: [TextStyle.standard, .box])

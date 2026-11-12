@@ -42,11 +42,15 @@ public struct ImageStore: Sendable {
 }
 
 /// A redaction's effect image, with everything it was computed from: the object, its region, the base it read and the
-/// pixel scale that sized its blocks. It is reused only while all of those are unchanged.
+/// pixel scale that sized its blocks. It is reused only while all of those are unchanged. An Erase also depends on the
+/// other redactions: through `surroundings` (compared by identity: a new picture whenever any redaction that isn't an
+/// Erase is added, moved, restyled or deleted) and `excluded` (the other Erases' areas).
 struct CachedRedaction {
     var object: RedactObject
     var region: CGRect
     var base: CGImage
+    var surroundings: CGImage
+    var excluded: [CGRect]
     var pixelScale: Double
     var image: CGImage
 }
@@ -59,8 +63,12 @@ struct CachedContentAnalysis {
     var imageOps: [ImageOp]
     var canvasBounds: CGRect
     var canvasFill: CanvasFill
-    /// Auto-balance's trims (`AutoBalance.trims(of:)`), measured on the content without its redactions.
+    /// Auto-balance's trims (`AutoBalance.trims(of:)`), measured on the content with its redactions
+    /// (`Renderer.redactedContent`), so they tell nothing of what the redactions hide.
     var trims: EdgeTrims?
+    /// The redactions, in drawing order, and the pixel scale `trims` were measured with: other ones measure them again.
+    var trimsRedactions: [RedactionKey] = []
+    var trimsPixelScale: Double = 1
     /// The Blurred screenshot fill's picture.
     var blur: CachedBlur?
 
@@ -106,14 +114,20 @@ struct RedactionKey: Equatable {
 /// - redacted regions, by object, and the base with all the redactions in it;
 /// - shadowed objects' rasters, by object (see `CachedObjectRaster`);
 /// - the background's layer: everything a background draws under the objects, as one raster (see `CachedBackgroundLayer`);
-/// - the base's edge color;
+/// - the redacted base's edge color (`Renderer.autoEdgeColor`), by that copy's identity;
 /// - what the background takes from the content: auto-balance's trims and the blurred screenshot.
 ///
 /// The rasters (the objects' and the layer's) share one budget (`rasterBudget`, `RasterBudget`). Use one cache per canvas,
 /// from one actor.
 public final class RenderCache {
     var redactions: [UUID: CachedRedaction] = [:]
+    /// Text-only redactions' word effects, by object (`Renderer.redactionCovers`).
+    var wordRedactions: [UUID: CachedWordRedaction] = [:]
+    /// Text-only redactions' fingerprints of the pixels under them, by object (`Renderer.redactionCovers`).
+    var wordsPictures: [UUID: CachedWordsPicture] = [:]
     var redactedBase: CachedRedactedBase?
+    /// The base with only the redactions that aren't Erases in it: what Erases read their rings from.
+    var eraseSurroundings: CachedRedactedBase?
     var objectRasters: [UUID: CachedObjectRaster] = [:]
     var backgroundLayer: CachedBackgroundLayer?
     /// How a redaction's image is made. Tests replace it to make the effect fail.

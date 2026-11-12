@@ -28,6 +28,8 @@ final class SelectTool: ToolController {
     private(set) var marquee: CGRect?
     private var drag = Drag.none
     private var duplicated = false
+    /// Where the press on a pixel selection's handle began, until it has moved: a release with it still set was a click.
+    private var handleDown: CGPoint?
     /// The mouse has moved since a move drag began; an ⌥-click that never moves leaves no copy behind.
     private var moved = false
     /// What was selected when ⌥ made the copies, which become the selection while they are dragged.
@@ -40,6 +42,10 @@ final class SelectTool: ToolController {
         case handle(original: AnnotationObject, handle: Handle, offset: CGVector)
         case move(originals: [UUID: AnnotationObject], start: CGPoint)
         case marquee(start: CGPoint, kept: Set<UUID>)
+        /// ⌥-drag on empty canvas: the rubber band is a pixel selection, not a pick of objects.
+        case pixelMarquee(start: CGPoint)
+        case pixelHandle(Handle)
+        case pixelMove(original: CGRect, start: CGPoint)
     }
 
     init(editor: AnnotationEditor, canvas: AnnotationCanvasView) {
@@ -60,6 +66,16 @@ final class SelectTool: ToolController {
         }
     }
 
+    /// The handle of the pixel selection under `point`, corners before edges.
+    private func pixelHandle(at point: CGPoint) -> Handle? {
+        guard let rect = editor.pixelSelection else { return nil }
+        let tolerance = 6 * canvas.basePixelsPerScreenPoint
+        return CropGeometry.handles.first { handle in
+            let spot = ObjectGeometry.point(of: handle, in: rect)
+            return hypot(spot.x - point.x, spot.y - point.y) <= tolerance
+        }
+    }
+
     func mouseDown(at point: CGPoint, event: NSEvent) {
         let tolerance = 5 * canvas.basePixelsPerScreenPoint
         let flags = event.modifierFlags
@@ -67,13 +83,48 @@ final class SelectTool: ToolController {
         moved = false
         // A handle of the one selected object.
         if let handle = handle(at: point), let id = editor.selection.first, let object = editor.object(id) {
+            if handle == .control, event.clickCount == 2 {
+                // Double-clicking an arrow's bend handle straightens it.
+                editor.straightenArrow(id)
+                return
+            }
             let spot = ObjectGeometry.handlePoint(handle, of: object)
             editor.beginLiveChange()
             drag = .handle(original: object, handle: handle, offset: CGVector(dx: spot.x - point.x, dy: spot.y - point.y))
             return
         }
+        // The pixel selection's handles.
+        if let handle = pixelHandle(at: point) {
+            drag = .pixelHandle(handle)
+            handleDown = point
+            return
+        }
         let hit = editor.document.visualOrder.reversed().first { ObjectGeometry.hitTest($0, at: point, tolerance: tolerance) }
         guard let hit else {
+            // ⌘-click on empty picture: the flat-colour region under it becomes the pixel selection (a click on an object
+            // keeps its meaning, above).
+            if flags.contains(.command), !flags.contains(.option), !flags.contains(.shift), editor.crop == nil {
+                editor.selection = []
+                let editor = editor
+                Task { await editor.selectFlatRegion(at: point) }
+                return
+            }
+            // On empty canvas: inside the pixel selection a drag moves it; ⌥-drag makes a new one (the plain drag is the
+            // rubber band, which keeps its meaning: a band that catches no object leaves a pixel selection too, see mouseUp);
+            // a click elsewhere clears it.
+            if let rect = editor.pixelSelection, rect.contains(point), !flags.contains(.option) {
+                drag = .pixelMove(original: rect, start: point)
+                return
+            }
+            if flags.contains(.option) {
+                editor.selection = []
+                editor.clearPixelSelection()
+                marquee = CGRect(origin: point, size: .zero)
+                drag = .pixelMarquee(start: point)
+                editor.loadPicturePixels()   // for the fit preview while dragging
+                return
+            }
+            editor.clearPixelSelection()
             let kept = flags.contains(.shift) ? editor.selection : []
             editor.selection = kept
             marquee = CGRect(origin: point, size: .zero)
@@ -131,8 +182,21 @@ final class SelectTool: ToolController {
         case .marquee(let start, let kept):
             let rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
             marquee = rect
-            let inside = editor.document.objects.filter { ObjectGeometry.bounds(of: $0).intersects(rect) }.map(\.id)
+            let document = editor.document, unit = editor.rulerUnit
+            let inside = document.objects.filter { document.paintedBounds(of: $0, rulerUnit: unit).intersects(rect) }.map(\.id)
             editor.selection = kept.union(inside)
+        case .pixelMarquee(let start):
+            marquee = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+            // The outline the drag would fit to (⌥A applies it), when it is cheap enough to work out.
+            editor.showFitPreview(of: PixelSelection.between(start, point, in: editor.document.baseSize))
+        case .pixelHandle(let handle):
+            guard let rect = editor.pixelSelection else { break }
+            if let down = handleDown, hypot(point.x - down.x, point.y - down.y) <= 3 * canvas.basePixelsPerScreenPoint { break }
+            handleDown = nil
+            editor.selectPixels(PixelSelection.dragging(handle, of: rect, to: point, in: editor.document.baseSize))
+        case .pixelMove(let original, let start):
+            editor.selectPixels(PixelSelection.nudged(original, by: CGVector(dx: point.x - start.x, dy: point.y - start.y),
+                                                      in: editor.document.baseSize))
         case .none:
             break
         }
@@ -149,7 +213,26 @@ final class SelectTool: ToolController {
             } else {
                 editor.endLiveChange(duplicated ? "Duplicate" : "Move")
             }
-        case .marquee: marquee = nil
+        case .marquee:
+            // A band that caught no object stays as a pixel selection (a click is not a band).
+            if let band = marquee, editor.selection.isEmpty, band.width + band.height > 6 * canvas.basePixelsPerScreenPoint {
+                editor.selectPixels(PixelSelection.between(band.origin, CGPoint(x: band.maxX, y: band.maxY), in: editor.document.baseSize))
+            }
+            marquee = nil
+        case .pixelMarquee(let start):
+            if hypot(point.x - start.x, point.y - start.y) > 3 * canvas.basePixelsPerScreenPoint {
+                editor.selectPixels(PixelSelection.between(start, point, in: editor.document.baseSize))
+            }
+            editor.showFitPreview(of: nil)
+            marquee = nil
+        case .pixelHandle(let handle):
+            // A click on an edge's handle, without a drag, fits that edge alone to the content.
+            if handleDown != nil, case .edge(let edge) = handle {
+                let editor = editor
+                Task { await editor.fitPixelSelectionToContent(edges: [edge]) }
+            }
+            handleDown = nil
+        case .pixelMove: break
         case .none: break
         }
         drag = .none

@@ -248,14 +248,14 @@ struct AnnotationDocumentTests {
         #expect(decoded.objects.count == Self.everyKind.count)
     }
 
-    @Test func savingAnOldDocumentStampsTheCurrentVersion() throws {
-        // A file from an older format, saved again, is in today's format: an older build must then refuse it rather than
-        // drop the fields it doesn't know and save over them.
+    @Test func savingAnOldDocumentStampsTheLowestVersionThatHoldsIt() throws {
+        // A file from an older format, saved again, is in today's format at the lowest version that holds it: with nothing
+        // newer in it, the base version every released build reads.
         let old = Self.versionOneJSON.replacingOccurrences(of: #""version":1"#, with: #""version":0"#)
         #expect(old != Self.versionOneJSON)
         let decoded = try JSONDecoder().decode(AnnotationDocument.self, from: Data(old.utf8))
         let saved = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any])
-        #expect(saved["version"] as? Int == AnnotationDocument.currentVersion)
+        #expect(saved["version"] as? Int == AnnotationDocument.baseVersion)
         // Nothing else changes.
         #expect(try JSONDecoder().decode(AnnotationDocument.self, from: JSONEncoder().encode(decoded)) == Self.fullDocument())
     }

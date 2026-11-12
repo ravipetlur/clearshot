@@ -14,6 +14,12 @@ struct AnnotatePane: View {
                 Toggle("Draw shadow on objects", isOn: prefs.binding(Prefs.annotateObjectShadows))
                 Toggle("Automatically expand canvas", isOn: prefs.binding(Prefs.annotateAutoExpandCanvas))
                 Toggle("Show color names", isOn: prefs.binding(Prefs.annotateShowColorNames))
+                Picker("Show sizes in", selection: prefs.binding(Prefs.annotateSizeUnit)) {
+                    ForEach(SizeUnit.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Color format", selection: prefs.binding(Prefs.annotateColorCopyFormat)) {
+                    ForEach(ColorFormat.allCases) { Text($0.title).tag($0) }
+                }
             }
             Section {
                 Toggle("Always on top", isOn: prefs.binding(Prefs.annotateAlwaysOnTop))

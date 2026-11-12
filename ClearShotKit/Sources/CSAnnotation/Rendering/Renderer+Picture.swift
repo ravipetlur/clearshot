@@ -33,8 +33,13 @@ extension Renderer {
     /// can't be rendered (no base image, an output that is empty or too big), or when the mapping isn't of the render that
     /// was made. Uses no cache; call it off the main actor, as `render` is.
     public static func renderPicture(of document: AnnotationDocument, images: ImageStore) -> PictureRender? {
-        let picture = document.pictureOnly
-        guard let image = render(picture, images: images), let mapping = baseMapping(of: picture, images: images),
+        renderReduced(document.pictureOnly, images: images)
+    }
+
+    /// `reduced` (a document already cut down to what is to be read, with no background) rendered, with the mapping made from
+    /// the same document. Nil as for `renderPicture`.
+    static func renderReduced(_ reduced: AnnotationDocument, images: ImageStore) -> PictureRender? {
+        guard let image = render(reduced, images: images), let mapping = baseMapping(of: reduced, images: images),
               mapping.renderedSize == CGSize(width: image.width, height: image.height) else { return nil }
         return PictureRender(image: image, mapping: mapping)
     }

@@ -53,6 +53,6 @@ struct FileNameTemplateEditor: View {
                                       autoIncrement: draft.nextAutoIncrement,
                                       removeIllegalCharacters: draft.removeIllegalCharacters)
         return FileNamer.baseName(for: FileNameTemplate(parsing: draft.templateText), context: context) + "."
-            + prefs[Prefs.imageFormat].fileExtension
+            + prefs[Prefs.imageFormat].fileExtensionPreview
     }
 }

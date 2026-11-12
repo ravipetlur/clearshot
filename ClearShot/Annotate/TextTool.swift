@@ -30,7 +30,7 @@ final class TextTool: ToolController {
         let fontSize = editor.document.pixels(fromPoints: ToolSizes.fontSize(settings.sizeLevel))
         // Put the first line's middle under the pointer.
         let text = TextObject(origin: CGPoint(x: point.x, y: point.y - fontSize * 0.6), string: "", style: settings.textStyle,
-                              fontSize: fontSize)
+                              fontSize: fontSize, handDrawn: settings.handDrawn)
         let object = AnnotationObject(kind: .text(text), style: editor.newStyle(lineWidthPoints: 1))
         editor.beginLiveChange()
         editor.updateLive { $0.objects.append(object) }

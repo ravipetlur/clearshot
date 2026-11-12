@@ -10,7 +10,8 @@ extension AnnotateManager {
     func render(_ editor: AnnotationEditor) async -> CGImage? {
         let document = editor.document
         let images = editor.images
-        return await Task.detached(priority: .userInitiated) { Renderer.render(document, images: images) }.value
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
+        return await Task.detached(priority: .userInitiated) { Renderer.render(document, images: images, rulerUnit: rulerUnit) }.value
     }
 
     /// The finished picture as PNG data and, when `name` is given, as a file of that name in the temporary folder (copy,
@@ -20,8 +21,9 @@ extension AnnotateManager {
         let document = editor.document
         let images = editor.images
         let screenCapture = screenCaptureTag(of: editor)
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         return await Task.detached(priority: .userInitiated) {
-            Self.makePNG(document, images: images, fileNamed: name, screenCapture: screenCapture)
+            Self.makePNG(document, images: images, fileNamed: name, screenCapture: screenCapture, rulerUnit: rulerUnit)
         }.value
     }
 
@@ -32,8 +34,9 @@ extension AnnotateManager {
     }
 
     nonisolated static func makePNG(_ document: AnnotationDocument, images: ImageStore, fileNamed name: String?,
-                                    subfolder: String? = nil, screenCapture: ScreenCaptureTag?) -> (data: Data, file: URL?)? {
-        guard let image = Renderer.render(document, images: images),
+                                    subfolder: String? = nil, screenCapture: ScreenCaptureTag?,
+                                    rulerUnit: SizeUnit) -> (data: Data, file: URL?)? {
+        guard let image = Renderer.render(document, images: images, rulerUnit: rulerUnit),
               let data = try? ImageEncoder.encode(image, as: .png, quality: 1, pixelsPerPoint: document.renderedScale)
         else { return nil }
         let file = name.flatMap { writeTemporaryPNG(data, name: $0, subfolder: subfolder) }
@@ -123,9 +126,12 @@ extension AnnotateManager {
         let quality = preferences[Prefs.imageQuality]
         // A captured screenshot's picture is marked as one; an opened image's or a project's isn't.
         let screenCapture = screenCaptureTag(of: editor)
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Void, any Error> in
             Result {
-                guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
+                guard let rendered = Renderer.render(document, images: images, rulerUnit: rulerUnit) else {
+                    throw CaptureError.cannotTransform
+                }
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if let imageFormat = format.imageFormat {
                     try Exporter.write(rendered, as: imageFormat, quality: quality, pixelsPerPoint: document.renderedScale, to: url,
@@ -177,15 +183,16 @@ extension AnnotateManager {
     func dragFile(for editor: AnnotationEditor) -> URL? {
         let key = ObjectIdentifier(editor)
         let document = editor.document
-        if let cached = dragFiles[key], cached.document == document,
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
+        if let cached = dragFiles[key], cached.document == document, cached.rulerUnit == rulerUnit,
            FileManager.default.fileExists(atPath: cached.file.path(percentEncoded: false)) {
             return cached.file
         }
         guard let file = Self.makePNG(document, images: editor.images, fileNamed: editor.title,
                                       subfolder: "Drag/\(UUID().uuidString)",
-                                      screenCapture: screenCaptureTag(of: editor))?.file else { return nil }
+                                      screenCapture: screenCaptureTag(of: editor), rulerUnit: rulerUnit)?.file else { return nil }
         if let stale = dragFiles[key] { try? FileManager.default.removeItem(at: stale.file.deletingLastPathComponent()) }
-        dragFiles[key] = (document, file)
+        dragFiles[key] = (document, rulerUnit, file)
         return file
     }
 

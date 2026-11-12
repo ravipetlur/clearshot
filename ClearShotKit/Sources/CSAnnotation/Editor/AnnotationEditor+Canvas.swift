@@ -38,6 +38,7 @@ extension AnnotationEditor {
     /// While a live change is open (a drag, a slider, a text edit) there is no session: the caller ends the edit first.
     func beginCrop(from previous: EditorTool) {
         toolBeforeCrop = previous
+        pixelSelection = nil
         guard !isInLiveChange else { return }
         crop = freshCropSession(ratio: .freeform)
     }

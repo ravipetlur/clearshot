@@ -28,8 +28,8 @@ extension Renderer {
 
     /// The canvas as rendered without any objects, redactions included, and without the background: the base after its
     /// image operations, over the canvas fill, cut to the canvas. It is exactly the canvas (`canvasBounds`), so the trims
-    /// auto-balance measures in its pixels apply from the canvas's origin. (The blurred screenshot is made from the content
-    /// with its redactions instead, `redactedContent`, so it never shows what they hide.)
+    /// auto-balance measures in its pixels apply from the canvas's origin. (With redactions, the trims and the blurred
+    /// screenshot are taken from the content with them instead, `redactedContent`, so neither tells what they hide.)
     public static func renderContent(_ document: AnnotationDocument, images: ImageStore) -> CGImage? {
         var content = document
         content.objects = []
@@ -38,7 +38,8 @@ extension Renderer {
     }
 
     /// Auto-balance's trims for the document's background: `.zero` unless the background has auto-balance on. Measured on
-    /// `renderContent` and kept in `cache` while the content is unchanged; measured every time without a cache.
+    /// the content with its redactions and kept in `cache` while the content and the redactions are unchanged; measured
+    /// every time without a cache.
     public static func balanceTrims(for document: AnnotationDocument, images: ImageStore, cache: RenderCache?) -> EdgeTrims {
         guard document.background?.style.autoBalance == true else { return .zero }
         return contentAnalysis(for: document, images: images, cache: cache, trims: true, blurred: false).trims
@@ -58,11 +59,10 @@ extension Renderer {
         return contentAnalysis(for: document, images: images, cache: cache, trims: style.autoBalance, blurred: blurred)
     }
 
-    /// The trims and the blurred content asked for. The trims are measured on the content without its redactions
-    /// (`renderContent`); the blur is made from the content with them (`redactedContent`), or from the same render when
-    /// there are none. The cache's entry for this content supplies what it has (the blur only while the redactions and the
-    /// pixel scale are the ones it was made with); what it lacks is made and kept in it. A content render that fails isn't
-    /// remembered, so the next call tries again.
+    /// The trims and the blurred content asked for, both from the content with its redactions (`redactedContent`), or
+    /// `renderContent` when there are none: so neither tells anything of what a redaction hides. The cache's entry for this
+    /// content supplies what it has (each only while the redactions and the pixel scale are the ones it was made with);
+    /// what it lacks is made and kept in it. A content render that fails isn't remembered, so the next call tries again.
     private static func contentAnalysis(for document: AnnotationDocument, images: ImageStore, cache: RenderCache?,
                                         trims wantsTrims: Bool, blurred wantsBlurred: Bool) -> ContentAnalysis {
         guard wantsTrims || wantsBlurred, let base = images[document.base] else { return ContentAnalysis(trims: .zero) }
@@ -70,17 +70,24 @@ extension Renderer {
             ?? CachedContentAnalysis(base: base, imageOps: document.imageOps, canvasBounds: document.canvasBounds,
                                      canvasFill: document.canvasFill)
         let redactions = RedactionKey.all(in: document.visualOrder)
-        let blurIsCurrent = entry.blur.map { $0.redactions == redactions && $0.pixelScale == document.pixelScale } ?? false
-        let needsTrims = wantsTrims && entry.trims == nil
+        let pixelScale = document.pixelScale
+        let blurIsCurrent = entry.blur.map { $0.redactions == redactions && $0.pixelScale == pixelScale } ?? false
+        let trimsAreCurrent = entry.trims != nil && entry.trimsRedactions == redactions && entry.trimsPixelScale == pixelScale
+        let needsTrims = wantsTrims && !trimsAreCurrent
         let needsBlurred = wantsBlurred && !blurIsCurrent
-        // A blur made under other redactions is never shown, even when a new one can't be made.
+        // Neither made under other redactions is used, even when a new one can't be made.
         if needsBlurred { entry.blur = nil }
-        let content = needsTrims || (needsBlurred && redactions.isEmpty) ? renderContent(document, images: images) : nil
-        if needsTrims, let content { entry.trims = AutoBalance.trims(of: content) }
-        if needsBlurred,
-           let source = redactions.isEmpty ? content : redactedContent(document, base: base, redactions: redactions, cache: cache),
-           let image = BackgroundBlur.blurred(source) {
-            entry.blur = CachedBlur(redactions: redactions, pixelScale: document.pixelScale, image: image)
+        if needsTrims { entry.trims = nil }
+        let content = !(needsTrims || needsBlurred) ? nil
+            : redactions.isEmpty ? renderContent(document, images: images)
+            : redactedContent(document, base: base, redactions: redactions, cache: cache)
+        if needsTrims, let content {
+            entry.trims = AutoBalance.trims(of: content)
+            entry.trimsRedactions = redactions
+            entry.trimsPixelScale = pixelScale
+        }
+        if needsBlurred, let content, let image = BackgroundBlur.blurred(content) {
+            entry.blur = CachedBlur(redactions: redactions, pixelScale: pixelScale, image: image)
         }
         cache?.contentAnalysis = entry
         return ContentAnalysis(trims: wantsTrims ? entry.trims ?? .zero : .zero, blurred: wantsBlurred ? entry.blur?.image : nil)
@@ -107,7 +114,8 @@ extension Renderer {
         drawBase(document, base: base, redactions: redactions, in: context, cache: cache)
         context.concatenate(document.transform.transform)
         for redaction in redactions {
-            drawRedaction(redaction.redact, id: redaction.id, base: base, pixelScale: document.pixelScale, in: context, cache: cache)
+            drawRedaction(redaction.redact, id: redaction.id, base: base, redactions: redactions, pixelScale: document.pixelScale,
+                          in: context, cache: cache)
         }
         return context.makeImage()
     }
@@ -125,7 +133,7 @@ extension Renderer {
     /// raster kept in `cache`. `analysis` is the content's, when the caller has measured it already.
     static func drawBackgrounded(_ document: AnnotationDocument, background: DocumentBackground, analysis: ContentAnalysis? = nil,
                                  images: ImageStore, in context: CGContext, cache: RenderCache?, hiding hidden: Set<UUID>,
-                                 deviceScale: Double, useObjectCache: Bool) {
+                                 deviceScale: Double, useObjectCache: Bool, rulerUnit: SizeUnit) {
         guard let base = images[document.base] else { return }
         let analysis = analysis ?? contentAnalysis(for: document, images: images, cache: cache)
         guard let layout = document.backgroundLayout(trims: analysis.trims) else { return }
@@ -138,7 +146,7 @@ extension Renderer {
             nil
         }
         // The document's visual order: redactions first, which are drawn with the content.
-        let objects = document.visualOrder.filter { !hidden.contains($0.id) }
+        let objects = document.drawingOrder(rulerUnit: rulerUnit).filter { !hidden.contains($0.id) }
         let layer = BackgroundLayer(document: document, background: background, layout: layout, trims: analysis.trims,
                                     picture: picture, base: base,
                                     redactions: objects.filter { if case .redact = $0.kind { true } else { false } })
@@ -154,10 +162,16 @@ extension Renderer {
         context.clip(to: layout.frame)
         context.concatenate(document.transform.transform)
         var spotlightsDrawn = false
+        var magnified: MagnifiedPicture?
         for object in objects {
             switch object.kind {
             case .redact:
                 continue // Drawn with the content.
+            case .magnifier(let magnifier):
+                // The picture the callouts show, with the redactions in it, made once for them all.
+                let picture = magnified ?? magnifiedPicture(of: document, base: base, cache: cache)
+                magnified = picture
+                drawMagnifier(object, magnifier, picture: picture, pixelScale: document.pixelScale, images: images, in: context)
             case .spotlight:
                 // All the spotlights dim together, over the whole frame, where the first of them comes in the order.
                 if !spotlightsDrawn { drawSpotlights(objects, covering: layout.frame.applying(document.transform.inverse), in: context) }
@@ -203,7 +217,7 @@ extension Renderer {
         context.addPath(roundedRect(layout.box, radius: layout.cornerRadius))
         context.clip()
         if layout.inset > 0 {
-            context.setFillColor(insetColor(style.insetColor, base: layer.base, cache: cache).cgColor)
+            context.setFillColor(insetColor(style.insetColor, document: layer.document, base: layer.base, cache: cache).cgColor)
             context.fill(layout.box)
         }
         context.clip(to: layout.content)
@@ -225,13 +239,13 @@ extension Renderer {
         context.saveGState()
         context.concatenate(baseToOutput)
         var complete = true
-        let covers = redactions.compactMap { object -> (target: CGRect, effect: CGImage?)? in
-            guard case .redact(let redact) = object.kind else { return nil }
-            guard redact.style != .blackOut else { return (deviceAligned(redact.rect.standardized.integral, in: context), nil) }
-            guard let effect = redactionEffect(redact, id: object.id, base: base, pixelScale: document.pixelScale, cache: cache)
-            else { return nil }
-            if effect.image == nil { complete = false }
-            return (deviceAligned(effect.region, in: context), effect.image)
+        let keys = RedactionKey.all(in: redactions)
+        let covers = redactions.flatMap { object -> [(target: CGRect, effect: CGImage?)] in
+            guard case .redact(let redact) = object.kind else { return [] }
+            let drawn = redactionCovers(redact, id: object.id, base: base, redactions: keys,
+                                        pixelScale: document.pixelScale, cache: cache)
+            if !drawn.complete { complete = false }
+            return drawn.covers.map { (deviceAligned($0.region, in: context), $0.image) }
         }
         context.restoreGState()
 
@@ -247,7 +261,7 @@ extension Renderer {
         }
         context.setShouldAntialias(true)
         fillCanvas(document, base: base, canvas: document.canvasBounds, in: context, cache: cache)
-        if !drawBase(document, base: base, redactions: RedactionKey.all(in: redactions), in: context, cache: cache) {
+        if !drawBase(document, base: base, redactions: keys, in: context, cache: cache) {
             complete = false
         }
         context.restoreGState()
@@ -275,6 +289,10 @@ extension Renderer {
         if cache.redactions.keys.contains(where: { !live.contains($0) }) {
             cache.redactions = cache.redactions.filter { live.contains($0.key) }
         }
+        if cache.wordsPictures.keys.contains(where: { !live.contains($0) }) {
+            cache.wordRedactions = cache.wordRedactions.filter { live.contains($0.key) }
+            cache.wordsPictures = cache.wordsPictures.filter { live.contains($0.key) }
+        }
         if !cache.objectRasters.isEmpty {
             let shadowed = Set(objects.lazy.filter(\.style.shadow).map(\.id))
             if cache.objectRasters.keys.contains(where: { !shadowed.contains($0) }) {
@@ -283,16 +301,12 @@ extension Renderer {
         }
     }
 
-    /// The inset's colour: the picture's edge colour (`EdgeColor`, kept in `cache`) for Auto.
-    private static func insetColor(_ color: InsetColor, base: CGImage, cache: RenderCache?) -> RGBAColor {
+    /// The inset's colour: for Auto, the redacted picture's edge colour (`autoEdgeColor`).
+    private static func insetColor(_ color: InsetColor, document: AnnotationDocument, base: CGImage,
+                                   cache: RenderCache?) -> RGBAColor {
         switch color {
-        case .color(let color):
-            return color
-        case .auto:
-            if let cached = cache?.edgeColor, cached.base === base { return cached.color }
-            let color = EdgeColor.dominant(in: base)
-            cache?.edgeColor = (base, color)
-            return color
+        case .color(let color): color
+        case .auto: autoEdgeColor(of: document, base: base, cache: cache)
         }
     }
 

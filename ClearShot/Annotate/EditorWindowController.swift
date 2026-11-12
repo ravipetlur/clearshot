@@ -55,7 +55,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.setContentSize(Self.initialSize(for: editor))
         // Before the canvas exists: it passes these on through the controller.
         canvas.imageProblem = { [weak self] problem in self?.showImageProblem(problem) }
+        canvas.colorCopied = { [weak self] text in self?.manager.hud.show(text, symbol: "eyedropper") }
         canvas.toggleBackgroundPanel = { [weak self] in self?.toggleBackgroundTool(nil) }
+        editor.textOnlyNotice = { [weak manager] message in manager?.hud.show(message, symbol: "text.viewfinder") }
         observeEdits()
         // Scans the picture the editor opened with, and again whenever it changes.
         sensitiveCheck.start()
@@ -222,6 +224,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
     }
 
+    /// File › Export Before/After GIF…: needs an image object in the document.
+    @objc func exportBeforeAfterGIF(_ sender: Any?) {
+        guard !isKeyRepeat else { return }
+        run { await $0.manager.exportBeforeAfterGIF($0.editor) }
+    }
+
     @objc func copyImage(_ sender: Any?) {
         guard !isKeyRepeat else { return }
         makeActions().copy()
@@ -248,6 +256,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     @objc func zoomOut(_ sender: Any?) { canvas.zoomOut() }
     @objc func zoomToActualSize(_ sender: Any?) { canvas.zoom(to: 1) }
     @objc func zoomToFit(_ sender: Any?) { canvas.zoomToFit() }
+    @objc func zoomToSelection(_ sender: Any?) { canvas.canvas?.zoomToPixelSelection() }
+
+    /// Edit › Fit Selection to Content (⌥A): the pixel selection's edges move in over the flat margin around its content.
+    @objc func fitSelectionToContent(_ sender: Any?) {
+        let editor = editor
+        Task { await editor.fitPixelSelectionToContent() }
+    }
 
     // MARK: Crop & Resize
 
@@ -571,6 +586,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             !editor.isSaving
         case #selector(pinToScreen(_:)):
             !editor.isApplying
+        case #selector(exportBeforeAfterGIF(_:)):
+            !editor.isSaving && BeforeAfterGIF.isAvailable(for: editor.document)
+        case #selector(zoomToSelection(_:)):
+            editor.pixelSelection != nil && editor.crop == nil
+        case #selector(fitSelectionToContent(_:)):
+            editor.pixelSelection != nil && editor.crop == nil && !isTyping
         case #selector(revertToOriginal(_:)):
             editor.document.canRevertToOriginal && window?.attachedSheet == nil
         // The Resize sheet is modal to the editor: nothing may change the canvas under it, or its sizes go stale. Opening

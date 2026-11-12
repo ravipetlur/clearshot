@@ -27,11 +27,12 @@ public enum ObjectGeometry {
         case .redact(let redact): redact.rect
         case .spotlight(let spotlight): spotlight.rect
         case .image(let image): image.rect
+        case .magnifier(let magnifier): magnifier.callout
         case .text(let text): TextLayout.frame(of: text)
         case .counter(let counter):
             CGRect(x: counter.center.x - counter.diameter / 2, y: counter.center.y - counter.diameter / 2,
                    width: counter.diameter, height: counter.diameter)
-        case .line, .arrow, .stroke, .highlight: nil
+        case .line, .arrow, .stroke, .highlight, .ruler: nil
         }
     }
 
@@ -42,10 +43,16 @@ public enum ObjectGeometry {
         switch object.kind {
         case .line(let start, let end):
             return box(around: [start, end]).insetBy(dx: -width / 2, dy: -width / 2)
+        case .ruler(let ruler):
+            return RulerGeometry.bounds(of: ruler, lineWidth: width)
         case .arrow(let arrow):
             let head = ArrowGeometry.headLength(for: width)
             // A fancy arrow's body flares to 60% of the head length either side of its axis.
-            let margin = arrow.style == .fancy ? max(width / 2, head * 0.6) : max(width, head) / 2
+            var margin = arrow.style == .fancy ? max(width / 2, head * 0.6) : max(width, head) / 2
+            if object.style.handDrawn {
+                let chord = hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y)
+                margin += RoughPath.reachFactor * RoughPath.amplitude(lineWidth: width, extent: chord)
+            }
             return box(around: ArrowGeometry.spine(of: arrow)).insetBy(dx: -margin, dy: -margin)
         case .stroke(let stroke):
             return box(around: stroke.points).insetBy(dx: -width / 2, dy: -width / 2)
@@ -54,6 +61,14 @@ public enum ObjectGeometry {
                 return box(around: highlight.points).insetBy(dx: -highlight.width / 2, dy: -highlight.width / 2)
             }
             return highlight.rects.dropFirst().reduce(first) { $0.union($1) }
+        case .rectangle(let shape), .ellipse(let shape):
+            // A hand-drawn outline strays a little past the rect.
+            guard object.style.handDrawn else { return shape }
+            let reach = RoughPath.reachFactor * RoughPath.amplitude(lineWidth: width, extent: min(shape.width, shape.height))
+            return shape.insetBy(dx: -reach, dy: -reach)
+        case .magnifier(let magnifier):
+            // The callout with its border, the connector and the source it reaches for.
+            return magnifier.callout.standardized.insetBy(dx: -width / 2, dy: -width / 2).union(magnifier.source.standardized)
         default:
             return rect(of: object.kind) ?? .null
         }
@@ -84,15 +99,19 @@ public enum ObjectGeometry {
             return shapePath(of: spotlight).copy(strokingWithWidth: 2 * tolerance, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
                 .contains(point)
         case .rectangle(let rect):
+            if object.style.hasFill { return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) }
             let inner = rect.insetBy(dx: width + tolerance, dy: width + tolerance)
             return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) && !(inner.width > 0 && inner.height > 0 && inner.contains(point))
         case .ellipse(let rect):
             let inner = rect.insetBy(dx: width + tolerance, dy: width + tolerance)
             let insideOuter = ellipseContains(rect.insetBy(dx: -tolerance, dy: -tolerance), point)
+            if object.style.hasFill { return insideOuter }
             let insideInner = inner.width > 0 && inner.height > 0 && ellipseContains(inner, point)
             return insideOuter && !insideInner
         case .line(let start, let end):
             return distance(from: point, toPolyline: [start, end]) <= width / 2 + tolerance
+        case .ruler(let ruler):
+            return distance(from: point, toPolyline: [ruler.start, ruler.end]) <= width / 2 + tolerance
         case .arrow(let arrow):
             let reach = max(width, ArrowGeometry.headLength(for: width) * 0.5) / 2
             return distance(from: point, toPolyline: ArrowGeometry.spine(of: arrow)) <= reach + tolerance
@@ -107,6 +126,10 @@ public enum ObjectGeometry {
             return hypot(point.x - counter.center.x, point.y - counter.center.y) <= counter.diameter / 2 + tolerance
         case .filledRectangle, .redact, .image, .text:
             return (rect(of: object.kind) ?? .null).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+        case .magnifier(let magnifier):
+            // The callout, which looks filled, anywhere inside; not the source, which is the picture itself.
+            let callout = magnifier.callout.standardized.insetBy(dx: -tolerance, dy: -tolerance)
+            return MagnifierGeometry.path(of: magnifier.shape, in: callout).contains(point)
         }
     }
 
@@ -120,6 +143,10 @@ public enum ObjectGeometry {
         case .filledRectangle(let rect): copy.kind = .filledRectangle(move(rect))
         case .ellipse(let rect): copy.kind = .ellipse(move(rect))
         case .line(let start, let end): copy.kind = .line(start: move(start), end: move(end))
+        case .ruler(var ruler):
+            ruler.start = move(ruler.start)
+            ruler.end = move(ruler.end)
+            copy.kind = .ruler(ruler)
         case .arrow(var arrow):
             arrow.start = move(arrow.start)
             arrow.end = move(arrow.end)
@@ -147,6 +174,10 @@ public enum ObjectGeometry {
         case .image(var image):
             image.rect = move(image.rect)
             copy.kind = .image(image)
+        case .magnifier(var magnifier):
+            // The callout moves; the source stays on the pixels it magnifies (its own handle moves it).
+            magnifier.callout = move(magnifier.callout)
+            copy.kind = .magnifier(magnifier)
         }
         return copy
     }
@@ -158,9 +189,10 @@ public enum ObjectGeometry {
             Corner.allCases.map(Handle.corner) + RectEdge.allCases.map(Handle.edge)
         case .stroke, .highlight: freehandHandles(of: object)
         case .text: [.edge(.left), .edge(.right)]
-        case .line: [.start, .end]
-        case .arrow(let arrow): arrow.style == .curved ? [.start, .end, .control] : [.start, .end]
+        case .line, .ruler: [.start, .end]
+        case .arrow: [.start, .end, .control]
         case .counter: []
+        case .magnifier: MagnifierGeometry.handles
         }
     }
 
@@ -218,9 +250,12 @@ public enum ObjectGeometry {
         switch (handle, object.kind) {
         case (.start, .line(let start, _)): return start
         case (.end, .line(_, let end)): return end
+        case (.start, .ruler(let ruler)): return ruler.start
+        case (.end, .ruler(let ruler)): return ruler.end
         case (.start, .arrow(let arrow)): return arrow.start
         case (.end, .arrow(let arrow)): return arrow.end
-        case (.control, .arrow(let arrow)): return ArrowGeometry.controlPoint(of: arrow)
+        case (.control, .arrow(let arrow)): return ArrowGeometry.midpoint(of: arrow)
+        case (_, .magnifier(let magnifier)): return MagnifierGeometry.handlePoint(handle, of: magnifier)
         case (.corner, _), (.edge, _):
             return point(of: handle, in: handleFrame(of: object))
         default:
@@ -239,11 +274,22 @@ public enum ObjectGeometry {
             case .end: copy.kind = .line(start: start, end: constrained ? ShapeConstraints.snapped(point, from: start) : point)
             default: break
             }
+        case .ruler(var ruler):
+            switch handle {
+            case .start: ruler.start = constrained ? ShapeConstraints.snapped(point, from: ruler.end) : point
+            case .end: ruler.end = constrained ? ShapeConstraints.snapped(point, from: ruler.start) : point
+            default: break
+            }
+            copy.kind = .ruler(ruler)
         case .arrow(var arrow):
             switch handle {
             case .start: arrow.start = constrained ? ShapeConstraints.snapped(point, from: arrow.end) : point
             case .end: arrow.end = constrained ? ShapeConstraints.snapped(point, from: arrow.start) : point
-            case .control: arrow.control = point
+            case .control:
+                // Dragged back onto the chord (or just clicked), it is straight again: no control point.
+                let control = ArrowGeometry.control(throughMidpoint: point, of: arrow)
+                let middle = CGPoint(x: (arrow.start.x + arrow.end.x) / 2, y: (arrow.start.y + arrow.end.y) / 2)
+                arrow.control = hypot(control.x - middle.x, control.y - middle.y) < 0.25 ? nil : control
             default: break
             }
             copy.kind = .arrow(arrow)
@@ -270,6 +316,8 @@ public enum ObjectGeometry {
             let aspect: Double? = constrained && stretch.horizontal && stretch.vertical ? frame.width / frame.height : nil
             let target = resized(frame, handle: handle, to: point, aspect: aspect)
             return scaled(object, from: frame, to: target)
+        case .magnifier(let magnifier):
+            copy.kind = .magnifier(MagnifierGeometry.dragging(handle, of: magnifier, to: point))
         default:
             guard let rect = rect(of: object.kind) else { return object }
             let aspect: Double? = constrained && rect.height > 0 ? rect.width / rect.height : nil

@@ -82,7 +82,7 @@ nonisolated enum SensitiveMasking {
     /// or cropped one's inverse otherwise. The scale of a 2x capture enters only the mask's strength (`MaskPlan`). The masks are
     /// **added** to the document's objects: whatever the capture already has stays.
     static func apply(_ findings: [ImageFinding], scannedSize: CGSize, scannedPicture: PictureIdentity, to item: HistoryItem,
-                      root: URL, quality: Double) throws -> Applied {
+                      root: URL, quality: Double, rulerUnit: SizeUnit) throws -> Applied {
         let opened = try AnnotationStorage.open(item, root: root)
         guard !opened.recovered else { throw Failure.annotationsUnreadable }
         var document = opened.document
@@ -96,7 +96,8 @@ nonisolated enum SensitiveMasking {
         guard !masks.isEmpty else { throw Failure.nothingToCover }
         let objects = masks.map { AnnotationObject.pixelateMask(rect: $0.rect, intensity: $0.intensity) }
         document.objects.append(contentsOf: objects)
-        let written = try HistoryItemActions.writeDocument(document, images: opened.images, to: item, root: root, quality: quality)
+        let written = try HistoryItemActions.writeDocument(document, images: opened.images, to: item, root: root, quality: quality,
+                                                           rulerUnit: rulerUnit)
         return Applied(written: Written(item: written.item, savedFileError: written.savedFileError), maskIDs: objects.map(\.id),
                        picture: document.pictureIdentity)
     }
@@ -104,7 +105,7 @@ nonisolated enum SensitiveMasking {
     /// Takes the objects `ids` names out of the item's document and writes it: exactly the masks Mask All added, which may
     /// have been moved, restyled or deleted in Annotate since, and nothing else. Nothing is written, and the item comes back
     /// as it was, when none of them is left.
-    static func remove(_ ids: Set<UUID>, from item: HistoryItem, root: URL, quality: Double) throws -> Removal {
+    static func remove(_ ids: Set<UUID>, from item: HistoryItem, root: URL, quality: Double, rulerUnit: SizeUnit) throws -> Removal {
         let opened = try AnnotationStorage.open(item, root: root)
         guard !opened.recovered else { throw Failure.annotationsUnreadable }
         let remaining = opened.document.removingObjects(withIDs: ids)
@@ -113,7 +114,8 @@ nonisolated enum SensitiveMasking {
         guard removed > 0 else {
             return Removal(written: Written(item: item, savedFileError: nil), removed: 0, before: before, picture: before)
         }
-        let written = try HistoryItemActions.writeDocument(remaining, images: opened.images, to: item, root: root, quality: quality)
+        let written = try HistoryItemActions.writeDocument(remaining, images: opened.images, to: item, root: root, quality: quality,
+                                                           rulerUnit: rulerUnit)
         return Removal(written: Written(item: written.item, savedFileError: written.savedFileError), removed: removed, before: before,
                        picture: remaining.pictureIdentity)
     }

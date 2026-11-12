@@ -16,10 +16,31 @@ public enum EditorSource: Sendable {
 @MainActor
 @Observable
 public final class AnnotationEditor {
-    public private(set) var document: AnnotationDocument
+    public private(set) var document: AnnotationDocument {
+        didSet {
+            // A turn, flip, crop or resize moves the base pixels the selection names.
+            if pixelSelection != nil, document.baseSize != oldValue.baseSize || document.imageOps != oldValue.imageOps {
+                pixelSelection = nil
+            }
+        }
+    }
     public private(set) var images: ImageStore
     public var source: EditorSource
-    public var selection: Set<UUID> = []
+    public var selection: Set<UUID> = [] {
+        didSet {
+            // Objects and the pixel area are one selection at a time: keys and tools act on whichever is there.
+            if !selection.isEmpty, pixelSelection != nil { pixelSelection = nil }
+        }
+    }
+    /// The pixel area the Select tool marked (see `PixelSelection`), in whole base pixels, or nil. Set it with
+    /// `selectPixels(_:)` so it is fitted to the picture; selecting an object, a crop, or any change that moves the base
+    /// pixels clears it.
+    public internal(set) var pixelSelection: CGRect?
+    /// A short notice about a pixel tool (a ⌘-clicked region too large to select), shown over the canvas for a few seconds.
+    public internal(set) var pixelNotice: String?
+    @ObservationIgnored var pixelNoticeTask: Task<Void, Never>?
+    /// What the ⌥-drag in progress would fit to, drawn as an outline (see `fitPreview(of:)`); nil when not dragging.
+    public internal(set) var fitPreviewOutline: CGRect?
     /// Switching to a drawing tool drops the selection, so the color and size chosen for the next shape don't restyle the
     /// last one. The object just drawn stays selected until then, so it can still be adjusted. Switching to Crop & Resize
     /// starts a crop session; switching away from it applies the crop.
@@ -67,8 +88,25 @@ public final class AnnotationEditor {
     /// Word boxes in base pixels for the Smart Highlighter; nil until found.
     @ObservationIgnored public private(set) var wordBoxes: [CGRect]?
     @ObservationIgnored private var wordBoxSearch: Task<Void, Never>?
+    /// The text-only redactions' word searches (`AnnotationEditor+TextOnly`).
+    @ObservationIgnored let textOnlyWordSearches = TextOnlyWordSearches()
+    /// The last picture pixels built, kept while they are the document's (`picturePixels`, in `AnnotationEditor+Pixels`).
+    /// Observed, so a view reading `picturePixels` updates when they arrive.
+    var builtPicturePixels: PicturePixels?
+    /// The two main colors of the pixel selection and their contrast (`updateSelectionContrast()`); nil for a uniform area, no
+    /// selection, or while it is being worked out.
+    public internal(set) var selectionContrast: SelectionContrast?
+    /// What the contrast in flight, or last shown, is of, and the work that finds it.
+    @ObservationIgnored var contrastRequest: (rect: CGRect, picture: PicturePixelsIdentity)?
+    @ObservationIgnored var contrastTask: Task<Void, Never>?
+    /// The pixels being built or last built, with what they are of; nil before the first `loadPicturePixels()`.
+    @ObservationIgnored var picturePixelsBuild: PicturePixelsBuild?
+    /// The quiet wait before rebuilding after the picture changes, so a run of changes (a redaction dragged) rebuilds once.
+    @ObservationIgnored var picturePixelsRebuild: Task<Void, Never>?
     @ObservationIgnored public let undoManager = UndoManager()
     @ObservationIgnored public let preferences: Preferences
+    /// The unit rulers are labeled in: Settings › Annotate › Show sizes in, read now.
+    public var rulerUnit: SizeUnit { preferences[Prefs.annotateSizeUnit] }
     @ObservationIgnored private var liveSnapshot: AnnotationDocument?
     /// A slider drag opened the live change that is open. One that was already open (the text being typed) isn't the
     /// drag's to end, or to start over.
@@ -94,6 +132,7 @@ public final class AnnotationEditor {
            images[picture] != nil {
             capturedWallpaper = picture
         }
+        watchTextOnlyRedactions()
     }
 
     /// Edits not yet applied to the capture or project. Undoing back to the applied state leaves none.
@@ -248,6 +287,19 @@ public final class AnnotationEditor {
         }
     }
 
+    /// Stores the words found for text-only redaction `id` (`AnnotationEditor+TextOnly`), as long as it is still text-only
+    /// at the rect they were found for. Not an undo step: the words follow from the rect, and the snapshots undo and redo
+    /// bring back carry the words of their own rects, or none, which has them searched for again. Returns whether they were
+    /// stored.
+    func storeWords(_ words: RedactionWords, of id: UUID) -> Bool {
+        guard let index = document.objects.firstIndex(where: { $0.id == id }),
+              case .redact(var redact) = document.objects[index].kind, redact.textOnly, redact.rect == words.rect
+        else { return false }
+        redact.words = words
+        document.objects[index].kind = .redact(redact)
+        return true
+    }
+
     /// Every undo registration goes through here (undo and redo included, via `restore`), so each one ends a run of
     /// coalescing changes.
     private func recordUndo(restoring snapshot: AnnotationDocument, _ actionName: String) {
@@ -283,8 +335,9 @@ public final class AnnotationEditor {
         selection = [object.id]
     }
 
+    /// Deletes the selected objects; with none, erases the pixel selection (`erasePixelSelection`).
     public func deleteSelection() {
-        guard !selection.isEmpty else { return }
+        guard !selection.isEmpty else { return erasePixelSelection() }
         let ids = selection
         change("Delete") { $0.objects.removeAll { ids.contains($0.id) } }
         selection = []

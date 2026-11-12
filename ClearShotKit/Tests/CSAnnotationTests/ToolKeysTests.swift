@@ -8,7 +8,7 @@ struct ToolKeysTests {
     @Test func theDefaultsAreTheM4aLettersPlusCForCrop() {
         let keys = AnnotateToolKeys()
         let letters = EditorTool.allCases.map { keys.key(for: $0).map(String.init) ?? "" }.joined()
-        #expect(letters == "vrfolatbsnphc")
+        #expect(letters == "vrfolatbsnphmc")
         #expect(EditorTool.forKey("r", keys: keys) == .rectangle)
         #expect(EditorTool.forKey("C", keys: keys) == .crop)
         #expect(EditorTool.forKey("z", keys: keys) == nil)

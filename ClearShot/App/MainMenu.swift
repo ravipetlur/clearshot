@@ -27,11 +27,21 @@ enum MainMenu {
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(NSMenuItem(title: "Duplicate", action: #selector(AnnotationCanvasView.duplicate(_:)), keyEquivalent: "d"))
+        // ⇧⌘R, not ⌘R: that is taken by File's send item.
+        editMenu.addItem(item("Reroll Hand-drawn Style", #selector(AnnotationCanvasView.rerollHandDrawn(_:)), "r", [.command, .shift]))
         // No shortcut: the canvas's own Delete key deletes the selection.
         editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
         // Scans the picture for emails, keys, card numbers and the like and pixelates them. No key equivalent, so the shortcut
         // recorder's "used by ClearShot's menu" check, which lists the items that have one, is unchanged.
+        // Colors from the picture. Tab, ⇧Tab and ⌥Tab do these in the canvas; no key equivalents here, which would take
+        // Tab from the focus loop everywhere.
         editMenu.addItem(.separator())
+        editMenu.addItem(item("Copy Color Under Pointer", #selector(AnnotationCanvasView.copyColorUnderPointer(_:)), ""))
+        editMenu.addItem(item("Copy Text Color Under Pointer", #selector(AnnotationCanvasView.copyTextColorUnderPointer(_:)), ""))
+        editMenu.addItem(item("Copy Average Color of Selection", #selector(AnnotationCanvasView.copyAverageColorOfSelection(_:)), ""))
+        editMenu.addItem(.separator())
+        // Moves a pixel selection's edges in to what is inside it. ⌥A: no other key uses ⌥ with A.
+        editMenu.addItem(item("Fit Selection to Content", #selector(EditorWindowController.fitSelectionToContent(_:)), "a", .option))
         editMenu.addItem(item("Mask Sensitive Info", #selector(EditorWindowController.maskSensitiveInfo(_:)), ""))
         // Crop & Resize. Rotate and Resize Image… take ⌥⌘ shortcuts (⌘R alone is Send to Raycast AI Chat). Crop &
         // Resize and Background Tool (checked while the panel is open) have their letters instead, since a plain letter
@@ -77,6 +87,7 @@ enum MainMenu {
         withoutDialog.isAlternate = true
         menu.addItem(withoutDialog)
         menu.addItem(item("Save and Close", #selector(EditorWindowController.saveAndClose(_:)), ""))
+        menu.addItem(item("Export Before/After GIF…", #selector(EditorWindowController.exportBeforeAfterGIF(_:)), ""))
         menu.addItem(.separator())
         menu.addItem(item("Copy Image", #selector(EditorWindowController.copyImage(_:)), "c", [.command, .shift]))
         menu.addItem(item("Send to Raycast AI Chat", #selector(EditorWindowController.sendToRaycast(_:)), "r"))
@@ -100,6 +111,7 @@ enum MainMenu {
         menu.addItem(item("Zoom Out", #selector(EditorWindowController.zoomOut(_:)), "-"))
         menu.addItem(item("Actual Size", #selector(EditorWindowController.zoomToActualSize(_:)), "0"))
         menu.addItem(item("Zoom to Fit", #selector(EditorWindowController.zoomToFit(_:)), "9"))
+        menu.addItem(item("Zoom to Selection", #selector(EditorWindowController.zoomToSelection(_:)), "2"))
         return menu
     }
 

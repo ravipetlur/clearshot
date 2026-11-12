@@ -4,7 +4,13 @@ import CoreText
 /// Fonts, attributes and measured sizes for text objects. The renderer and the inline editor both use it, so what is
 /// typed is laid out the way it renders.
 public enum TextLayout {
-    public static func font(for style: TextStyle, size: Double) -> NSFont {
+    /// The handwriting fonts hand-drawn text tries, in order: the first this Mac has is used.
+    static let handwritingFonts = ["MarkerFelt-Wide", "ChalkboardSE-Bold", "BradleyHandITCTT-Bold", "Noteworthy-Bold"]
+
+    /// The font for a text style. `handDrawn` swaps it for a handwriting font, or keeps the style's own when this Mac has
+    /// none of them.
+    public static func font(for style: TextStyle, size: Double, handDrawn: Bool = false) -> NSFont {
+        if handDrawn, let font = handwritingFonts.lazy.compactMap({ NSFont(name: $0, size: size) }).first { return font }
         let base = NSFont.systemFont(ofSize: size, weight: .semibold)
         let design: NSFontDescriptor.SystemDesign? = switch style {
         case .rounded, .roundedBox: .rounded
@@ -26,7 +32,7 @@ public enum TextLayout {
     public static func attributes(for text: TextObject, color: RGBAColor) -> [NSAttributedString.Key: Any] {
         let fill = text.style.hasBox ? color.contrastingTextColor : color
         var attributes: [NSAttributedString.Key: Any] = [
-            .font: font(for: text.style, size: text.fontSize),
+            .font: font(for: text.style, size: text.fontSize, handDrawn: text.handDrawn),
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): fill.cgColor,
         ]
         if text.style == .outline {

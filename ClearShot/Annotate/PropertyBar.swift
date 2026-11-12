@@ -43,8 +43,20 @@ struct PropertyBar: View {
                 SizePicker(level: editor.settings.sizeLevel) { editor.setSizeLevel($0) }
             }
             options
+            if let opacity = editor.selectedImageOpacity {
+                Slider(value: Binding(get: { opacity }, set: { editor.setImageOpacity($0) }), in: ImageObject.opacityRange,
+                       label: { Text("Opacity") }, onEditingChanged: dragging("Change Opacity"))
+                    .frame(width: 120)
+                    .help("Opacity (keys 1–9 for 10%–90%, 0 for 100%)")
+            }
+            if context == .rectangle || context == .ellipse || context == .arrow || context == .text {
+                Toggle("Hand-drawn", isOn: Binding(get: { editor.settings.handDrawn }, set: { editor.setHandDrawn($0) }))
+                    .toggleStyle(.checkbox)
+                    .help("Draw with a rough, sketched look. Reroll it with ⇧⌘R.")
+            }
+            if editor.tool == .select, editor.pixelSelection != nil, editor.crop == nil { PixelSelectionPad(editor: editor) }
             Spacer()
-            if context != .redact, context != .spotlight, context != .highlighter {
+            if context != .redact, context != .spotlight, context != .highlighter, context != .magnifier {
                 Toggle("Shadow", isOn: Binding(get: { editor.preferences[Prefs.annotateObjectShadows] }, set: { editor.setShadows($0) }))
                     .toggleStyle(.checkbox)
             }
@@ -86,6 +98,9 @@ struct PropertyBar: View {
                    in: 1...10, step: 1, label: { Text("Intensity") }, onEditingChanged: dragging("Change Intensity"))
                 .frame(width: 120)
                 .help("Intensity ([ and ])")
+            Toggle("Text only", isOn: Binding(get: { editor.settings.redactTextOnly }, set: { editor.setRedactTextOnly($0) }))
+                .toggleStyle(.checkbox)
+                .help("Cover only the words in the area, not the background between them")
         case .spotlight:
             Picker("Shape", selection: Binding(get: { editor.settings.spotlightShape }, set: { editor.setSpotlightShape($0) })) {
                 ForEach(SpotlightShape.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -109,6 +124,10 @@ struct PropertyBar: View {
             Slider(value: Binding(get: { editor.settings.highlightOpacity }, set: { editor.setHighlightOpacity($0) }), in: 0.1...0.9,
                    label: { Text("Opacity") }, onEditingChanged: dragging("Change Highlight"))
                 .frame(width: 120)
+        case .rectangle, .ellipse:
+            FillControl(editor: editor)
+        case .magnifier:
+            MagnifierControls(editor: editor)
         case .pen:
             Toggle("Smooth", isOn: Binding(get: { editor.preferences[Prefs.annotateSmoothDrawing] }, set: { editor.setSmoothDrawing($0) }))
                 .toggleStyle(.checkbox)

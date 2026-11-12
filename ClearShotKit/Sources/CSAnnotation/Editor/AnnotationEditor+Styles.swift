@@ -5,9 +5,86 @@ import Foundation
 /// Tool settings: each setter updates the remembered setting and restyles the selected objects it fits.
 extension AnnotationEditor {
     /// The style for a new object: current color, `lineWidthPoints` in base pixels, and the shadow setting.
-    public func newStyle(lineWidthPoints: Double) -> ObjectStyle {
-        ObjectStyle(color: settings.color, lineWidth: document.pixels(fromPoints: lineWidthPoints),
-                    shadow: preferences[Prefs.annotateObjectShadows])
+    ///
+    /// `handDrawable` for the objects that can be drawn by hand (rectangle, ellipse, arrow): the style then follows the
+    /// remembered Hand-drawn setting, with a seed of its own.
+    public func newStyle(lineWidthPoints: Double, handDrawable: Bool = false) -> ObjectStyle {
+        let handDrawn = handDrawable && settings.handDrawn
+        return ObjectStyle(color: settings.color, lineWidth: document.pixels(fromPoints: lineWidthPoints),
+                           shadow: preferences[Prefs.annotateObjectShadows], handDrawn: handDrawn,
+                           seed: handDrawn ? Self.freshSeed() : 0)
+    }
+
+    /// A seed for a new hand-drawn shape. The only place the hand-drawn look takes anything from the system: once the
+    /// seed is stored in the object, every draw of it is the same.
+    static func freshSeed() -> UInt32 {
+        UInt32.random(in: 1...UInt32.max)
+    }
+
+    /// Whether `kind` has a hand-drawn look (filled rectangles, counters and the like don't).
+    public static func canBeHandDrawn(_ kind: ObjectKind) -> Bool {
+        if case .text = kind { return true }
+        return hasRoughStrokes(kind)
+    }
+
+    /// Whether `kind` is hand-drawn as strokes, which a seed fixes (text just changes font).
+    static func hasRoughStrokes(_ kind: ObjectKind) -> Bool {
+        switch kind {
+        case .rectangle, .ellipse, .arrow: true
+        default: false
+        }
+    }
+
+    /// The Hand-drawn toggle: the setting for new objects, and the selected ones it fits. Text takes a handwriting font; the
+    /// others get a seed the first time they are drawn by hand.
+    public func setHandDrawn(_ on: Bool) {
+        settings.handDrawn = on
+        restyleSelection(on ? "Make Hand-drawn" : "Make Clean") { object, _ in
+            switch object.kind {
+            case .text(var text):
+                text.handDrawn = on
+                object.kind = .text(text)
+            case .rectangle, .ellipse, .arrow:
+                object.style.handDrawn = on
+                if on, object.style.seed == 0 { object.style.seed = Self.freshSeed() }
+            default: break
+            }
+        }
+    }
+
+    /// Whether Reroll Hand-drawn has anything to do: a selected object drawn by hand that has a stroke to redraw (not text).
+    public var canRerollHandDrawn: Bool {
+        selectedObjects.contains { Self.hasRoughStrokes($0.kind) && $0.style.handDrawn }
+    }
+
+    /// Redraws the selected hand-drawn shapes with new seeds, as one undo step.
+    public func rerollHandDrawn() {
+        guard canRerollHandDrawn else { return }
+        let ids = selection
+        change("Reroll Hand-drawn") { document in
+            for index in document.objects.indices where ids.contains(document.objects[index].id) {
+                guard Self.hasRoughStrokes(document.objects[index].kind), document.objects[index].style.handDrawn else { continue }
+                document.objects[index].style.seed = Self.freshSeed()
+            }
+        }
+    }
+
+    /// Straightens a bent arrow (double-clicking its bend handle).
+    public func straightenArrow(_ id: UUID) {
+        guard let object = object(id), case .arrow(var arrow) = object.kind, arrow.control != nil else { return }
+        change("Straighten Arrow") { document in
+            guard let index = document.objects.firstIndex(where: { $0.id == id }) else { return }
+            arrow.control = nil
+            document.objects[index].kind = .arrow(arrow)
+        }
+    }
+
+    /// `newStyle` with the remembered fill, for a rectangle or an ellipse.
+    public func newShapeStyle(lineWidthPoints: Double) -> ObjectStyle {
+        var style = newStyle(lineWidthPoints: lineWidthPoints, handDrawable: true)
+        style.fillColor = settings.fillColor
+        style.fillOpacity = settings.fillOpacity
+        return style
     }
 
     /// Which tool's controls the property bar shows: the current tool, or with Select, the one selected object's kind.
@@ -19,7 +96,7 @@ extension AnnotationEditor {
         case .rectangle: .rectangle
         case .filledRectangle: .filledRectangle
         case .ellipse: .ellipse
-        case .line: .line
+        case .line, .ruler: .line
         case .arrow: .arrow
         case .text: .text
         case .redact: .redact
@@ -28,6 +105,7 @@ extension AnnotationEditor {
         case .stroke: .pen
         case .highlight: .highlighter
         case .image: .select
+        case .magnifier: .magnifier
         }
     }
 
@@ -39,6 +117,37 @@ extension AnnotationEditor {
             case .redact, .spotlight, .image: break
             default: object.style.color = color
             }
+        }
+    }
+
+    /// The fill color of rectangles and ellipses; nil follows the stroke's color. Picking one while there is no fill
+    /// gives it a half-opaque fill, so the pick shows.
+    public func setFillColor(_ color: RGBAColor?, coalescing: Bool = false) {
+        settings.fillColor = color
+        if settings.fillOpacity == 0, color != nil { settings.fillOpacity = 0.5 }
+        let opacity = settings.fillOpacity
+        restyleSelection("Change Fill", coalescing: coalescing) { object, _ in
+            guard Self.takesFill(object.kind) else { return }
+            object.style.fillColor = color
+            if object.style.fillOpacity == 0, color != nil { object.style.fillOpacity = opacity }
+        }
+    }
+
+    /// The fill opacity, 0 (no fill) to 1. A slider drag is one undo step (`sliderEditingChanged`).
+    public func setFillOpacity(_ opacity: Double, coalescing: Bool = false) {
+        let opacity = min(max(opacity, 0), 1)
+        settings.fillOpacity = opacity
+        restyleSelection("Change Fill", coalescing: coalescing) { object, _ in
+            guard Self.takesFill(object.kind) else { return }
+            object.style.fillOpacity = opacity
+        }
+    }
+
+    /// Whether the kind takes a fill: the outlined rectangle and ellipse (a filled rectangle is already filled).
+    private static func takesFill(_ kind: ObjectKind) -> Bool {
+        switch kind {
+        case .rectangle, .ellipse: true
+        default: false
         }
     }
 
@@ -110,6 +219,18 @@ extension AnnotationEditor {
         }
     }
 
+    /// "Text only": on or off for new redactions and the selected ones (`AnnotationEditor+TextOnly`). Off drops a redaction's
+    /// words; on has them searched for.
+    public func setRedactTextOnly(_ textOnly: Bool) {
+        settings.redactTextOnly = textOnly
+        restyleSelection("Change Redaction") { object, _ in
+            guard case .redact(var redact) = object.kind else { return }
+            redact.textOnly = textOnly
+            if !textOnly { redact.words = nil }
+            object.kind = .redact(redact)
+        }
+    }
+
     /// `[` and `]` with the redact tool or a redaction selected.
     public func adjustIntensity(by step: Int, coalescing: Bool = false) {
         setRedactIntensity(settings.redactIntensity + step, coalescing: coalescing)
@@ -156,6 +277,34 @@ extension AnnotationEditor {
         }
     }
 
+    /// The opacity of the one selected image, when the Select tool is in use and no text is being edited; nil otherwise.
+    /// What the property bar's slider shows, and what the digit keys act on.
+    public var selectedImageOpacity: Double? {
+        guard tool == .select, editingTextID == nil, selection.count == 1, let object = selectedObjects.first,
+              case .image(let image) = object.kind else { return nil }
+        return image.opacity
+    }
+
+    /// Sets the selected images' opacity (clamped to `ImageObject.opacityRange`). The slider's drag is one undo step
+    /// (`sliderEditingChanged`); a key press is one of its own, or one for a held key with `coalescing`.
+    public func setImageOpacity(_ opacity: Double, coalescing: Bool = false) {
+        let opacity = min(max(opacity, ImageObject.opacityRange.lowerBound), ImageObject.opacityRange.upperBound)
+        restyleSelection("Change Opacity", coalescing: coalescing) { object, _ in
+            guard case .image(var image) = object.kind else { return }
+            image.opacity = opacity
+            object.kind = .image(image)
+        }
+    }
+
+    /// Digit keys on a selected image: 1–9 set 10%–90% and 0 sets 100%. False (the key is not taken) when no image is
+    /// selected under the Select tool, or text is being edited, so the digits stay the size keys then.
+    @discardableResult
+    public func handleImageOpacityKey(_ character: Character) -> Bool {
+        guard selectedImageOpacity != nil, let digit = character.wholeNumberValue, (0...9).contains(digit) else { return false }
+        setImageOpacity(digit == 0 ? 1 : Double(digit) / 10, coalescing: true)
+        return true
+    }
+
     public func setSmartHighlighter(_ on: Bool) {
         settings.smartHighlighter = on
     }
@@ -165,7 +314,7 @@ extension AnnotationEditor {
         preferences[Prefs.annotateObjectShadows] = on
         restyleSelection(on ? "Add Shadow" : "Remove Shadow") { object, _ in
             switch object.kind {
-            case .redact, .spotlight, .highlight: break
+            case .redact, .spotlight, .highlight, .magnifier: break
             default: object.style.shadow = on
             }
         }
@@ -195,15 +344,18 @@ extension AnnotationEditor {
         case .text(let text):
             adopted.sizeLevel = nearestLevel(text.fontSize, ToolSizes.fontSize)
             adopted.textStyle = text.style
+            adopted.handDrawn = text.handDrawn
         case .counter(let counter):
             adopted.sizeLevel = nearestLevel(counter.diameter, ToolSizes.counterDiameter)
             adopted.counterStyle = counter.style
         case .arrow(let arrow):
             adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
             adopted.arrowStyle = arrow.style
+            adopted.handDrawn = object.style.handDrawn
         case .redact(let redact):
             adopted.redactStyle = redact.style
             adopted.redactIntensity = redact.intensity
+            adopted.redactTextOnly = redact.textOnly
         case .spotlight(let spotlight):
             adopted.spotlightShape = spotlight.shape
             adopted.spotlightOpacity = spotlight.opacity
@@ -211,8 +363,17 @@ extension AnnotationEditor {
             adopted.highlightOpacity = highlight.opacity
         case .image:
             break
+        case .magnifier(let magnifier):
+            adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
+            adopted.magnifierShape = magnifier.shape
+            adopted.magnifierBorder = magnifier.border
+        case .rectangle, .ellipse:
+            adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
+            adopted.fillColor = object.style.fillColor
+            adopted.fillOpacity = object.style.fillOpacity
         default:
             adopted.sizeLevel = nearestLevel(object.style.lineWidth, ToolSizes.lineWidth)
+            if Self.hasRoughStrokes(object.kind) { adopted.handDrawn = object.style.handDrawn }
         }
         if adopted != settings { settings = adopted }
     }

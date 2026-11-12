@@ -146,12 +146,13 @@ final class HistoryItemActions {
     /// saved as a copy of its working copy, keeping its extension, never re-encoded.
     func save(_ item: HistoryItem, name: String? = nil) async -> HistoryItem? {
         let directory = preferences[Prefs.exportLocation]
-        let format = ExportFormatPolicy.format(preferred: preferences[Prefs.imageFormat], isTransparent: item.isTransparent)
+        let choice = preferences[Prefs.imageFormat]
         let quality = preferences[Prefs.imageQuality]
         let baseName = FileNamer.sanitize(name ?? item.displayName,
                                           removeIllegalCharacters: preferences[Prefs.fileNameRemoveIllegalCharacters])
         let source = workingCopy(for: item)
         let isMedia = item.kind != .screenshot
+        let isTransparent = item.isTransparent
         let screenCapture = item.screenCaptureTag
         history.holds.hold(item.id)
         defer { history.holds.release(item.id) }
@@ -159,6 +160,7 @@ final class HistoryItemActions {
             Result {
                 if isMedia { return try Exporter.saveCopy(of: source, in: directory, baseName: baseName) }
                 guard let image = ImageOps.load(source) else { throw CaptureError.imageMissing }
+                let format = ExportFormatPolicy.format(preferred: choice, image: image, isTransparent: isTransparent)
                 return try Exporter.save(ExportRequest(image: image, format: format, quality: quality, pixelsPerPoint: item.scale,
                                                        directory: directory, baseName: baseName, screenCapture: screenCapture))
             }
@@ -171,7 +173,7 @@ final class HistoryItemActions {
     /// writes the one chosen. A video or GIF is a copy of its working copy in that file's own type, so an opened `.mov`
     /// stays a QuickTime movie.
     func saveAs(_ item: HistoryItem) async -> HistoryItem? {
-        let preferred = ExportFormatPolicy.format(preferred: preferences[Prefs.imageFormat], isTransparent: item.isTransparent)
+        let choice = preferences[Prefs.imageFormat]
         let quality = preferences[Prefs.imageQuality]
         let source = workingCopy(for: item)
         let folder = preferences[Prefs.exportLocation]
@@ -190,9 +192,11 @@ final class HistoryItemActions {
             guard panel.runModal() == .OK, let chosen = panel.url else { return nil }
             url = chosen
             // Not used: a copy keeps its bytes.
-            format = preferred
+            format = .png
         } else {
-            // The image formats only, starting on the one Save would use.
+            // The image formats only, starting on the one Save would use. Automatic reads the picture to say which.
+            let preferred = ExportFormatPolicy.format(preferred: choice, image: ImageOps.load(source),
+                                                      isTransparent: item.isTransparent)
             guard let chosen = SaveAsPanel.run(name: item.displayName, folder: folder, format: AnnotateSaveFormat(preferred),
                                                formats: AnnotateSaveFormat.imageFormats),
                   let imageFormat = chosen.format.imageFormat else { return nil }
@@ -275,10 +279,11 @@ final class HistoryItemActions {
     ///
     /// Throws when the render or the save fails. Once the working copy has been replaced the outcome is a success, even when
     /// the saved file then couldn't be rewritten: that is `savedFileError`, for the caller to report, and the returned item
-    /// is for the caller to record in the store. Runs off the main actor, like everything it calls.
+    /// is for the caller to record in the store. Runs off the main actor, like everything it calls. Rulers are labeled in
+    /// `rulerUnit` (Settings › Annotate › Show sizes in).
     nonisolated static func writeDocument(_ document: AnnotationDocument, images: ImageStore, to item: HistoryItem, root: URL,
-                                          quality: Double) throws -> (item: HistoryItem, savedFileError: (any Error)?) {
-        guard let rendered = Renderer.render(document, images: images) else { throw CaptureError.cannotTransform }
+                                          quality: Double, rulerUnit: SizeUnit) throws -> (item: HistoryItem, savedFileError: (any Error)?) {
+        guard let rendered = Renderer.render(document, images: images, rulerUnit: rulerUnit) else { throw CaptureError.cannotTransform }
         var updated = try AnnotationStorage.save(document, images: images, rendered: rendered, to: item, root: root)
         let savedFileError = rewriteSavedFile(of: item, with: rendered, quality: quality, updating: &updated)
         return (updated, savedFileError)
@@ -405,6 +410,7 @@ final class HistoryItemActions {
         }
         let root = history.root
         let quality = preferences[Prefs.imageQuality]
+        let rulerUnit = preferences[Prefs.annotateSizeUnit]
         history.holds.hold(item.id)
         defer { history.holds.release(item.id) }
         let outcome = await Task.detached(priority: .userInitiated) {
@@ -416,7 +422,8 @@ final class HistoryItemActions {
                         let outputSize = Renderer.outputBounds(of: opened.document, images: opened.images, cache: nil).size
                         let op = opened.document.imageOp(for: change, itemScale: item.scale, outputSize: outputSize)
                         let document = opened.document.applying(op)
-                        let written = try Self.writeDocument(document, images: opened.images, to: item, root: root, quality: quality)
+                        let written = try Self.writeDocument(document, images: opened.images, to: item, root: root, quality: quality,
+                                                             rulerUnit: rulerUnit)
                         return (written.item, written.savedFileError, document)
                     }
                     Log.history.info("Couldn't read the annotations of \(item.displayName); changing its working copy instead")

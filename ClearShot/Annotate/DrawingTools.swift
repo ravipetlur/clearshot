@@ -59,12 +59,15 @@ final class ShapeTool: ToolController {
 
     private func object(in rect: CGRect) -> AnnotationObject {
         let settings = editor.settings
-        let style = editor.newStyle(lineWidthPoints: ToolSizes.lineWidth(settings.sizeLevel))
+        let width = ToolSizes.lineWidth(settings.sizeLevel)
+        let style = self.kind == .rectangle || self.kind == .ellipse
+            ? editor.newShapeStyle(lineWidthPoints: width) : editor.newStyle(lineWidthPoints: width)
         let kind: ObjectKind = switch self.kind {
         case .rectangle: .rectangle(rect)
         case .filledRectangle: .filledRectangle(rect)
         case .ellipse: .ellipse(rect)
-        case .redact: .redact(RedactObject(rect: rect, style: settings.redactStyle, intensity: settings.redactIntensity))
+        case .redact: .redact(RedactObject(rect: rect, style: settings.redactStyle, intensity: settings.redactIntensity,
+                                           textOnly: settings.redactTextOnly))
         case .spotlight: .spotlight(SpotlightObject(rect: rect, shape: settings.spotlightShape, opacity: settings.spotlightOpacity))
         }
         return AnnotationObject(id: previewID, kind: kind, style: style)
@@ -110,7 +113,7 @@ final class LineTool: ToolController {
     private func object(from start: CGPoint, to point: CGPoint, event: NSEvent) -> AnnotationObject {
         let end = event.modifierFlags.contains(.shift) ? ShapeConstraints.snapped(point, from: start) : point
         let inverted = editor.preferences[Prefs.annotateInvertArrows] != event.modifierFlags.contains(.option)
-        let style = editor.newStyle(lineWidthPoints: ToolSizes.lineWidth(editor.settings.sizeLevel))
+        let style = editor.newStyle(lineWidthPoints: ToolSizes.lineWidth(editor.settings.sizeLevel), handDrawable: isArrow)
         let kind: ObjectKind
         if isArrow {
             let (tail, head) = inverted ? (end, start) : (start, end)

@@ -9,18 +9,33 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
     public var textStyle = TextStyle.standard
     public var redactStyle = RedactStyle.pixelate
     public var redactIntensity = 5
+    /// Whether new redactions cover only the words in their area ("Text only").
+    public var redactTextOnly = false
     public var spotlightShape = SpotlightShape.rectangle
     public var spotlightOpacity = 0.6
     public var counterStyle = CounterStyle.numbers
     public var counterStart = 1
     public var highlightOpacity = 0.4
     public var smartHighlighter = true
+    /// Whether new rectangles, ellipses, arrows and text are hand-drawn.
+    public var handDrawn = false
+    /// The fill of a new rectangle or ellipse: its color (nil: the stroke's) and opacity (0: none).
+    public var fillColor: RGBAColor?
+    public var fillOpacity = 0.0
+    /// How far two colors may differ, on any channel, and still count as one run to the ruler (`RulerGeometry.toleranceRange`).
+    public var rulerTolerance = RulerGeometry.defaultTolerance
+    /// A new magnifier's shape, and whether its callout has a border.
+    public var magnifierShape = MagnifierShape.circle
+    public var magnifierBorder = true
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case color, sizeLevel, arrowStyle, textStyle, redactStyle, redactIntensity, spotlightShape, spotlightOpacity
-        case counterStyle, counterStart, highlightOpacity, smartHighlighter
+        case counterStyle, counterStart, highlightOpacity, smartHighlighter, handDrawn, fillColor, fillOpacity
+        case rulerTolerance
+        case magnifierShape, magnifierBorder
+        case redactTextOnly
     }
 
     /// Every field is optional on disk and falls back to its default. A stored value from before a field existed keeps
@@ -35,12 +50,20 @@ public struct AnnotateToolSettings: JSONPrefValue, Equatable {
         textStyle = try container.decodeIfPresent(TextStyle.self, forKey: .textStyle) ?? textStyle
         redactStyle = try container.decodeIfPresent(RedactStyle.self, forKey: .redactStyle) ?? redactStyle
         redactIntensity = try container.decodeIfPresent(Int.self, forKey: .redactIntensity) ?? redactIntensity
+        redactTextOnly = try container.decodeIfPresent(Bool.self, forKey: .redactTextOnly) ?? redactTextOnly
         spotlightShape = try container.decodeIfPresent(SpotlightShape.self, forKey: .spotlightShape) ?? spotlightShape
         spotlightOpacity = try container.decodeIfPresent(Double.self, forKey: .spotlightOpacity) ?? spotlightOpacity
         counterStyle = try container.decodeIfPresent(CounterStyle.self, forKey: .counterStyle) ?? counterStyle
         counterStart = try container.decodeIfPresent(Int.self, forKey: .counterStart) ?? counterStart
         highlightOpacity = try container.decodeIfPresent(Double.self, forKey: .highlightOpacity) ?? highlightOpacity
         smartHighlighter = try container.decodeIfPresent(Bool.self, forKey: .smartHighlighter) ?? smartHighlighter
+        handDrawn = try container.decodeIfPresent(Bool.self, forKey: .handDrawn) ?? handDrawn
+        fillColor = try container.decodeIfPresent(RGBAColor.self, forKey: .fillColor)
+        fillOpacity = try container.decodeIfPresent(Double.self, forKey: .fillOpacity) ?? fillOpacity
+        rulerTolerance = RulerGeometry.clampedTolerance(
+            try container.decodeIfPresent(Int.self, forKey: .rulerTolerance) ?? rulerTolerance)
+        magnifierShape = try container.decodeIfPresent(MagnifierShape.self, forKey: .magnifierShape) ?? magnifierShape
+        magnifierBorder = try container.decodeIfPresent(Bool.self, forKey: .magnifierBorder) ?? magnifierBorder
     }
 }
 
@@ -138,6 +161,12 @@ public extension Prefs {
     static let annotateShowDockIcon = PrefKey("annotateShowDockIcon", default: true)
     static let annotateShowColorNames = PrefKey("annotateShowColorNames", default: true)
     static let annotateRememberBackgroundTool = PrefKey("annotateRememberBackgroundTool", default: true)
+    /// "Show sizes in": the unit of the ruler and of a selection's size.
+    static let annotateSizeUnit = PrefKey("annotateSizeUnit", default: SizeUnit.points)
+    /// Whether the contrast beside a pixel selection is APCA's ("Lc 62") rather than WCAG 2's ("4.5:1"): ⌥-click switches it.
+    static let annotateContrastAPCA = PrefKey("annotateContrastAPCA", default: false)
+    /// How a color copied from the picture is written.
+    static let annotateColorCopyFormat = PrefKey("annotateColorCopyFormat", default: ColorFormat.hex)
 
     // Editor state
     static let annotateToolSettings = PrefKey("annotateToolSettings", default: AnnotateToolSettings())

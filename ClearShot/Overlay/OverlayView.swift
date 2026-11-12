@@ -2,6 +2,14 @@ import AppKit
 import CSCapture
 import QuartzCore
 
+/// The zoom lens one display's overlay shows while Z is held: the picture, its frame in the view, and the cell under the
+/// pointer (top-left origin, in the lens).
+struct OverlayLens {
+    var image: CGImage?
+    var frame: CGRect
+    var marker: CGRect?
+}
+
 /// Everything one display's overlay draws. Rects and points arrive in this view's coordinates (y up).
 struct OverlayRenderState {
     var selection: CGRect?
@@ -31,6 +39,8 @@ final class OverlayView: NSView {
     private let promptLayer = CATextLayer()
     private let magnifierLayer = CALayer()
     private let magnifierGrid = CAShapeLayer()
+    private let lensLayer = CALayer()
+    private let lensMarker = CAShapeLayer()
     private var dims = true
     /// A ⌃-click that AppKit routed to rightMouseDown(with:) is under way.
     private var controlClickInProgress = false
@@ -93,8 +103,20 @@ final class OverlayView: NSView {
         magnifierGrid.fillColor = nil
         magnifierLayer.addSublayer(magnifierGrid)
 
+        lensLayer.magnificationFilter = .nearest
+        lensLayer.cornerRadius = 12
+        lensLayer.cornerCurve = .continuous
+        lensLayer.masksToBounds = true
+        lensLayer.borderColor = NSColor.white.withAlphaComponent(0.9).cgColor
+        lensLayer.borderWidth = 2
+        lensLayer.isHidden = true
+        lensMarker.fillColor = nil
+        lensMarker.strokeColor = NSColor.black.cgColor
+        lensMarker.lineWidth = 2
+        lensLayer.addSublayer(lensMarker)
+
         [snapshotLayer, dimLayer, windowLayer, selectionLayer, handleLayer, crosshairLayer, labelBackground, promptBackground,
-         magnifierLayer].forEach(root.addSublayer)
+         magnifierLayer, lensLayer].forEach(root.addSublayer)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
     }
 
@@ -172,6 +194,25 @@ final class OverlayView: NSView {
         }
     }
 
+    /// Shows the zoom lens, or hides it with nil.
+    func setLens(_ lens: OverlayLens?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let lens, let image = lens.image else {
+            lensLayer.isHidden = true
+            return
+        }
+        lensLayer.isHidden = false
+        lensLayer.contents = image
+        lensLayer.frame = lens.frame
+        lensMarker.frame = lensLayer.bounds
+        // The lens's layer is y up; the marker comes top-left.
+        lensMarker.path = lens.marker.map {
+            CGPath(rect: CGRect(x: $0.minX, y: lens.frame.height - $0.maxY, width: $0.width, height: $0.height), transform: nil)
+        }
+    }
+
     private func place(text: String?, in background: CALayer, textLayer: CATextLayer, near anchor: CGPoint?, centered: Bool = false) {
         guard let text, let anchor else {
             background.isHidden = true
@@ -204,9 +245,17 @@ final class OverlayView: NSView {
 
     // MARK: Events → session (global AppKit points)
 
-    override func mouseMoved(with event: NSEvent) { session?.mouseMoved(to: NSEvent.mouseLocation, flags: event.modifierFlags) }
+    // Moves and drags go through `pointerLocation(for:)`, which slows the pointer while ⌘ is held.
+    override func mouseMoved(with event: NSEvent) {
+        guard let session else { return }
+        session.mouseMoved(to: session.pointerLocation(for: event), flags: event.modifierFlags)
+    }
+
     override func mouseDown(with event: NSEvent) { session?.mouseDown(at: NSEvent.mouseLocation, flags: event.modifierFlags) }
-    override func mouseDragged(with event: NSEvent) { session?.mouseDragged(to: NSEvent.mouseLocation, flags: event.modifierFlags) }
+    override func mouseDragged(with event: NSEvent) {
+        guard let session else { return }
+        session.mouseDragged(to: session.pointerLocation(for: event), flags: event.modifierFlags)
+    }
     override func mouseUp(with event: NSEvent) {
         controlClickInProgress = false
         session?.mouseUp(at: NSEvent.mouseLocation, flags: event.modifierFlags)
@@ -227,7 +276,8 @@ final class OverlayView: NSView {
 
     override func rightMouseDragged(with event: NSEvent) {
         guard controlClickInProgress || event.type == .leftMouseDragged else { return }
-        session?.mouseDragged(to: NSEvent.mouseLocation, flags: event.modifierFlags)
+        guard let session else { return }
+        session.mouseDragged(to: session.pointerLocation(for: event), flags: event.modifierFlags)
     }
 
     override func rightMouseUp(with event: NSEvent) {

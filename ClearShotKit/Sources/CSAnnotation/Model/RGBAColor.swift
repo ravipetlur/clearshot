@@ -1,4 +1,5 @@
 import CoreGraphics
+import CSCore
 import Foundation
 
 /// An sRGB color with alpha, as stored in documents and preferences.
@@ -72,3 +73,6 @@ public struct RGBAColor: Codable, Hashable, Sendable {
     public static let black = RGBAColor(red: 0, green: 0, blue: 0)
     public static let white = RGBAColor(red: 1, green: 1, blue: 1)
 }
+
+/// Its components are sRGB, so the copy formats (`ColorFormat`) and the contrast measures (`ColorContrast`) read it as it is.
+extension RGBAColor: SRGBColor {}

@@ -51,8 +51,10 @@ public enum CanvasFill: Codable, Equatable, Sendable {
 
 /// An annotated image. Objects live in base pixels; `canvasRect` is in output pixels.
 public struct AnnotationDocument: Codable, Equatable, Sendable {
-    /// Version 2 added `background` and `isWindowShot`.
-    public static let currentVersion = 2
+    /// The newest version this build reads. Version 2 added `background` and `isWindowShot`; version 3 the objects and
+    /// fields in `formatFeatures` (AnnotationDocument+Version.swift). A document is written at the lowest version that
+    /// holds it (`requiredVersion`).
+    public static let currentVersion = 3
 
     public var version: Int
     public var base: ImageRef
@@ -91,28 +93,32 @@ public struct AnnotationDocument: Codable, Equatable, Sendable {
     /// (with a default here) never makes a saved document unreadable. A background or window-shot flag that doesn't
     /// decode is none: a broken background never makes the document unreadable.
     ///
-    /// The version read only matters to `DocumentPackage.readDocument`, which refuses a newer one before decoding. In
-    /// memory a document is in today's format, as it will be written (`encode(to:)`), so `version` is `currentVersion`
-    /// and an older file decodes equal to the same document made today.
+    /// The version read matters to `DocumentPackage.readDocument`, which refuses a newer one before decoding, and to the
+    /// migration of older files (`migrated(_:from:)`). In memory a document is in today's format, so `version` is
+    /// `currentVersion` and an older file decodes equal to the same document made today.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         baseSize = try container.decode(CGSize.self, forKey: .baseSize)
         pixelScale = try container.decode(Double.self, forKey: .pixelScale)
         version = Self.currentVersion
+        // A file without a readable version is taken as the first.
+        let versionRead = (try? container.decodeIfPresent(Int.self, forKey: .version)) ?? 1
         base = try container.decodeIfPresent(ImageRef.self, forKey: .base) ?? .original
         imageOps = try container.decodeIfPresent([ImageOp].self, forKey: .imageOps) ?? []
         canvasRect = try container.decodeIfPresent(CGRect.self, forKey: .canvasRect)
         canvasFill = try container.decodeIfPresent(CanvasFill.self, forKey: .canvasFill) ?? .auto
-        objects = try container.decodeIfPresent([AnnotationObject].self, forKey: .objects) ?? []
+        objects = Self.migrated(try container.decodeIfPresent([AnnotationObject].self, forKey: .objects) ?? [],
+                                from: versionRead)
         background = try? container.decodeIfPresent(DocumentBackground.self, forKey: .background)
         isWindowShot = (try? container.decodeIfPresent(Bool.self, forKey: .isWindowShot)) ?? false
     }
 
-    /// Always written as `currentVersion`, whatever version was read: a saved document is in today's format, fields and
-    /// all, so an older build refuses it (`DocumentError.newerVersion`) instead of dropping what it doesn't know.
+    /// Written as `requiredVersion`, whatever version was read: the lowest version that holds everything in it. A document
+    /// that uses nothing newer stays readable by older builds; one that does is refused there
+    /// (`DocumentError.newerVersion`) instead of having what they don't know dropped or drawn wrong.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(Self.currentVersion, forKey: .version)
+        try container.encode(requiredVersion, forKey: .version)
         try container.encode(base, forKey: .base)
         try container.encode(baseSize, forKey: .baseSize)
         try container.encode(pixelScale, forKey: .pixelScale)
@@ -164,20 +170,22 @@ public struct AnnotationDocument: Codable, Equatable, Sendable {
 
     /// Objects in the exact order the renderer draws them, bottom first: redactions (which replace the picture), then
     /// the spotlights (whose dimming covers what is under it), then everything else in creation order, then the
-    /// counters. `Renderer.draw` iterates this, and clicks look for objects in its reverse, so the object a click picks
-    /// is the one on top.
+    /// magnifiers (a callout is a view of the picture laid over the marks, so none of them covers it), then the
+    /// counters. `Renderer.draw` iterates this, with the rulers labeled (`drawingOrder(rulerUnit:)`), and clicks look for
+    /// objects in its reverse, so the object a click picks is the one on top.
     public var visualOrder: [AnnotationObject] {
         var redactions: [AnnotationObject] = [], spotlights: [AnnotationObject] = []
-        var others: [AnnotationObject] = [], counters: [AnnotationObject] = []
+        var others: [AnnotationObject] = [], magnifiers: [AnnotationObject] = [], counters: [AnnotationObject] = []
         for object in objects {
             switch object.kind {
             case .redact: redactions.append(object)
             case .spotlight: spotlights.append(object)
+            case .magnifier: magnifiers.append(object)
             case .counter: counters.append(object)
             default: others.append(object)
             }
         }
-        return redactions + spotlights + others + counters
+        return redactions + spotlights + others + magnifiers + counters
     }
 
     /// The next counter's value: one more than the highest so far, or `start` for the first.

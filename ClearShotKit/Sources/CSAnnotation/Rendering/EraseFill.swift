@@ -248,9 +248,11 @@ enum EraseFill {
         let rows = vertical.positions(height)
         let expand = { (values: [Float]) -> [Float] in
             var expanded = [Float](repeating: 0, count: values.count * 4)
+            var zero: Float = 0
             for channel in 0..<4 {
                 expanded.withUnsafeMutableBufferPointer { expanded in
-                    cblas_scopy(Int32(values.count), values, 1, expanded.baseAddress! + channel, 4)
+                    // values + 0 into every fourth float: a strided copy.
+                    vDSP_vsadd(values, 1, &zero, expanded.baseAddress! + channel, 4, vDSP_Length(values.count))
                 }
             }
             return expanded

@@ -253,6 +253,40 @@ struct MagnifierTests {
         #expect(patternPixels(in: plain) > 0)
     }
 
+    /// A source moved onto what the crop leaves out shows none of it: the crop is (40, 0) to (120, 60), the pattern at
+    /// (10, 20) is outside it, and the callout at (50, 0) is inside.
+    @Test func calloutNeverShowsWhatTheCropLeavesOut() throws {
+        var (document, images) = TestBitmaps.document(base: Self.patterned(), objects: [magnifierObject(Self.patternMagnifier)])
+        document.canvasRect = CGRect(x: 40, y: 0, width: 80, height: 60)
+        let image = try #require(Renderer.render(document, images: images))
+        #expect(image.width == 80)
+        #expect(patternPixels(in: image) == 0)
+
+        // Turned, the crop turns with the picture and still leaves the pattern out.
+        var turned = document
+        turned.imageOps = [.rotateRight]
+        turned.canvasRect = CGRect(x: 40, y: 0, width: 80, height: 60).applying(turned.transform.transform)
+        #expect(patternPixels(in: try #require(Renderer.render(turned, images: images))) == 0)
+
+        // The object copied alone too.
+        let copy = try #require(Renderer.renderObjects([document.objects[0]], document: document, images: images))
+        #expect(patternPixels(in: copy) == 0)
+
+        // Positive control: a crop that keeps the source shows the pattern.
+        document.canvasRect = CGRect(x: 0, y: 0, width: 115, height: 60)
+        #expect(patternPixels(in: try #require(Renderer.render(document, images: images))) > 0)
+    }
+
+    /// A source half in the crop shows that half only. The crop starts at x 20, through the pattern (10 to 30); the
+    /// callout's left half (base x 50 to 80, output 30 to 60) shows the cut-off half, its right half the rest.
+    @Test func calloutShowsOnlyThePartOfTheSourceInTheCrop() throws {
+        var (document, images) = TestBitmaps.document(base: Self.patterned(), objects: [magnifierObject(Self.patternMagnifier)])
+        document.canvasRect = CGRect(x: 20, y: 0, width: 100, height: 60)
+        let image = try #require(Renderer.render(document, images: images))
+        #expect(patternPixels(in: image, within: CGRect(x: 30, y: 10, width: 30, height: 40)) == 0)
+        #expect(patternPixels(in: image, within: CGRect(x: 60, y: 10, width: 30, height: 40)) > 0)
+    }
+
     /// A pasted image over the source shows in the callout, as it does on the canvas.
     @Test func calloutShowsPastedImages() throws {
         var (document, images) = TestBitmaps.document(base: TestBitmaps.solid(120, 60, TestBitmaps.blue))

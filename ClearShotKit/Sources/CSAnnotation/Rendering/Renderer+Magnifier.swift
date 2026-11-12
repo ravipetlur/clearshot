@@ -11,8 +11,13 @@ struct MagnifiedPicture {
     /// The image objects (pasted, dropped and combined pictures), in drawing order. They lie over the redactions, as on the
     /// canvas.
     var images: [AnnotationObject]
-    /// What lies under the picture where the source reaches past the base: the canvas fill, or nothing (transparent).
+    /// What lies under the picture where the source reaches past the base or the crop: the canvas fill, or nothing
+    /// (transparent).
     var backdrop: RGBAColor?
+    /// The part of the document that is shown, in base pixels: the crop, mapped back through the image operations. Nil
+    /// when nothing is cropped. A callout shows nothing of the picture outside it, so a source moved onto what was cropped
+    /// away shows the backdrop, as the canvas does there.
+    var visible: CGRect?
 }
 
 extension Renderer {
@@ -32,7 +37,8 @@ extension Renderer {
         }
         return MagnifiedPicture(base: redacted?.image, baseSize: document.baseSize,
                                 images: order.filter { if case .image = $0.kind { true } else { false } },
-                                backdrop: backdrop)
+                                backdrop: backdrop,
+                                visible: document.canvasRect.map { $0.applying(document.transform.inverse).standardized })
     }
 
     /// A magnifier, in base pixels: the connector, then the callout showing `picture`'s pixels in the source, magnified
@@ -41,7 +47,8 @@ extension Renderer {
     /// **What a redaction hides never shows here.** The only base drawn is the redacted one (`MagnifiedPicture.base`), in
     /// which every pixel under a redaction, on whole base pixels, is already its effect or black; a picture that can't be
     /// made leaves the callout black (`picture` nil: `draw(_:pixelScale:…)` on its own, which has no document to make it
-    /// from). The other annotations aren't drawn in the callout: shapes inside the source don't appear there.
+    /// from). The other annotations aren't drawn in the callout: shapes inside the source don't appear there. Nor does
+    /// anything the crop leaves out (`MagnifiedPicture.visible`).
     static func drawMagnifier(_ object: AnnotationObject, _ magnifier: MagnifierObject, picture: MagnifiedPicture?,
                               pixelScale: Double, images: ImageStore, in context: CGContext) {
         let magnifier = MagnifierGeometry.normalized(magnifier)
@@ -76,6 +83,8 @@ extension Renderer {
             context.translateBy(x: callout.minX, y: callout.minY)
             context.scaleBy(x: callout.width / source.width, y: callout.height / source.height)
             context.translateBy(x: -source.minX, y: -source.minY)
+            // Nothing cropped away: the picture and the pasted images only where the document is shown.
+            if let visible = picture.visible { context.clip(to: visible) }
             drawImage(base, in: CGRect(origin: .zero, size: picture.baseSize), context: context)
             for var image in picture.images {
                 image.style.shadow = false

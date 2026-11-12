@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreText
 import CSCore
 import CSOCR
+import CSTestSupport
 import Foundation
 import Testing
 @testable import CSAnnotation
@@ -350,7 +351,7 @@ struct RedactionWordFinderTests {
     private let options = TextRecognitionOptions(automaticallyDetectsLanguage: false, primaryLanguage: "en-US",
                                                  usesLanguageCorrection: false)
 
-    @Test func findsEachWordAndLeavesTheGapsBetweenThem() async throws {
+    @Test(.needsVisionTextRecognition) func findsEachWordAndLeavesTheGapsBetweenThem() async throws {
         let base = page("garden       harbor")
         let (document, images) = TestBitmaps.document(base: base)
         let picture = try #require(RedactionWordFinder.picture(of: document, images: images))
@@ -370,7 +371,7 @@ struct RedactionWordFinderTests {
         #expect(!areas.contains { $0.contains(middle) })
     }
 
-    @Test func aPictureWithNoTextFindsNoWords() async throws {
+    @Test(.needsVisionTextRecognition) func aPictureWithNoTextFindsNoWords() async throws {
         let base = page(nil)
         let (document, images) = TestBitmaps.document(base: base)
         let picture = try #require(RedactionWordFinder.picture(of: document, images: images))
@@ -441,7 +442,7 @@ struct TextOnlyEditorTests {
         #expect(!editor.undoManager.canUndo)
     }
 
-    @Test func aBlankAreaSaysNoTextWasFound() async throws {
+    @Test(.needsVisionTextRecognition) func aBlankAreaSaysNoTextWasFound() async throws {
         let rect = CGRect(x: 10, y: 10, width: 60, height: 30)
         let object = redaction(rect: rect)
         let harness = EditorHarness(objects: [object])
@@ -455,7 +456,7 @@ struct TextOnlyEditorTests {
         #expect(found.currentWords(picture: RedactionWords.fingerprint(of: white, in: rect))?.boxes == [])
     }
 
-    @Test func wordsFromOtherPixelsAreReadAgain() async throws {
+    @Test(.needsVisionTextRecognition) func wordsFromOtherPixelsAreReadAgain() async throws {
         // A text-only redaction whose words came from another picture at the same rect (a document from elsewhere, or a
         // base that changed): it covers its whole rect, and its words are read again from these pixels.
         let rect = CGRect(x: 10, y: 10, width: 60, height: 30)
@@ -474,7 +475,7 @@ struct TextOnlyEditorTests {
         #expect(reread.words?.boxes == [])
     }
 
-    @Test func aPictureChangeUnderTheRedactionCoversTheWholeRectUntilReadAgain() async throws {
+    @Test(.needsVisionTextRecognition) func aPictureChangeUnderTheRedactionCoversTheWholeRectUntilReadAgain() async throws {
         let rect = CGRect(x: 10, y: 10, width: 60, height: 30)
         let box = CGRect(x: 12, y: 12, width: 10, height: 10)
         let object = redaction(.blackOut, rect: rect, words: words([box], rect: rect, of: white))
@@ -494,7 +495,7 @@ struct TextOnlyEditorTests {
         #expect(editor.object(object.id).flatMap(redact)?.words?.picture == fingerprint)
     }
 
-    @Test func aPastedTextOnlyRedactionCoversTheWholeRectUntilReadAgain() async throws {
+    @Test(.needsVisionTextRecognition) func aPastedTextOnlyRedactionCoversTheWholeRectUntilReadAgain() async throws {
         let rect = CGRect(x: 10, y: 10, width: 60, height: 30)
         // Words that would apply here, had they come with the paste.
         let object = redaction(.blackOut, rect: rect, words: words([CGRect(x: 12, y: 12, width: 10, height: 10)], rect: rect,

@@ -51,18 +51,17 @@ struct PrivateKeyBlockTests {
 
     // MARK: End lines
 
-    @Test(arguments: ["RSA", "", "OPENSSH", "EC", "ENCRYPTED"])
-    func aPrivateKeyEndLineIsOne(kind: String) {
-        #expect(SensitiveDetector.isPrivateKeyEndLine(Fake.privateKeyEnd(kind)))
+    @Test(arguments: [
+        Fake.privateKeyEnd("RSA"), Fake.privateKeyEnd(""), Fake.privateKeyEnd("OPENSSH"), Fake.privateKeyEnd("EC"), Fake.privateKeyEnd("ENCRYPTED"),
+        parts("-----", "END PGP ", "PRIVATE KEY", " BLOCK-----"),
+    ])
+    func aPrivateKeyEndLineIsOne(line: String) {
+        #expect(SensitiveDetector.isPrivateKeyEndLine(line))
     }
 
     @Test(arguments: ["-----", "---", "-", "", "——", "–––––"])
     func theDashesOfAnEndLineAreOptional(dashes: String) {
         #expect(SensitiveDetector.isPrivateKeyEndLine(Fake.privateKeyEnd("OPENSSH", dashes: dashes)))
-    }
-
-    @Test func aPGPEndLineIsOne() {
-        #expect(SensitiveDetector.isPrivateKeyEndLine(parts("-----", "END PGP ", "PRIVATE KEY", " BLOCK-----")))
     }
 
     @Test(arguments: [
@@ -74,13 +73,11 @@ struct PrivateKeyBlockTests {
         parts("see -----", "END RSA ", "PRIVATE", " KEY-----"),
         parts("end ", "private", " key"),
         "",
+        // A begin line.
+        Fake.privateKeyBegin(),
     ])
     func otherLinesAreNotEndLines(line: String) {
         #expect(!SensitiveDetector.isPrivateKeyEndLine(line))
-    }
-
-    @Test func aBeginLineIsNotAnEndLine() {
-        #expect(!SensitiveDetector.isPrivateKeyEndLine(Fake.privateKeyBegin()))
     }
 
     // MARK: A key written on one line: lines joined by a literal \n

@@ -5,110 +5,87 @@ import Testing
 struct KeyAndTokenDetectionTests {
     func keys(_ line: String) -> [String] { foundText(line, .keysAndTokens) }
 
-    // MARK: GitHub
-
-    @Test(arguments: ["p", "o", "u", "s", "r"] as [Character])
-    func aGitHubTokenIsFound(letter: Character) {
-        let token = Fake.github(letter)
-        #expect(found("export GH=\(token)") == [Found(.keyOrToken, token)])
+    /// A line, and the token the detector finds in it: nothing else in the line, of any kind.
+    private static func row(_ before: String, _ token: String, _ after: String = "") -> (String, String) {
+        (before + token + after, token)
     }
 
-    @Test func aLongerGitHubTokenIsFoundWhole() {
-        let token = Fake.github(body: 40)
-        #expect(keys("token \(token) end") == [token])
+    // MARK: Service tokens and keys
+
+    @Test(arguments: [
+        // GitHub, every letter, a longer one found whole, and a fine-grained one.
+        row("export GH=", Fake.github("p")),
+        row("export GH=", Fake.github("o")),
+        row("export GH=", Fake.github("u")),
+        row("export GH=", Fake.github("s")),
+        row("export GH=", Fake.github("r")),
+        row("token ", Fake.github(body: 40), " end"),
+        row("use ", Fake.githubFineGrained()),
+        // AWS access key ids.
+        row("id ", Fake.aws("AKIA")),
+        row("id ", Fake.aws("ASIA")),
+        // Stripe.
+        row("STRIPE=", Fake.stripe("sk_live_")),
+        row("STRIPE=", Fake.stripe("sk_test_")),
+        row("STRIPE=", Fake.stripe("rk_live_")),
+        // Slack, every letter.
+        row("bot ", Fake.slack("a")),
+        row("bot ", Fake.slack("b")),
+        row("bot ", Fake.slack("p")),
+        row("bot ", Fake.slack("r")),
+        row("bot ", Fake.slack("s")),
+        // Google.
+        row("key=", Fake.google()),
+        // Generic secret keys: with hyphens and underscores found whole, and of all lowercase letters.
+        row("SERVICE=", Fake.secretKey()),
+        row("key: ", parts("sk", "-", "proj", "-", Fake.chars(12), "_", Fake.chars(12), "-", Fake.chars(8)), " ok"),
+        row("", parts("sk", "-", String(repeating: "a", count: 20))),
+    ])
+    func aServiceTokenIsFound(line: String, token: String) {
+        #expect(found(line) == [Found(.keyOrToken, token)])
     }
 
-    @Test func aFineGrainedGitHubTokenIsFound() {
-        let token = Fake.githubFineGrained()
-        #expect(keys("use \(token)") == [token])
-    }
-
-    @Test func aGitHubTokenTooShortIsNotFound() {
-        #expect(keys(Fake.github(body: 35)) == [])
-        #expect(keys("gh" + "x_" + Fake.chars(36)) == [])
-        #expect(keys(Fake.githubFineGrained(body: 21)) == [])
-    }
-
-    @Test func aTokenInsideALongerWordIsNotFound() {
-        #expect(keys("x" + Fake.github()) == [])
-    }
-
-    // MARK: AWS
-
-    @Test(arguments: ["AKIA", "ASIA"])
-    func anAWSAccessKeyIdIsFound(prefix: String) {
-        let key = Fake.aws(prefix)
-        #expect(found("id \(key)") == [Found(.keyOrToken, key)])
-    }
-
-    @Test func anAWSKeyOfTheWrongShapeIsNotFound() {
-        #expect(keys(Fake.aws(body: 15)) == [])
-        #expect(keys(Fake.aws(body: 17)) == [])
-        #expect(keys("AKIA" + Fake.chars(16).lowercased()) == [])
-        #expect(keys("AKIB" + Fake.chars(16, from: Fake.capitals)) == [])
-    }
-
-    // MARK: Stripe
-
-    @Test(arguments: ["sk_live_", "sk_test_", "rk_live_"])
-    func aStripeKeyIsFound(prefix: String) {
-        let key = Fake.stripe(prefix)
-        #expect(found("STRIPE=\(key)") == [Found(.keyOrToken, key)])
-    }
-
-    @Test func aStripeKeyTooShortIsNotFound() {
-        #expect(keys(Fake.stripe(body: 15)) == [])
-        #expect(keys("pk_live_" + Fake.chars(24)) == [])
-    }
-
-    // MARK: Slack
-
-    @Test(arguments: ["a", "b", "p", "r", "s"] as [Character])
-    func aSlackTokenIsFound(letter: Character) {
-        let token = Fake.slack(letter)
-        #expect(found("bot \(token)") == [Found(.keyOrToken, token)])
-    }
-
-    @Test func aSlackLookalikeIsNotFound() {
-        #expect(keys("xoxb-") == [])
-        #expect(keys("xoxz-" + Fake.chars(24)) == [])
-    }
-
-    // MARK: Google
-
-    @Test func aGoogleKeyIsFound() {
-        let key = Fake.google()
-        #expect(found("key=\(key)") == [Found(.keyOrToken, key)])
-    }
-
-    @Test func aGoogleKeyTooShortIsNotFound() {
-        #expect(keys(Fake.google(body: 34)) == [])
+    @Test(arguments: [
+        // Too short, or the wrong prefix.
+        Fake.github(body: 35),
+        parts("gh", "x_", Fake.chars(36)),
+        Fake.githubFineGrained(body: 21),
+        Fake.aws(body: 15),
+        Fake.aws(body: 17),
+        parts("AKIA", Fake.chars(16).lowercased()),
+        parts("AKIB", Fake.chars(16, from: Fake.capitals)),
+        Fake.stripe(body: 15),
+        parts("pk_live_", Fake.chars(24)),
+        "xoxb-",
+        parts("xoxz-", Fake.chars(24)),
+        Fake.google(body: 34),
+        parts("sk", "-", Fake.chars(19)),
+        // Inside a longer word.
+        parts("x", Fake.github()),
+        parts("Pallbearer ", Fake.chars(24)),
+        // Words that end in sk are not secret keys.
+        "risk-assessment-for-the-next-quarter",
+        "desk-lamp-with-adjustable-arm",
+    ] as [String])
+    func aLookalikeIsNotAToken(text: String) {
+        #expect(found(text) == [])
     }
 
     // MARK: JWT
 
-    @Test func aJWTIsFound() {
-        let jwt = Fake.jwt()
-        #expect(found("Authorization: Bearer \(jwt)") == [Found(.keyOrToken, jwt)])
-    }
-
-    /// A JWT wraps across lines when it's read from a screenshot, so a payload cut off by the line's end is a token.
-    @Test func aJWTCutOffInItsPayloadIsFound() {
-        let cut = Fake.jwtHeader() + "." + Fake.jwtPayload(10)
-        #expect(found("Authorization: Bearer \(cut)") == [Found(.keyOrToken, cut)])
-        let barely = Fake.jwtHeader() + ".eyJ"
-        #expect(keys("jwt \(barely)") == [barely])
-    }
-
-    @Test func aJWTWithoutASignatureIsFound() {
-        let unsigned = Fake.jwtHeader() + "." + Fake.jwtPayload()
-        #expect(keys("jwt \(unsigned) end") == [unsigned])
-        #expect(keys("jwt \(unsigned). end") == [unsigned + "."])
-    }
-
-    @Test func aSignedJWTIsFoundWholeWithItsSignature() {
-        let signed = Fake.jwtHeader() + "." + Fake.jwtPayload() + "." + Fake.chars(43)
-        #expect(keys("jwt \(signed) end") == [signed])
+    @Test(arguments: [
+        row("Authorization: Bearer ", Fake.jwt()),
+        // A JWT wraps across lines when it's read from a screenshot, so a payload cut off by the line's end is a token.
+        row("Authorization: Bearer ", parts(Fake.jwtHeader(), ".", Fake.jwtPayload(10))),
+        row("jwt ", parts(Fake.jwtHeader(), ".eyJ")),
+        // Without a signature.
+        row("jwt ", parts(Fake.jwtHeader(), ".", Fake.jwtPayload()), " end"),
+        row("jwt ", parts(Fake.jwtHeader(), ".", Fake.jwtPayload(), "."), " end"),
+        // Signed: found whole with its signature.
+        row("jwt ", parts(Fake.jwtHeader(), ".", Fake.jwtPayload(), ".", Fake.chars(43)), " end"),
+    ])
+    func aJWTIsFound(line: String, token: String) {
+        #expect(found(line) == [Found(.keyOrToken, token)])
     }
 
     @Test func somethingThatIsNotAJWTIsNotFound() {
@@ -117,32 +94,6 @@ struct KeyAndTokenDetectionTests {
         #expect(keys(Fake.jwtHeader()) == [])
         #expect(keys(Fake.jwtHeader() + "." + Fake.chars(24)) == [])
         #expect(keys("x" + Fake.jwtHeader() + "." + Fake.jwtPayload()) == [])
-    }
-
-    // MARK: Generic secret keys
-
-    @Test func aSecretKeyIsFound() {
-        let key = Fake.secretKey()
-        #expect(found("SERVICE=\(key)") == [Found(.keyOrToken, key)])
-    }
-
-    @Test func aSecretKeyWithHyphensAndUnderscoresIsFoundWhole() {
-        let key = "sk" + "-" + "proj" + "-" + Fake.chars(12) + "_" + Fake.chars(12) + "-" + Fake.chars(8)
-        #expect(keys("key: \(key) ok") == [key])
-    }
-
-    @Test func aSecretKeyOfAllLowercaseLettersIsFound() {
-        let key = "sk" + "-" + String(repeating: "a", count: 20)
-        #expect(keys(key) == [key])
-    }
-
-    @Test func aShortSecretKeyIsNotFound() {
-        #expect(keys("sk" + "-" + Fake.chars(19)) == [])
-    }
-
-    @Test func wordsThatEndInSkAreNotSecretKeys() {
-        #expect(keys("risk-assessment-for-the-next-quarter") == [])
-        #expect(keys("desk-lamp-with-adjustable-arm") == [])
     }
 
     // MARK: Private-key blocks
@@ -218,10 +169,6 @@ struct KeyAndTokenDetectionTests {
     @Test(arguments: ["Bearer " + String(repeating: "a", count: 15), "the bearer of this letter", "Bearer tokens are sent", "Bearer", "Bearer  "])
     func somethingShortAfterBearerIsNotAToken(text: String) {
         #expect(found(text) == [])
-    }
-
-    @Test func aBearerTokenIsNotFoundInsideAWord() {
-        #expect(found("Pallbearer " + Fake.chars(24)) == [])
     }
 
     // MARK: Passwords in URLs: only the password

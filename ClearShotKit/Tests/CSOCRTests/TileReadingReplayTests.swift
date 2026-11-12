@@ -46,25 +46,19 @@ struct TileReadingReplayTests {
         }
     }
 
-    @Test func aURLAcrossACutReplaysExactlyWhereverTheCutFalls() {
+    @Test(arguments: [
         // 70 cuts along "…https://github.com/the-author/mac-apps/blob/main/ClearShot/README.md…" in Helvetica 40,
         // among them the 25 where a long token's evenly spread letters drifted and a letter came out twice.
-        expectExact("url40 ", count: 70)
-    }
-
-    @Test func the6KLongLinesReplayExactly() {
+        ("url40 ", 70),
         // Rows 1–12 of the 2 600 px page (row 1 across a cut in "kettle lemon", row 6 in "rocket saddle") and rows
         // 1–12 and 29 of the full-width page, each across two to four cuts.
-        expectExact("6K ", count: 2)
-    }
-
-    @Test func twelveItemsKeepsItsTwelve() {
-        // The cut swept 3 px at a time through and around "12" in "Total 12 items in the list".
-        expectExact("12 items ", count: 21)
-    }
-
-    @Test func largeHeadingsReplayExactly() {
-        // 64 and 72 px, the cut every 160 px across the heading.
-        expectExact("heading ", count: 22)
+        ("6K ", 2),
+        // The cut swept 3 px at a time through and around "12" in "Total 12 items in the list": it keeps its twelve.
+        ("12 items ", 21),
+        // Large headings, 64 and 72 px, the cut every 160 px across the heading.
+        ("heading ", 22),
+    ])
+    func eachCapturedReadingReplaysExactly(prefix: String, count: Int) {
+        expectExact(prefix, count: count)
     }
 }

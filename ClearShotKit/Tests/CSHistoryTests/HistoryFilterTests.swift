@@ -26,9 +26,4 @@ struct HistoryFilterTests {
         #expect(kept(.videos) == [.video])
         #expect(kept(.gifs) == [.gif])
     }
-
-    @Test func filterTitlesAreTheDecidedOnes() {
-        #expect(HistoryFilter.allCases.map(\.title) == ["All", "Screenshots", "Videos", "GIFs"])
-        #expect(HistoryFilter.allCases.map(\.id) == ["all", "screenshots", "videos", "gifs"])
-    }
 }

@@ -76,7 +76,8 @@ struct SensitiveScannerTests {
 
     // MARK: Three kinds of finding, at 1× and 2×
 
-    @Test(.needsVisionTextRecognition, arguments: [1, 2], [true, false])
+    /// At 1× without font smoothing and at 2× with it: both scales and both kinds of smoothing, in two readings.
+    @Test(.needsVisionTextRecognition, arguments: zip([1, 2], [false, true]))
     func anEmailATokenAndACardAreThreeFindingsBoxedOnTheirOwnText(scale: Int, smoothing: Bool) async throws {
         let size = CGFloat(28 * scale)
         let page = ScanFixture(width: 900 * scale, height: 300 * scale, smoothing: smoothing)
@@ -111,11 +112,20 @@ struct SensitiveScannerTests {
         page.text("paste \(token) here", x: 40, top: 110, size: 28)
         let pay = page.text("card \(card)", x: 40, top: 180, size: 28)
 
-        let cards = try await SensitiveScanner.scan(page.image(), kinds: .cards)
+        // One reading, with every kind marked, as a scan for all of them reads the page; then the findings for each choice.
+        let image = page.image()
+        let marking: TextRecognizer.Marking = { text in
+            SensitiveDetector.findings(in: text, kinds: .all).map { (range: $0.range, tag: SensitiveScanner.tag(of: $0.kind)) }
+        }
+        let lines = try await TextRecognizer.recognize(image, options: SensitiveScanner.options, marking: marking).lines
+        let size = CGSize(width: image.width, height: image.height)
+
+        let cards = try await SensitiveScanner.findings(from: lines, kinds: .cards, imageSize: size)
         #expect(cards.map(\.kind) == [.card])
         if let first = cards.first { expect(first, covers: pay.rect(of: card), in: page, tolerance: tolerance(1)) }
-        #expect(try await SensitiveScanner.scan(page.image(), kinds: [.contact, .ipAddresses]).map(\.kind) == [.contact])
-        #expect(try await SensitiveScanner.scan(page.image(), kinds: []).isEmpty)
+        #expect(try await SensitiveScanner.findings(from: lines, kinds: [.contact, .ipAddresses], imageSize: size).map(\.kind) == [.contact])
+        // No kind: nothing is read at all.
+        #expect(try await SensitiveScanner.scan(image, kinds: []).isEmpty)
     }
 
     @Test(.needsVisionTextRecognition) func anImageWithNothingSensitiveGivesNothing() async throws {

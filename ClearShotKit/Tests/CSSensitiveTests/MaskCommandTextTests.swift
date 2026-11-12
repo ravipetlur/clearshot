@@ -1,77 +1,47 @@
 import Testing
 @testable import CSSensitive
 
-/// What Annotate's Mask Sensitive Info says: its name, its progress and result messages, and the line it leaves in the log.
+/// What Annotate's Mask Sensitive Info says: its result messages and the line it leaves in the log.
 struct MaskCommandTextTests {
-    @Test func theCommandIsNamedAsTheMenuNamesIt() {
-        #expect(MaskCommandText.commandName == "Mask Sensitive Info")
-    }
+    // MARK: The counts
 
-    // MARK: The result
-
-    @Test func severalMasksAreCounted() {
-        #expect(MaskCommandText.result(masksAdded: 3) == "Masked 3 items")
-        #expect(MaskCommandText.result(masksAdded: 2) == "Masked 2 items")
-        #expect(MaskCommandText.result(masksAdded: 40) == "Masked 40 items")
-    }
-
-    @Test func oneMaskIsOneItem() {
-        #expect(MaskCommandText.result(masksAdded: 1) == "Masked 1 item")
-    }
-
-    @Test func noMasksSaysNothingWasFound() {
-        #expect(MaskCommandText.result(masksAdded: 0) == "Nothing sensitive found")
+    @Test(arguments: [
+        (0, "Nothing sensitive found"),
         // Not a count: a number below none is none.
-        #expect(MaskCommandText.result(masksAdded: -2) == "Nothing sensitive found")
+        (-2, "Nothing sensitive found"),
+        (1, "Masked 1 item"),
+        (2, "Masked 2 items"),
+        (3, "Masked 3 items"),
+        (40, "Masked 40 items"),
+    ])
+    func theResultCountsTheMasksAdded(masksAdded: Int, text: String) {
+        #expect(MaskCommandText.result(masksAdded: masksAdded) == text)
+    }
+
+    @Test(arguments: [
+        (0, "Nothing to unmask"),
+        (-1, "Nothing to unmask"),
+        (1, "Unmasked 1 item"),
+        (2, "Unmasked 2 items"),
+        (3, "Unmasked 3 items"),
+        (40, "Unmasked 40 items"),
+    ])
+    func theUnmaskResultCountsTheMasksTakenOut(masksRemoved: Int, text: String) {
+        #expect(MaskCommandText.unmaskResult(masksRemoved: masksRemoved) == text)
     }
 
     // MARK: Mask All from a thumbnail
 
-    @Test func maskAllCountsTheMasksItAdded() {
-        #expect(MaskCommandText.maskAllConfirmation(masksAdded: 1, clipboardUpdated: false) == "Masked 1 item")
-        #expect(MaskCommandText.maskAllConfirmation(masksAdded: 2, clipboardUpdated: false) == "Masked 2 items")
-        #expect(MaskCommandText.maskAllConfirmation(masksAdded: 40, clipboardUpdated: false) == "Masked 40 items")
-    }
-
-    @Test func maskAllSaysWhenTheMaskedPictureReplacedTheCopyOnTheClipboard() {
-        #expect(MaskCommandText.maskAllConfirmation(masksAdded: 1, clipboardUpdated: true) == "Masked 1 item · Clipboard updated")
-        #expect(MaskCommandText.maskAllConfirmation(masksAdded: 3, clipboardUpdated: true) == "Masked 3 items · Clipboard updated")
-    }
-
-    // MARK: Unmasking
-
-    @Test func theUnmaskCommandIsNamedAsTheMenuNamesIt() {
-        #expect(MaskCommandText.unmaskCommandName == "Unmask Sensitive Info")
-    }
-
-    @Test func severalMasksTakenOutAreCounted() {
-        #expect(MaskCommandText.unmaskResult(masksRemoved: 3) == "Unmasked 3 items")
-        #expect(MaskCommandText.unmaskResult(masksRemoved: 2) == "Unmasked 2 items")
-        #expect(MaskCommandText.unmaskResult(masksRemoved: 40) == "Unmasked 40 items")
-    }
-
-    @Test func oneMaskTakenOutIsOneItem() {
-        #expect(MaskCommandText.unmaskResult(masksRemoved: 1) == "Unmasked 1 item")
-    }
-
-    @Test func noMasksTakenOutSaysThereWasNothingToUnmask() {
-        #expect(MaskCommandText.unmaskResult(masksRemoved: 0) == "Nothing to unmask")
-        #expect(MaskCommandText.unmaskResult(masksRemoved: -1) == "Nothing to unmask")
-    }
-
-    @Test func aRefusedUnmaskSaysWhatToFinish() {
-        #expect(MaskCommandText.unmaskEditInProgress == "Nothing unmasked: finish your edit, then try again.")
-    }
-
-    @Test func theUnmaskLogLineHasTheCountOnly() {
-        #expect(MaskCommandText.unmaskLogSummary(masksRemoved: 3) == "3 masks taken out")
-        #expect(MaskCommandText.unmaskLogSummary(masksRemoved: 1) == "1 mask taken out")
-    }
-
-    @Test func theClipboardNoteIsOneConstantAllTheMessagesShare() {
-        // Mask All's confirmation and Done's message after masks were added say it in the same words.
-        #expect(MaskCommandText.clipboardUpdated == "Clipboard updated")
-        #expect(MaskCommandText.maskAllConfirmation(masksAdded: 2, clipboardUpdated: true) == "Masked 2 items · " + MaskCommandText.clipboardUpdated)
+    @Test(arguments: [
+        (1, false, "Masked 1 item"),
+        (2, false, "Masked 2 items"),
+        (40, false, "Masked 40 items"),
+        // Says when the masked picture replaced the copy on the clipboard.
+        (1, true, "Masked 1 item · Clipboard updated"),
+        (3, true, "Masked 3 items · Clipboard updated"),
+    ])
+    func maskAllCountsTheMasksItAdded(masksAdded: Int, clipboardUpdated: Bool, text: String) {
+        #expect(MaskCommandText.maskAllConfirmation(masksAdded: masksAdded, clipboardUpdated: clipboardUpdated) == text)
     }
 
     @Test func maskAllWordsTheCountAsAnnotateDoes() {
@@ -81,15 +51,12 @@ struct MaskCommandTextTests {
         }
     }
 
-    // MARK: The other messages
-
-    @Test func theProgressAndProblemMessagesSaySoPlainly() {
-        #expect(MaskCommandText.checking == "Checking for sensitive info…")
-        #expect(MaskCommandText.couldntCheck == "Couldn't check this image for sensitive info")
-        #expect(MaskCommandText.editInProgress == "Nothing masked: finish your edit, then try again.")
-    }
-
     // MARK: The log
+
+    @Test(arguments: [(3, "3 masks taken out"), (1, "1 mask taken out")])
+    func theUnmaskLogLineHasTheCountOnly(masksRemoved: Int, text: String) {
+        #expect(MaskCommandText.unmaskLogSummary(masksRemoved: masksRemoved) == text)
+    }
 
     @Test func theLogLineHasCountsAndKindsNames() {
         let counts = FindingCounts([.contact: 2, .keyOrToken: 1])

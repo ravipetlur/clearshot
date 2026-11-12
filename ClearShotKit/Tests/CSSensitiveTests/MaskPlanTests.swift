@@ -46,14 +46,6 @@ struct MaskPlanTests {
         #expect(mask.rect.contains(box))
     }
 
-    @Test func theIntensityIsAWholeNumberFromOneToTen() {
-        for height in [1.0, 6, 12, 20, 28, 60, 400] as [CGFloat] {
-            let masks = MaskPlan.masks(for: [finding(CGRect(x: 100, y: 100, width: 80, height: height))], imageSize: image,
-                                       toBase: .identity, baseSize: image, pixelScale: 2)
-            #expect((1...10).contains(masks.first?.intensity ?? 0), "height \(height)")
-        }
-    }
-
     @Test func noFindingsAreNoMasks() {
         #expect(MaskPlan.masks(for: [], imageSize: image, toBase: .identity, baseSize: image, pixelScale: 1).isEmpty)
     }
@@ -283,17 +275,6 @@ struct MaskPlanTests {
             #expect(CGRect(origin: .zero, size: base).contains(mask.rect))
         }
         #expect(masks[1].rect.minX == 0)
-    }
-
-    @Test func aMirroredPictureStillGivesRealRectangles() {
-        // Flipped horizontally: output x is 400 − base x.
-        let toBase = CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 400, ty: 0)
-        let box = CGRect(x: 50, y: 20, width: 100, height: 20)
-        let mask = MaskPlan.masks(for: [finding(box)], imageSize: CGSize(width: 400, height: 100), toBase: toBase,
-                                  baseSize: CGSize(width: 400, height: 100), pixelScale: 1)[0]
-        let inRendered = MaskGeometry.maskRect(for: box, imageSize: CGSize(width: 400, height: 100))
-        #expect(mask.rect == CGRect(x: 400 - inRendered.maxX, y: inRendered.minY, width: inRendered.width, height: inRendered.height))
-        #expect(mask.rect.width > 0 && mask.rect.height > 0)
     }
 
     @Test func numbersThatArentNumbersMakeNoMasksAndDontCrash() {

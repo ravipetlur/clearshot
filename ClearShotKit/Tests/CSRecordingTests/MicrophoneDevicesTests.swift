@@ -9,12 +9,9 @@ struct MicrophoneDevicesTests {
         Int32(bitPattern: code.utf8.reduce(0) { $0 << 8 | UInt32($1) })
     }
 
-    @Test func bltnIsBuiltIn() {
+    @Test func bltnIsBuiltInAndUSBAndVirtualAreNot() {
         #expect(transportType("bltn") == 0x626C_746E)
         #expect(MicrophoneDevices.isBuiltIn(transportType: transportType("bltn")))
-    }
-
-    @Test func usbAndVirtualAreNot() {
         for code in ["usb ", "virt", "blue", "aggr"] {
             #expect(!MicrophoneDevices.isBuiltIn(transportType: transportType(code)), "\(code)")
         }

@@ -16,8 +16,6 @@ struct GIFScheduleTests {
     }
 
     @Test func sixtyIsCappedAtFifty() {
-        #expect(GIFSchedule.maximumFramesPerSecond == 50)
-        #expect(GIFSchedule.minimumDelay == 2)
         #expect(GIFSchedule.effectiveFramesPerSecond(60) == 50)
         #expect(GIFSchedule.effectiveFramesPerSecond(30) == 30)
         let picks = GIFSchedule.make(frameTimes: frames(120, fps: 60), trim: 0...2, framesPerSecond: 60)

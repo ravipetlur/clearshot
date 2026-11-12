@@ -367,7 +367,9 @@ enum Fixtures {
         return list
     }()
 
-    /// The shapes: 1x1, 1xN, Nx1, 17x33, 1001x999 and the two longest the encoder writes, 16383x1 and 1x16383.
+    /// The shapes: 1x1, 1xN, Nx1, 17x33, 521x519 and the two longest the encoder writes, 16383x1 and 1x16383. 521x519
+    /// is above the encoder's 262,144-pixel sample limit with odd sides, so the sampled estimate runs on rows that do
+    /// not split evenly, at about a quarter of the cost of a larger image.
     static let shapes: [Fixture] = [
         Fixture("1x1 opaque") { noise(1, 1, seed: 5) },
         Fixture("1x1 translucent") { alphaGradient(1, 1) },
@@ -378,9 +380,9 @@ enum Fixtures {
         Fixture("37x1 alpha") { alphaGradient(37, 1) },
         Fixture("17x33 noise") { noise(17, 33, seed: 8) },
         Fixture("17x33 alpha") { alphaGradient(17, 33) },
-        Fixture("1001x999 ui") { uiScreenshot(1001, 999) },
-        Fixture("1001x999 noise") { noise(1001, 999, seed: 9) },
-        Fixture("1001x999 random") { randomNoise(1001, 999, seed: 12) },
+        Fixture("521x519 ui") { uiScreenshot(521, 519) },
+        Fixture("521x519 noise") { noise(521, 519, seed: 9) },
+        Fixture("521x519 random") { randomNoise(521, 519, seed: 12) },
         Fixture("16383x1 noise") { noise(16383, 1, seed: 10) },
         Fixture("16383x1 random") { randomNoise(16383, 1, seed: 13) },
         Fixture("16383x1 alpha") { alphaGradient(16383, 1) },

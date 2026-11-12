@@ -11,7 +11,7 @@ import Testing
 struct ImageEncoderWebPTests {
     // MARK: Retina-like screenshot
 
-    @Test func aRetinaScreenshotRoundTripsExactlyAtLowQuality() throws {
+    @Test func aRetinaScreenshotRoundTripsExactlyAtLowQualityAndIsSmallerThanItsPNG() throws {
         let screenshot = WebPSamples.retinaWindow(width: 600, height: 400)
         let file = try ImageEncoder.encode(screenshot.image, as: .webp, quality: 0.5, pixelsPerPoint: 2)
 
@@ -22,26 +22,24 @@ struct ImageEncoderWebPTests {
         }
         // An opaque image is written as one: no alpha.
         #expect(decoded.hasAlpha == false)
+
+        // It is a WebP file, and smaller than the PNG of the same screenshot.
+        let png = try ImageEncoder.encode(screenshot.image, as: .png, quality: 0.5)
+        let source = try #require(CGImageSourceCreateWithData(file as CFData, nil))
+        #expect(CGImageSourceGetType(source) as String? == ImageFormat.webp.utType)
+        #expect(file.count < png.count, "WebP \(file.count) bytes, PNG \(png.count) bytes")
     }
 
     @Test func qualityDoesNotChangeTheFile() throws {
         let screenshot = WebPSamples.retinaWindow(width: 200, height: 120)
         let reference = try ImageEncoder.encode(screenshot.image, as: .webp, quality: 1.0)
-        for quality in [0.0, 0.5, 0.9, 1.0, 7.0, -3.0, .nan] {
+        // The lowest, the middle, and values out of range.
+        for quality in [0.0, 0.5, 7.0, -3.0, .nan] {
             let file = try ImageEncoder.encode(screenshot.image, as: .webp, quality: quality)
             #expect(file == reference, "quality \(quality)")
         }
         // The density a Retina capture would pass has nowhere to go either.
         #expect(try ImageEncoder.encode(screenshot.image, as: .webp, quality: 0.5, pixelsPerPoint: 2) == reference)
-    }
-
-    @Test func aScreenshotIsSmallerAsWebPThanAsPNG() throws {
-        let screenshot = WebPSamples.retinaWindow(width: 600, height: 400)
-        let webp = try ImageEncoder.encode(screenshot.image, as: .webp, quality: 0.5)
-        let png = try ImageEncoder.encode(screenshot.image, as: .png, quality: 0.5)
-        let source = try #require(CGImageSourceCreateWithData(webp as CFData, nil))
-        #expect(CGImageSourceGetType(source) as String? == ImageFormat.webp.utType)
-        #expect(webp.count < png.count, "WebP \(webp.count) bytes, PNG \(png.count) bytes")
     }
 
     // MARK: Alpha

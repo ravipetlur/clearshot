@@ -323,7 +323,8 @@ struct BackwardReferencesTests {
         let pixels = image.argbPixels
         let matches = BackwardReferences.findMatches(pixels: pixels, width: image.width)
         #expect(Self.problem(in: matches, pixels: pixels) == nil, "\(fixture.name)")
-        for bits in [0, 2, 6, 10] {
+        // No cache and the largest; the size the encoder picks is replayed below.
+        for bits in [0, 10] {
             let symbols = BackwardReferences.symbols(pixels: pixels, width: image.width, matches: matches,
                                                      cacheBits: bits)
             #expect(try Self.replay(symbols, pixels: pixels, width: image.width, cacheBits: bits) == pixels,

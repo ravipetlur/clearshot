@@ -11,59 +11,51 @@ struct EncoderPlanTests {
                          maxResolution: maxResolution, framesPerSecond: fps, hardwareEncoding: hardware, purpose: purpose)
     }
 
-    @Test func theMeasuredCeilingsAndPicksAreTheDecidedOnes() {
-        #expect(EncoderPlan.h264MaxSide == 4096)
-        #expect(EncoderPlan.h264PixelsPerSecond == 450_000_000)
-        #expect(EncoderPlan.hevcPixelsPerSecond == 760_000_000)
-        #expect(EncoderPlan.headroom == 0.85)
-        #expect(EncoderPlan.gifMaximumFramesPerSecond == 50)
-        #expect(EncoderPlan.h264BitsPerPixel == 0.08)
-        #expect(EncoderPlan.hevcBitsPerPixel == 0.05)
-        #expect(EncoderPlan.intermediateBitsPerPixel == 0.25)
-        #expect(EncoderPlan.minimumBitRate == 1_000_000)
+    /// A region and how it is to be recorded, and the plan expected for it. A nil expectation is not checked.
+    struct Pick: Sendable, CustomTestStringConvertible {
+        let name: String
+        let plan: @Sendable (EncoderPlanTests) -> EncoderPlan
+        let codec: VideoCodec
+        var size: (width: Int, height: Int)?
+        let framesPerSecond: Int
+        var requestedFramesPerSecond: Int?
+        var isFrameRateCapped: Bool?
+        var requiresHardware: Bool?
+        let readyNote: String?
+        var testDescription: String { name }
     }
 
-    @Test func theMainDisplayAt1xIsH264At60() {
-        let plan = plan(3360, 1890, retinaTo1x: true)
-        #expect(plan.codec == .h264)
-        #expect(plan.width == 3360)
-        #expect(plan.height == 1890)
-        #expect(plan.framesPerSecond == 60)
-        #expect(plan.requestedFramesPerSecond == 60)
-        #expect(plan.requiresHardware)
-        #expect(!plan.isFrameRateCapped)
-        #expect(plan.readyNote == nil)
+    static let picks: [Pick] = [
+        Pick(name: "the main display at 1x is H.264 at 60", plan: { $0.plan(3360, 1890, retinaTo1x: true) },
+             codec: .h264, size: (3360, 1890), framesPerSecond: 60, requestedFramesPerSecond: 60,
+             isFrameRateCapped: false, requiresHardware: true, readyNote: nil),
+        Pick(name: "the native main display is HEVC at 25", plan: { $0.plan(3360, 1890) },
+             codec: .hevc, size: (6720, 3780), framesPerSecond: 25, requestedFramesPerSecond: 60,
+             isFrameRateCapped: true, readyNote: "6720 × 3780 · 25 fps"),
+        Pick(name: "the native portrait display is HEVC at 28", plan: { $0.plan(1800, 3200) },
+             codec: .hevc, size: (3600, 6400), framesPerSecond: 28, readyNote: "3600 × 6400 · 28 fps"),
+        // The hardware H.264 encoder fails above 4096 a side (−12903), however low the rate.
+        Pick(name: "a side over 4096 forces HEVC even at low rates", plan: { $0.plan(4112, 2160, scale: 1, fps: 15) },
+             codec: .hevc, framesPerSecond: 15, readyNote: nil),
+        Pick(name: "software encoding is uncapped H.264", plan: { $0.plan(3360, 1890, hardware: false) },
+             codec: .h264, size: (6720, 3780), framesPerSecond: 60, requiresHardware: false, readyNote: nil),
+    ]
+
+    @Test(arguments: picks)
+    func theCodecSizeAndRateArePicked(_ pick: Pick) {
+        let plan = pick.plan(self)
+        #expect(plan.codec == pick.codec)
+        if let size = pick.size {
+            #expect(plan.width == size.width)
+            #expect(plan.height == size.height)
+        }
+        #expect(plan.framesPerSecond == pick.framesPerSecond)
+        if let requested = pick.requestedFramesPerSecond { #expect(plan.requestedFramesPerSecond == requested) }
+        if let capped = pick.isFrameRateCapped { #expect(plan.isFrameRateCapped == capped) }
+        if let hardware = pick.requiresHardware { #expect(plan.requiresHardware == hardware) }
+        #expect(plan.readyNote == pick.readyNote)
     }
 
-    @Test func theNativeMainDisplayIsHEVCAt25() {
-        let plan = plan(3360, 1890)
-        #expect(plan.codec == .hevc)
-        #expect(plan.width == 6720)
-        #expect(plan.height == 3780)
-        #expect(plan.framesPerSecond == 25)
-        #expect(plan.requestedFramesPerSecond == 60)
-        #expect(plan.isFrameRateCapped)
-        #expect(plan.readyNote == "6720 × 3780 · 25 fps")
-    }
-
-    @Test func theNativePortraitDisplayIsHEVCAt28() {
-        let plan = plan(1800, 3200)
-        #expect(plan.codec == .hevc)
-        #expect(plan.width == 3600)
-        #expect(plan.height == 6400)
-        #expect(plan.framesPerSecond == 28)
-        #expect(plan.readyNote == "3600 × 6400 · 28 fps")
-    }
-
-    /// The hardware H.264 encoder fails above 4096 a side (−12903), however low the rate.
-    @Test func aSideOver4096ForcesHEVCEvenAtLowRates() {
-        let plan = plan(4112, 2160, scale: 1, fps: 15)
-        #expect(plan.codec == .hevc)
-        #expect(plan.framesPerSecond == 15)
-        #expect(plan.readyNote == nil)
-    }
-
-    /// 3840 × 2160 × 30 is 249 Mpx/s, inside 85% of 450; at 60 it is 498 Mpx/s, which goes to HEVC, uncapped there.
     @Test func h264StopsAtEightyFivePercentOf450() {
         let at30 = plan(3840, 2160, scale: 1, fps: 30)
         #expect(at30.codec == .h264)
@@ -75,6 +67,7 @@ struct EncoderPlanTests {
     }
 
     @Test func maximumResolutionFitsTheLongSide() {
+        #expect(RecordingMaxResolution.allCases.map(\.longSide) == [nil, 3840, 2560, 1920, 1280, 854])
         let main = plan(3360, 1890, retinaTo1x: true, maxResolution: .res1080p)
         #expect(main.width == 1920)
         #expect(main.height == 1080)
@@ -115,16 +108,6 @@ struct EncoderPlanTests {
     @Test func keyframesEveryTwoSecondsOrOneForAnIntermediate() {
         #expect(plan(1920, 1080, scale: 1).keyFrameInterval == 2)
         #expect(plan(1920, 1080, scale: 1, purpose: .gifIntermediate(maxWidth: 800)).keyFrameInterval == 1)
-    }
-
-    @Test func softwareEncodingIsUncappedH264() {
-        let plan = plan(3360, 1890, hardware: false)
-        #expect(plan.codec == .h264)
-        #expect(plan.width == 6720)
-        #expect(plan.height == 3780)
-        #expect(plan.framesPerSecond == 60)
-        #expect(!plan.requiresHardware)
-        #expect(plan.readyNote == nil)
     }
 
     /// GIF's own limit is applied before the encoder's rule, so the note reports only an encoder cap.

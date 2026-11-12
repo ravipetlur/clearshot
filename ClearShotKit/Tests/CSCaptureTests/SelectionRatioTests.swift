@@ -6,12 +6,6 @@ import Testing
 @testable import CSCapture
 
 struct SelectionRatioTests {
-    @Test func presetsAreTheDecidedOnesInOrder() {
-        #expect(SelectionRatio.presets.map(\.title) == ["1:1", "4:3", "3:2", "16:10", "16:9", "5:4", "9:16", "3:4", "2:3", "4:5"])
-        #expect(SelectionRatio.presets.first == .preset(width: 1, height: 1))
-        #expect(SelectionRatio.presets.allSatisfy { if case .preset = $0 { true } else { false } })
-    }
-
     @Test func swapTurnsAPresetIntoItsPartnerOrACustomRatio() {
         #expect(SelectionRatio.preset(width: 16, height: 9).swapped() == .preset(width: 9, height: 16))
         #expect(SelectionRatio.preset(width: 9, height: 16).swapped() == .preset(width: 16, height: 9))

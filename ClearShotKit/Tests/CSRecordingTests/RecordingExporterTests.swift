@@ -26,6 +26,23 @@ extension MediaTests {
             try? FileManager.default.removeItem(at: folder)
         }
 
+        /// The default source (6 s, 640 × 360, both audio tracks), written once and read by every test that only reads
+        /// it. It lives in its own folder, which no test writes to or removes.
+        private static let sharedSource = Task { () throws -> (url: URL, info: VideoSourceInfo) in
+            let folder = FileManager.default.temporaryDirectory.appending(
+                path: "recording-exporter-shared-\(UUID().uuidString)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appending(path: "source.mp4")
+            try await Media.makeSource(at: url, seconds: 6, width: 640, height: 360, systemTone: .system,
+                                       microphone: true)
+            return (url, try await VideoThumbnail.info(of: url))
+        }
+
+        /// The shared default source: its file, to read only, and its facts.
+        func defaultSource() async throws -> (url: URL, info: VideoSourceInfo) {
+            try await Self.sharedSource.value
+        }
+
         /// Writes the source and reads its facts.
         func makeSource(seconds: Double = 6, width: Int = 640, height: Int = 360, systemTone: SyntheticMedia.Tone = .system,
                         microphone: Bool = true) async throws -> VideoSourceInfo {
@@ -46,7 +63,7 @@ extension MediaTests {
 
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func aPassthroughTrimIsFrameAccurate() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             let trim = TrimRange(start: 1.37, end: 4.21, duration: info.duration, framesPerSecond: info.framesPerSecond)
             let plan = plan(info) { $0.trim = trim }
             #expect(plan.path == .passthrough)
@@ -63,7 +80,7 @@ extension MediaTests {
 
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func muteLeavesNoAudioTrack() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             try await RecordingExporter.export(source, to: output, plan: .mute(info))
 
             #expect(try await Media.audioChannelCounts(output).isEmpty)
@@ -74,7 +91,7 @@ extension MediaTests {
 
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func mergingGivesOneTrack() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             let plan = plan(info) { $0.trackVolumes = [1, 1] }
             #expect(plan.path == .audioRemix)
             #expect(plan.mergesTracks)
@@ -88,7 +105,7 @@ extension MediaTests {
 
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func monoGivesOneChannel() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             let plan = plan(info) { $0.mono = true }
             #expect(plan.path == .audioRemix)
             try await RecordingExporter.export(source, to: output, plan: plan)
@@ -100,7 +117,7 @@ extension MediaTests {
 
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func volumeTwoDoublesTheRMS() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             let plan = plan(info) { $0.volume = 2 }
             #expect(plan.trackVolumes == [2, 2])
             try await RecordingExporter.export(source, to: output, plan: plan)
@@ -163,7 +180,7 @@ extension MediaTests {
         /// (measured), so it ends before its first update and reports only its ends.
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func progressReachesOne() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             let trim = TrimRange(start: 1, end: 5, duration: info.duration, framesPerSecond: info.framesPerSecond)
             let plans = [("remix", plan(info) { $0.volume = 0.5 }), ("reencode", plan(info) { $0.quality = .low }),
                          ("trim", plan(info) { $0.trim = trim })]
@@ -186,7 +203,7 @@ extension MediaTests {
         /// A trim plus a volume change, the common editor edit: the reader-writer path over the trimmed range.
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func aRemixWithATrimKeepsTheRangeAtTheNewVolume() async throws {
-            let info = try await makeSource()
+            let (source, info) = try await defaultSource()
             let plan = plan(info) {
                 $0.trim = TrimRange(start: 1, end: 4, duration: info.duration, framesPerSecond: info.framesPerSecond)
                 $0.volume = 0.5

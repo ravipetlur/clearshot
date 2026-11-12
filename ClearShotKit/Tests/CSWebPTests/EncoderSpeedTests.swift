@@ -11,9 +11,13 @@ import Testing
 /// the ceiling below. The encoder is single-threaded and the call never suspends, so the thread's CPU time is what the
 /// encoding itself costs. It is not immune to load (a thread on a busy machine can land on a slower core, and the same
 /// encode used 31 seconds of CPU time in one full run), so the ceiling stays generous.
+///
+/// The figures above are for 2560 x 1440. The images here are 1280 x 720, a quarter of the pixels, and the ceiling is a
+/// quarter of the 60 seconds that held for the larger size: the encoder's work grows with the pixel count, so a
+/// pathological slowdown still crosses it.
 struct EncoderSpeedTests {
-    /// A generous ceiling for an unoptimised build, in seconds of CPU time.
-    private static let ceiling = 60.0
+    /// A generous ceiling for an unoptimised build, in seconds of CPU time, for 1280 x 720.
+    private static let ceiling = 60.0 * (1280.0 * 720.0) / (2560.0 * 1440.0)
 
     /// The CPU time the calling thread has used so far, in seconds.
     private static func threadCPUSeconds() -> Double {
@@ -34,18 +38,18 @@ struct EncoderSpeedTests {
         return (file, cpuSeconds, wallSeconds)
     }
 
-    @Test func aScreenshotOf2560x1440EncodesInReasonableTimeEvenUnoptimised() throws {
-        let timed = try Self.encodeTimed(Fixtures.uiScreenshot(2560, 1440))
-        Attachment.record("ui screenshot 2560x1440: \(timed.cpuSeconds) s of CPU time (wall \(timed.wallSeconds) s), "
+    @Test func aScreenshotOf1280x720EncodesInReasonableTimeEvenUnoptimised() throws {
+        let timed = try Self.encodeTimed(Fixtures.uiScreenshot(1280, 720))
+        Attachment.record("ui screenshot 1280x720: \(timed.cpuSeconds) s of CPU time (wall \(timed.wallSeconds) s), "
                           + "\(timed.file.count) bytes", named: "encode-time")
         #expect(timed.cpuSeconds < Self.ceiling, "encoding took \(timed.cpuSeconds) s of CPU time")
         #expect(!timed.file.isEmpty)
     }
 
-    @Test func aPhotoLikeImageOf2560x1440TakesThePredictorPathInReasonableTimeEvenUnoptimised() throws {
+    @Test func aPhotoLikeImageOf1280x720TakesThePredictorPathInReasonableTimeEvenUnoptimised() throws {
         // The screenshot above takes no transform, so this one is what keeps the predictor path under the guard.
-        let timed = try Self.encodeTimed(Fixtures.noise(2560, 1440, seed: 1))
-        Attachment.record("photo-like noise 2560x1440: \(timed.cpuSeconds) s of CPU time (wall \(timed.wallSeconds) s), "
+        let timed = try Self.encodeTimed(Fixtures.noise(1280, 720, seed: 1))
+        Attachment.record("photo-like noise 1280x720: \(timed.cpuSeconds) s of CPU time (wall \(timed.wallSeconds) s), "
                           + "\(timed.file.count) bytes", named: "encode-time-photo")
         #expect(StreamPeek.firstTransforms(of: timed.file) == [2, 0], "it takes the predictor path")
         #expect(timed.cpuSeconds < Self.ceiling, "encoding took \(timed.cpuSeconds) s of CPU time")

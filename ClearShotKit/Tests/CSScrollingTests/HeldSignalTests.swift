@@ -5,10 +5,14 @@ import Testing
 /// when the stitching queue never gets there.
 @Suite(.timeLimit(.minutes(10)))
 struct HeldSignalTests {
-    @Test func aSignalAlreadyGivenAnswersTrueAtOnce() async {
+    @Test func aSignalAlreadyGivenAnswersTrueAtOnceEvenWithAZeroTimeout() async {
         let signal = HeldSignal()
         signal.give()
         #expect(await signal.wait(timeout: .seconds(30)))
+        // A zero timeout has already passed, and the condition is checked before the deadline.
+        let early = HeldSignal()
+        early.give()
+        #expect(await early.wait(timeout: .zero))
     }
 
     @Test func aSignalGivenWhileWaitingAnswersTrue() async {
@@ -39,12 +43,5 @@ struct HeldSignalTests {
         // suite's time limit both catch.
         #expect(await waiting.value == false)
         #expect(ContinuousClock.now - cancelled < .seconds(240))
-    }
-
-    @Test func aSignalGivenBeforeAZeroTimeoutIsStillSeen() async {
-        let signal = HeldSignal()
-        signal.give()
-        // A zero timeout has already passed, and the condition is checked before the deadline.
-        #expect(await signal.wait(timeout: .zero))
     }
 }

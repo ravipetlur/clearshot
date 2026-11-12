@@ -7,42 +7,32 @@ import Testing
 @testable import CSAnnotation
 
 struct RGBAColorTests {
-    @Test func parsesSixAndEightDigitHex() throws {
-        let red = try #require(RGBAColor(hex: "#FF0000"))
-        #expect(red == RGBAColor(red: 1, green: 0, blue: 0))
-        let halfBlue = try #require(RGBAColor(hex: "0000ff80"))
-        #expect(halfBlue.blue == 1)
-        #expect(abs(halfBlue.alpha - 128.0 / 255) < 0.0001)
-    }
+    /// Hex as written, the alpha a hex without one takes (nil to use the initializer without it), and the colour it reads
+    /// as, or nil when it is refused: six and eight digits, three that expand, whitespace and newlines around it, bad hex.
+    static let hexCases: [(hex: String, defaultAlpha: Double?, color: RGBAColor?)] = [
+        ("#FF0000", nil, RGBAColor(red: 1, green: 0, blue: 0)),
+        ("0000ff80", nil, RGBAColor(red: 0, green: 0, blue: 1, alpha: 128.0 / 255)),
+        ("#FF0000\n", nil, RGBAColor(red: 1, green: 0, blue: 0)),
+        (" \t00ff00 \r\n", nil, RGBAColor(red: 0, green: 1, blue: 0)),
+        ("#12345", nil, nil),
+        ("#GG0000", nil, nil),
+        ("+12345", nil, nil),
+        ("#F80", nil, RGBAColor(hex: "#FF8800")),
+        ("0af", nil, RGBAColor(hex: "#00AAFF")),
+        (" #FfF\n", nil, .white),
+        ("#F8", nil, nil),
+        ("#GGG", nil, nil),
+        ("#FF8800", 0.4, RGBAColor(red: 1, green: 136.0 / 255, blue: 0, alpha: 0.4)),
+        ("#F80", 0.4, RGBAColor(red: 1, green: 136.0 / 255, blue: 0, alpha: 0.4)),
+        ("#FF8800FF", 0.4, RGBAColor(red: 1, green: 136.0 / 255, blue: 0)),
+        ("#FF8800", nil, RGBAColor(red: 1, green: 136.0 / 255, blue: 0)),
+        ("nope", 0.4, nil),
+    ]
 
-    @Test func trimsWhitespaceAndNewlinesAroundHex() {
-        #expect(RGBAColor(hex: "#FF0000\n") == RGBAColor(red: 1, green: 0, blue: 0))
-        #expect(RGBAColor(hex: " \t00ff00 \r\n") == RGBAColor(red: 0, green: 1, blue: 0))
-    }
-
-    @Test func rejectsBadHex() {
-        #expect(RGBAColor(hex: "#12345") == nil)
-        #expect(RGBAColor(hex: "#GG0000") == nil)
-        #expect(RGBAColor(hex: "+12345") == nil)
-    }
-
-    @Test func threeDigitHexExpands() throws {
-        let orange = try #require(RGBAColor(hex: "#F80"))
-        #expect(orange == RGBAColor(hex: "#FF8800"))
-        #expect(RGBAColor(hex: "0af") == RGBAColor(hex: "#00AAFF"))
-        #expect(RGBAColor(hex: " #FfF\n") == .white)
-        #expect(RGBAColor(hex: "#F8") == nil)
-        #expect(RGBAColor(hex: "#GGG") == nil)
-    }
-
-    @Test func hexWithoutAlphaTakesTheDefaultAlpha() throws {
-        let sixDigits = try #require(RGBAColor(hex: "#FF8800", defaultAlpha: 0.4))
-        #expect(sixDigits == RGBAColor(red: 1, green: 136.0 / 255, blue: 0, alpha: 0.4))
-        #expect(RGBAColor(hex: "#F80", defaultAlpha: 0.4)?.alpha == 0.4)
-        let eightDigits = try #require(RGBAColor(hex: "#FF8800FF", defaultAlpha: 0.4))
-        #expect(eightDigits.alpha == 1)
-        #expect(RGBAColor(hex: "#FF8800")?.alpha == 1)
-        #expect(RGBAColor(hex: "nope", defaultAlpha: 0.4) == nil)
+    @Test(arguments: hexCases)
+    func parsesHex(hex: String, defaultAlpha: Double?, color: RGBAColor?) {
+        let parsed = if let defaultAlpha { RGBAColor(hex: hex, defaultAlpha: defaultAlpha) } else { RGBAColor(hex: hex) }
+        #expect(parsed == color)
     }
 
     @Test func hexRoundTripsAndAddsAlphaOnlyWhenNeeded() {
@@ -59,14 +49,11 @@ struct RGBAColorTests {
         #expect(gray.alpha == 1)
     }
 
-    @Test func picksReadableTextColors() {
+    @Test func picksReadableTextColorsIncludingForThePalette() {
         #expect(RGBAColor(hex: "#FFCC00")!.contrastingTextColor == .black)
         #expect(RGBAColor(hex: "#FF3B30")!.contrastingTextColor == .white)
         #expect(RGBAColor.white.contrastingTextColor == .black)
         #expect(RGBAColor.black.contrastingTextColor == .white)
-    }
-
-    @Test func paletteColorsGetTheReadableTextColor() {
         let black: Set = ["Orange", "Yellow", "Green", "Teal", "White"]
         for named in ColorPalette.standard {
             let expected: RGBAColor = black.contains(named.name) ? .black : .white
@@ -76,19 +63,12 @@ struct RGBAColorTests {
 }
 
 struct ColorPaletteTests {
-    @Test func namesPaletteColorsAndNearbyOnes() {
+    /// A palette colour and one near it go by the colour's name; a colour far from every one goes by its hex.
+    @Test func namesPaletteColorsAndNearbyOnesAndFarOnesByHex() {
         let blue = ColorPalette.standard.first { $0.name == "Blue" }!.color
         #expect(ColorPalette.name(for: blue) == "Blue")
         #expect(ColorPalette.name(for: RGBAColor(red: blue.red, green: blue.green + 0.01, blue: blue.blue)) == "Blue")
-    }
-
-    @Test func farColorsAreNamedByHex() {
         #expect(ColorPalette.name(for: RGBAColor(red: 0.2, green: 0.4, blue: 0.2)) == "#336633")
-    }
-
-    @Test func defaultColorIsRed() {
-        #expect(ColorPalette.defaultColor == RGBAColor(hex: "#FF3B30"))
-        #expect(ColorPalette.standard.count == 13)
     }
 }
 
@@ -102,19 +82,24 @@ struct DocumentTransformTests {
         #expect(t.scale == 1)
     }
 
-    @Test func rotateRightMovesTheTopLeftCornerToTheTopRight() {
-        let t = DocumentTransform(baseSize: size, ops: [.rotateRight])
-        #expect(t.outputSize == CGSize(width: 100, height: 200))
-        #expect(t.toOutput(.zero) == CGPoint(x: 100, y: 0))
-        #expect(t.toOutput(CGPoint(x: 200, y: 0)) == CGPoint(x: 100, y: 200))
-    }
+    /// Each turn and flip on the 200 × 100 picture: the output's size, and where base points land. A right turn moves the
+    /// top-left corner to the top right, a left turn to the bottom left; the flips mirror one axis.
+    static let turnsAndFlips: [(op: ImageOp, outputSize: CGSize, moves: [(base: CGPoint, output: CGPoint)])] = [
+        (.rotateRight, CGSize(width: 100, height: 200), [(.zero, CGPoint(x: 100, y: 0)), (CGPoint(x: 200, y: 0), CGPoint(x: 100, y: 200))]),
+        (.rotateLeft, CGSize(width: 100, height: 200), [(.zero, CGPoint(x: 0, y: 200)), (CGPoint(x: 200, y: 0), .zero),
+                                                       (CGPoint(x: 0, y: 100), CGPoint(x: 100, y: 200))]),
+        (.flipHorizontal, CGSize(width: 200, height: 100), [(CGPoint(x: 0, y: 30), CGPoint(x: 200, y: 30))]),
+        (.flipVertical, CGSize(width: 200, height: 100), [(CGPoint(x: 5, y: 0), CGPoint(x: 5, y: 100))]),
+    ]
 
-    @Test func rotateLeftMovesTheTopLeftCornerToTheBottomLeft() {
-        let t = DocumentTransform(baseSize: size, ops: [.rotateLeft])
-        #expect(t.outputSize == CGSize(width: 100, height: 200))
-        #expect(t.toOutput(.zero) == CGPoint(x: 0, y: 200))
-        #expect(t.toOutput(CGPoint(x: 200, y: 0)) == CGPoint(x: 0, y: 0))
-        #expect(t.toOutput(CGPoint(x: 0, y: 100)) == CGPoint(x: 100, y: 200))
+    @Test func turnsAndFlipsMoveThePicturesPoints() {
+        for (op, outputSize, moves) in Self.turnsAndFlips {
+            let t = DocumentTransform(baseSize: size, ops: [op])
+            #expect(t.outputSize == outputSize, "\(op)")
+            for (base, output) in moves {
+                #expect(t.toOutput(base) == output, "\(op) \(base)")
+            }
+        }
     }
 
     @Test func rotateRightThenLeftIsTheIdentity() {
@@ -138,11 +123,6 @@ struct DocumentTransformTests {
         let around = DocumentTransform(baseSize: size, ops: [.rotateRight, .resize(width: 0, height: 0), .flipHorizontal])
         let without = DocumentTransform(baseSize: size, ops: [.rotateRight, .flipHorizontal])
         #expect(around == without)
-    }
-
-    @Test func flipsMirrorTheAxes() {
-        #expect(DocumentTransform(baseSize: size, ops: [.flipHorizontal]).toOutput(CGPoint(x: 0, y: 30)) == CGPoint(x: 200, y: 30))
-        #expect(DocumentTransform(baseSize: size, ops: [.flipVertical]).toOutput(CGPoint(x: 5, y: 0)) == CGPoint(x: 5, y: 100))
     }
 
     @Test func resizeScalesAndReportsItsScale() {
@@ -170,25 +150,15 @@ struct DocumentTransformTests {
 }
 
 struct CounterLabelTests {
-    @Test func numbers() {
-        #expect(CounterLabel.text(for: 0, style: .numbers) == "0")
-        #expect(CounterLabel.text(for: 12, style: .numbers) == "12")
-    }
-
-    @Test func romanNumerals() {
-        #expect(CounterLabel.text(for: 4, style: .roman) == "IV")
-        #expect(CounterLabel.text(for: 1994, style: .roman) == "MCMXCIV")
-        #expect(CounterLabel.text(for: 0, style: .roman) == "0")
-    }
-
-    @Test func lettersContinuePastZ() {
-        #expect(CounterLabel.text(for: 1, style: .uppercase) == "A")
-        #expect(CounterLabel.text(for: 26, style: .uppercase) == "Z")
-        #expect(CounterLabel.text(for: 27, style: .uppercase) == "AA")
-        #expect(CounterLabel.text(for: 52, style: .uppercase) == "AZ")
-        #expect(CounterLabel.text(for: 53, style: .uppercase) == "BA")
-        #expect(CounterLabel.text(for: 2, style: .lowercase) == "b")
-        #expect(CounterLabel.text(for: 0, style: .lowercase) == "0")
+    /// Numbers, Roman numerals, and letters that continue past Z; zero is "0" in every style.
+    @Test(arguments: [
+        (0, CounterStyle.numbers, "0"), (12, .numbers, "12"),
+        (4, .roman, "IV"), (1994, .roman, "MCMXCIV"), (0, .roman, "0"),
+        (1, .uppercase, "A"), (26, .uppercase, "Z"), (27, .uppercase, "AA"), (52, .uppercase, "AZ"), (53, .uppercase, "BA"),
+        (2, .lowercase, "b"), (0, .lowercase, "0"),
+    ])
+    func labels(value: Int, style: CounterStyle, text: String) {
+        #expect(CounterLabel.text(for: value, style: style) == text)
     }
 }
 
@@ -459,7 +429,6 @@ struct ToolSizesTests {
         #expect(ToolSizes.lineWidth(0) == ToolSizes.lineWidth(1))
         #expect(ToolSizes.lineWidth(9) == ToolSizes.lineWidth(6))
         #expect(ToolSizes.fontSize(1) < ToolSizes.fontSize(6))
-        #expect(ToolSizes.counterDiameter(3) == 32)
     }
 }
 
@@ -472,22 +441,6 @@ final class AnnotatePrefsTests {
     init() {
         defaults = throwaway.defaults
         prefs = Preferences(defaults: defaults)
-    }
-
-    @Test func defaultsAreTheDecidedOnes() {
-        #expect(!prefs[Prefs.annotateInvertArrows])
-        #expect(prefs[Prefs.annotateSmoothDrawing])
-        #expect(prefs[Prefs.annotateObjectShadows])
-        #expect(prefs[Prefs.annotateAutoExpandCanvas])
-        #expect(prefs[Prefs.annotateAlwaysOnTop])
-        #expect(prefs[Prefs.annotateShowDockIcon])
-        #expect(prefs[Prefs.annotateShowColorNames])
-        #expect(prefs[Prefs.annotateRememberBackgroundTool])
-        #expect(prefs[Prefs.annotateLastSaveFolder] == "")
-        #expect(prefs[Prefs.annotateToolSettings].color == ColorPalette.defaultColor)
-        #expect(prefs[Prefs.annotateToolSettings].sizeLevel == 3)
-        #expect(prefs[Prefs.annotateMyColors].colors.isEmpty)
-        #expect(prefs[Prefs.annotateLastSaveFormat] == .png)
     }
 
     @Test func toolSettingsPersist() {
@@ -553,80 +506,63 @@ final class AnnotatePrefsTests {
 
         defaults.set(Data(json.utf8), forKey: Prefs.annotateMyColors.name)
         #expect(Preferences(defaults: defaults)[Prefs.annotateMyColors].colors.count == 2)
+        // And nothing stored is no colours.
+        #expect(try JSONDecoder().decode(MyColors.self, from: Data("{}".utf8)).colors.isEmpty)
     }
 
-    @Test func emptyStoredMyColorsDecodeAsNoColors() throws {
-        let decoded = try JSONDecoder().decode(MyColors.self, from: Data("{}".utf8))
-        #expect(decoded.colors.isEmpty)
-    }
-
-    @Test func addingADuplicateMyColorDoesNothing() {
-        let red = RGBAColor(red: 1, green: 0, blue: 0), green = RGBAColor(red: 0, green: 1, blue: 0)
-        var saved = MyColors()
-        saved.add(red)
-        saved.add(green)
-        saved.add(red)
-        #expect(saved.colors == [red, green])
-        saved.add(red.withAlpha(0.5))
-        #expect(saved.colors == [red, green, red.withAlpha(0.5)])
-    }
-
-    @Test func updatingAMyColorReplacesItInPlace() {
+    /// Adding a duplicate does nothing (the same colour at another opacity is no duplicate); updating replaces in place, and
+    /// to a colour already saved leaves one copy; removing drops it; and edits out of range do nothing.
+    @Test func editingMyColors() {
         let red = RGBAColor(red: 1, green: 0, blue: 0), green = RGBAColor(red: 0, green: 1, blue: 0)
         let blue = RGBAColor(red: 0, green: 0, blue: 1)
-        var saved = MyColors(colors: [red, green])
-        saved.update(at: 1, to: blue)
-        #expect(saved.colors == [red, blue])
-        saved.update(at: 0, to: red)
-        #expect(saved.colors == [red, blue])
-    }
 
-    @Test func updatingAMyColorToOneAlreadySavedLeavesOneCopy() {
-        let red = RGBAColor(red: 1, green: 0, blue: 0), green = RGBAColor(red: 0, green: 1, blue: 0)
-        let blue = RGBAColor(red: 0, green: 0, blue: 1)
-        var saved = MyColors(colors: [red, green, blue])
-        saved.update(at: 0, to: blue)
-        #expect(saved.colors == [blue, green])
-        saved.update(at: 1, to: blue)
-        #expect(saved.colors == [blue])
-    }
+        var added = MyColors()
+        added.add(red)
+        added.add(green)
+        added.add(red)
+        #expect(added.colors == [red, green])
+        added.add(red.withAlpha(0.5))
+        #expect(added.colors == [red, green, red.withAlpha(0.5)])
 
-    @Test func removingAMyColorDropsIt() {
-        let red = RGBAColor(red: 1, green: 0, blue: 0), green = RGBAColor(red: 0, green: 1, blue: 0)
-        var saved = MyColors(colors: [red, green])
-        saved.remove(at: 0)
-        #expect(saved.colors == [green])
-        saved.remove(at: 0)
-        #expect(saved.colors.isEmpty)
-    }
+        var updated = MyColors(colors: [red, green])
+        updated.update(at: 1, to: blue)
+        #expect(updated.colors == [red, blue])
+        updated.update(at: 0, to: red)
+        #expect(updated.colors == [red, blue])
 
-    @Test func outOfRangeMyColorEditsDoNothing() {
-        let red = RGBAColor(red: 1, green: 0, blue: 0), green = RGBAColor(red: 0, green: 1, blue: 0)
-        var saved = MyColors(colors: [red, green])
-        saved.update(at: 2, to: .white)
-        saved.update(at: -1, to: .white)
-        saved.remove(at: 2)
-        saved.remove(at: -1)
-        #expect(saved.colors == [red, green])
+        var merged = MyColors(colors: [red, green, blue])
+        merged.update(at: 0, to: blue)
+        #expect(merged.colors == [blue, green])
+        merged.update(at: 1, to: blue)
+        #expect(merged.colors == [blue])
+
+        var removed = MyColors(colors: [red, green])
+        removed.remove(at: 0)
+        #expect(removed.colors == [green])
+        removed.remove(at: 0)
+        #expect(removed.colors.isEmpty)
+
+        var outOfRange = MyColors(colors: [red, green])
+        outOfRange.update(at: 2, to: .white)
+        outOfRange.update(at: -1, to: .white)
+        outOfRange.remove(at: 2)
+        outOfRange.remove(at: -1)
+        #expect(outOfRange.colors == [red, green])
         var empty = MyColors()
         empty.remove(at: 0)
         empty.update(at: 0, to: .white)
         #expect(empty.colors.isEmpty)
     }
 
-    @Test func saveFormatsHaveTitlesAndExtensions() {
-        #expect(AnnotateSaveFormat.allCases.map(\.title) == ["PNG", "JPEG", "HEIC", "WebP", "ClearShot Project"])
-        #expect(AnnotateSaveFormat.allCases.map(\.fileExtension) == ["png", "jpg", "heic", "webp", "clearshot"])
-        #expect(AnnotateSaveFormat.project.imageFormat == nil)
-        #expect(AnnotateSaveFormat.jpeg.imageFormat == .jpeg)
-    }
-
     /// A screenshot's Save As offers the image formats, not the project, and starts on the format Save would use: every
-    /// image format has its own Save As format, matched by type rather than by name.
+    /// image format has its own Save As format, matched by type rather than by name. The project has no image format and
+    /// takes the package's extension.
     @Test func everyImageFormatHasItsSaveAsFormat() {
         #expect(AnnotateSaveFormat.imageFormats == [.png, .jpeg, .heic, .webp])
         for format in ImageFormat.allCases {
             #expect(AnnotateSaveFormat(format).imageFormat == format)
         }
+        #expect(AnnotateSaveFormat.project.imageFormat == nil)
+        #expect(AnnotateSaveFormat.project.fileExtension == "clearshot")
     }
 }

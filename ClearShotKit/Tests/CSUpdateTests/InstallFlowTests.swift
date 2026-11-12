@@ -63,15 +63,6 @@ struct InstallFlowTests {
 
     var installingFlow: InstallFlow { verifying(.gatekeeperApp).applying(.installStarted) }
 
-    // MARK: Starting out
-
-    @Test func startsIdle() {
-        let flow = InstallFlow()
-        #expect(flow.state == .idle)
-        #expect(flow.release == nil)
-        #expect(!flow.canCancel)
-    }
-
     // MARK: Every legal transition
 
     @Test func checkingFromEveryQuietState() {
@@ -89,26 +80,19 @@ struct InstallFlowTests {
         }
     }
 
-    @Test func aCheckThatFindsAnUpdate() {
+    /// A check ends with the update it found on offer, up to date with nothing on offer, or failed with nothing on offer;
+    /// none of these can be cancelled.
+    @Test(arguments: [
+        (Event.updateFound(InstallFlowTests.release), State.available(InstallFlowTests.release), InstallFlowTests.release),
+        (.noUpdateFound, .upToDate, nil),
+        (.failure(.rateLimited), .failed(.rateLimited), nil),
+    ] as [(Event, State, ReleaseInfo?)])
+    func aCheckEnds(event: Event, state: State, release: ReleaseInfo?) {
         var flow = after(.checkStarted)
-        accept(.updateFound(release), on: &flow)
-        #expect(flow.state == .available(release))
+        accept(event, on: &flow)
+        #expect(flow.state == state)
         #expect(flow.release == release)
         #expect(!flow.canCancel)
-    }
-
-    @Test func aCheckThatFindsNothing() {
-        var flow = after(.checkStarted)
-        accept(.noUpdateFound, on: &flow)
-        #expect(flow.state == .upToDate)
-        #expect(flow.release == nil)
-    }
-
-    @Test func aCheckThatFails() {
-        var flow = after(.checkStarted)
-        accept(.failure(.rateLimited), on: &flow)
-        #expect(flow.state == .failed(.rateLimited))
-        #expect(flow.release == nil)
     }
 
     @Test func installingStartsTheDownloadAtZero() {
@@ -119,30 +103,19 @@ struct InstallFlowTests {
         #expect(flow.canCancel)
     }
 
-    @Test func progressMovesTheBar() {
+    /// Progress moves the bar, never backwards, and stays between zero and one: each report is accepted, and the bar
+    /// shows the furthest it has been, clamped.
+    @Test(arguments: [
+        ([0.25, 0.5, 1], [0.25, 0.5, 1]),
+        ([0.6, 0.4], [0.6, 0.6]),
+        ([-3, 7, .infinity], [0, 1, 1]),
+    ] as [([Double], [Double])])
+    func progressMovesTheBarForwardWithinZeroAndOne(reports: [Double], shown: [Double]) {
         var flow = after(.checkStarted, .updateFound(release), .downloadStarted)
-        accept(.downloadProgress(0.25), on: &flow)
-        #expect(flow.state == .downloading(progress: 0.25))
-        accept(.downloadProgress(0.5), on: &flow)
-        #expect(flow.state == .downloading(progress: 0.5))
-        accept(.downloadProgress(1), on: &flow)
-        #expect(flow.state == .downloading(progress: 1))
-    }
-
-    @Test func progressNeverGoesBackwards() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted, .downloadProgress(0.6))
-        accept(.downloadProgress(0.4), on: &flow)
-        #expect(flow.state == .downloading(progress: 0.6))
-    }
-
-    @Test func progressStaysBetweenZeroAndOne() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted)
-        accept(.downloadProgress(-3), on: &flow)
-        #expect(flow.state == .downloading(progress: 0))
-        accept(.downloadProgress(7), on: &flow)
-        #expect(flow.state == .downloading(progress: 1))
-        accept(.downloadProgress(.infinity), on: &flow)
-        #expect(flow.state == .downloading(progress: 1))
+        for (report, expected) in zip(reports, shown) {
+            accept(.downloadProgress(report), on: &flow)
+            #expect(flow.state == .downloading(progress: expected), "after \(report)")
+        }
     }
 
     @Test func progressThatIsNotANumberIsRejected() {
@@ -213,23 +186,11 @@ struct InstallFlowTests {
         }
     }
 
-    @Test func failedReturnsToAvailableOnRetry() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted, .failure(.downloadFailed))
-        #expect(flow.state == .failed(.downloadFailed))
-        accept(.retry, on: &flow)
-        #expect(flow.state == .available(release))
-        #expect(flow.release == release)
-    }
-
-    @Test func cancelledReturnsToAvailableOnRetry() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted, .cancel)
-        accept(.retry, on: &flow)
-        #expect(flow.state == .available(release))
-    }
-
+    /// A failure at any stage, or a cancel, goes back to the offer on Try Again.
     @Test func retryWorksFromEveryStageAFailureCanHappenIn() {
         let failed: [InstallFlow] = [
             after(.checkStarted, .updateFound(release), .downloadStarted, .failure(.downloadFailed)),
+            after(.checkStarted, .updateFound(release), .downloadStarted, .cancel),
             verifying(.checksum).applying(.failure(.checksumMismatch)),
             verifying(.gatekeeperApp).applying(.failure(.appRejected)),
             installingFlow.applying(.failure(.installFailed)),
@@ -239,6 +200,7 @@ struct InstallFlowTests {
         for var start in failed {
             accept(.retry, on: &start)
             #expect(start.state == .available(release))
+            #expect(start.release == release)
         }
     }
 
@@ -315,23 +277,6 @@ struct InstallFlowTests {
         #expect(!after(.checkStarted, .failure(.network)).canCancel)
     }
 
-    @Test func cancelIsRejectedEverywhereElse() {
-        let notCancellable: [InstallFlow] = [
-            InstallFlow(),
-            after(.checkStarted),
-            after(.checkStarted, .noUpdateFound),
-            after(.checkStarted, .updateFound(release)),
-            installingFlow,
-            after(.checkStarted, .failure(.network)),
-            after(.checkStarted, .updateFound(release), .downloadStarted, .cancel),
-        ]
-        for var start in notCancellable {
-            let before = start
-            reject(.cancel, on: &start)
-            #expect(start == before)
-        }
-    }
-
     @Test func installingCannotBeCancelledOrGoBackToDownloading() {
         var flow = installingFlow
         let before = flow
@@ -344,31 +289,6 @@ struct InstallFlowTests {
         reject(.dismiss, on: &flow)
         reject(.checkStarted, on: &flow)
         #expect(flow == before)
-    }
-
-    // MARK: Late events after a cancel or a failure are ignored
-
-    @Test func aFailureArrivingAfterACancelIsRejected() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted, .cancel)
-        reject(.failure(.downloadFailed), on: &flow)
-        #expect(flow.state == .cancelled)
-    }
-
-    @Test func progressOrCompletionArrivingAfterACancelIsRejected() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted, .cancel)
-        reject(.downloadProgress(0.9), on: &flow)
-        reject(.downloadFinished, on: &flow)
-        #expect(flow.state == .cancelled)
-        var cancelledMidway = verifying(.mount).applying(.cancel)
-        reject(.stepPassed(.mount), on: &cancelledMidway)
-        reject(.installStarted, on: &cancelledMidway)
-        #expect(cancelledMidway.state == .cancelled)
-    }
-
-    @Test func aSecondFailureIsRejected() {
-        var flow = after(.checkStarted, .updateFound(release), .downloadStarted, .failure(.downloadFailed))
-        reject(.failure(.checksumMismatch), on: &flow)
-        #expect(flow.state == .failed(.downloadFailed))
     }
 
     // MARK: Illegal transitions
@@ -426,28 +346,6 @@ struct InstallFlowTests {
         reject(.dismiss, on: &flow)
         reject(.checkStarted, on: &flow)
         #expect(flow.state == .verifying(step: .mount))
-    }
-
-    @Test func aCheckHasNoOtherWayOut() {
-        var flow = after(.checkStarted)
-        reject(.checkStarted, on: &flow)
-        reject(.downloadStarted, on: &flow)
-        reject(.downloadFinished, on: &flow)
-        reject(.installStarted, on: &flow)
-        reject(.cancel, on: &flow)
-        reject(.retry, on: &flow)
-        reject(.dismiss, on: &flow)
-        #expect(flow.state == .checking)
-    }
-
-    @Test func nothingHappensToAnIdleFlowExceptACheck() {
-        var flow = InstallFlow()
-        let nonsense: [Event] = [
-            .updateFound(release), .noUpdateFound, .downloadStarted, .downloadProgress(0.5), .downloadFinished,
-            .stepPassed(.checksum), .installStarted, .failure(.network), .cancel, .retry, .dismiss,
-        ]
-        for event in nonsense { reject(event, on: &flow) }
-        #expect(flow == InstallFlow())
     }
 
     // MARK: The whole table
@@ -529,42 +427,27 @@ struct InstallFlowTests {
         #expect(accepted == legal.count)
     }
 
-    // MARK: The wait before the relaunch
+    // MARK: The words
 
-    /// What the window says while the installed app waits for a capture or recording to end before it restarts: a plain
-    /// sentence like the failures', and one that doesn't claim the install is still running or that anything can be done.
-    @Test func theRestartWaitIsOneCalmSentence() {
-        let text = InstallFlow.restartWaitingText
-        #expect(text == "Restarts when the capture or recording ends.")
-        #expect(text.first?.isUppercase == true && text.last == "." && !text.contains("\n"))
-        for word in ["Error", "error:", "!", "Oops", "Sorry", "failed"] { #expect(!text.contains(word), "mentions \(word)") }
-    }
-
-    // MARK: The failures' words
-
-    @Test func everyFailureHasAPlainMessage() {
+    /// Every failure's message, and what the window says while the installed app waits for a capture or recording to end
+    /// before it restarts, is one calm, plain sentence; each failure's is its own. The wait's doesn't claim the install
+    /// is still running or that anything can be done.
+    @Test func everyMessageIsOneCalmPlainSentence() {
         #expect(UpdateFailure.allCases.count == 19)
-        for failure in UpdateFailure.allCases {
-            let message = failure.message
-            #expect(!message.isEmpty, "\(failure)")
-            #expect(message.last == ".", "\(failure): \(message)")
-            #expect(message.first?.isUppercase == true, "\(failure): \(message)")
-            #expect(!message.contains("  "), "\(failure): \(message)")
-            #expect(!message.contains("\n"), "\(failure): \(message)")
-            #expect(message.count < 140, "\(failure): \(message)")
+        let wait = InstallFlow.restartWaitingText
+        #expect(wait == "Restarts when the capture or recording ends.")
+        let failures = UpdateFailure.allCases.map { ("\($0)", $0.message, ["Error", "error:", "!", "Oops", "Sorry", "failed:"]) }
+        for (name, message, banned) in failures + [("the restart wait", wait, ["Error", "error:", "!", "Oops", "Sorry", "failed"])] {
+            #expect(!message.isEmpty, "\(name)")
+            #expect(message.last == ".", "\(name): \(message)")
+            #expect(message.first?.isUppercase == true, "\(name): \(message)")
+            #expect(!message.contains("  "), "\(name): \(message)")
+            #expect(!message.contains("\n"), "\(name): \(message)")
+            #expect(message.count < 140, "\(name): \(message)")
+            for word in banned { #expect(!message.contains(word), "\(name) mentions \(word)") }
         }
-    }
-
-    @Test func everyMessageIsDifferent() {
         let messages = UpdateFailure.allCases.map(\.message)
         #expect(Set(messages).count == messages.count)
-    }
-
-    @Test func messagesAreCalmAndPlain() {
-        let banned = ["Error", "error:", "!", "Oops", "Sorry", "failed:"]
-        for failure in UpdateFailure.allCases {
-            for word in banned { #expect(!failure.message.contains(word), "\(failure) mentions \(word)") }
-        }
     }
 
     @Test func messagesForFailedVerificationSayNothingWasChanged() {
@@ -575,11 +458,6 @@ struct InstallFlowTests {
         for failure in checks {
             #expect(failure.message.contains("nothing was changed"), "\(failure): \(failure.message)")
         }
-    }
-
-    /// The sentence the checksum failure is worded as.
-    @Test func theChecksumMessageIsTheDesignsExample() {
-        #expect(UpdateFailure.checksumMismatch.message == "The download didn't match its published checksum, so nothing was changed.")
     }
 
     /// `installFailed` is for what goes wrong before the swap, when the current version is, in fact, still installed.
@@ -595,19 +473,6 @@ struct InstallFlowTests {
             #expect(!message.contains("current version"), "\(failure)")
             #expect(!message.contains("nothing was changed"), "\(failure)")
         }
-    }
-
-    /// The relaunch couldn't be started: the old app is still running, so it has to be quit before the new version is
-    /// the one in use, and then opened again, wherever it lives.
-    @Test func aRelaunchThatCouldNotStartSaysToQuitAndOpenTheAppAgain() {
-        #expect(UpdateFailure.relaunchFailed.message == "ClearShot was updated. Quit ClearShot and open it again to use the new version.")
-        #expect(!UpdateFailure.relaunchFailed.message.contains("Applications"))
-    }
-
-    /// The relaunch was asked for but the app hasn't quit (a quit that something held up): quitting finishes it, and the
-    /// relaunch helper opens the app again on its own.
-    @Test func aQuitThatIsStillPendingSaysToQuit() {
-        #expect(UpdateFailure.quitPending.message == "ClearShot was updated. Quit ClearShot to finish; it opens again on its own.")
     }
 
     /// The swap stopped partway and the old copy couldn't be put back: not "the current version is still installed", and

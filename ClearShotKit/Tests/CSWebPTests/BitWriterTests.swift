@@ -2,20 +2,50 @@ import Testing
 @testable import CSWebP
 
 struct BitWriterTests {
-    @Test func bitsFillEachByteFromTheLeastSignificantEnd() {
-        let writer = BitWriter()
-        writer.write(0b101, bits: 3)
-        writer.write(0b11, bits: 2)
-        // The first value takes bits 0-2, the second bits 3-4; the byte is padded with zeros.
-        #expect(writer.bytes() == [0b0001_1101])
+    /// A sequence of writes and the bytes it makes.
+    struct Writes: Sendable, CustomTestStringConvertible {
+        let name: String
+        let writes: [Write]
+        let bytes: [UInt8]
+        var testDescription: String { name }
     }
 
-    @Test func aValueThatCrossesAByteBoundarySplitsLowBitsFirst() {
-        let writer = BitWriter()
-        writer.write(0xF, bits: 4)
-        writer.write(0xAB, bits: 8)
+    struct Write: Sendable {
+        let value: UInt32
+        let bits: Int
+        init(_ value: UInt32, _ bits: Int) {
+            self.value = value
+            self.bits = bits
+        }
+    }
+
+    static let writes: [Writes] = [
+        // The first value takes bits 0-2, the second bits 3-4; the byte is padded with zeros.
+        Writes(name: "bits fill each byte from the least significant end", writes: [Write(0b101, 3), Write(0b11, 2)],
+               bytes: [0b0001_1101]),
         // Low nibble of the second value (0xB) completes the first byte, its high nibble (0xA) starts the next.
-        #expect(writer.bytes() == [0xBF, 0x0A])
+        Writes(name: "a value that crosses a byte boundary splits low bits first", writes: [Write(0xF, 4), Write(0xAB, 8)],
+               bytes: [0xBF, 0x0A]),
+        Writes(name: "a 32-bit value is written little-endian", writes: [Write(0xDEAD_BEEF, 32)],
+               bytes: [0xEF, 0xBE, 0xAD, 0xDE]),
+        Writes(name: "a 32-bit value after an odd bit shifts every byte", writes: [Write(1, 1), Write(0xFFFF_FFFF, 32)],
+               bytes: [0xFF, 0xFF, 0xFF, 0xFF, 0x01]),
+        // 35 bits: the value shifted up by 3 across five bytes.
+        Writes(name: "a 32-bit value after three bits", writes: [Write(0, 3), Write(0x8000_0001, 32)],
+               bytes: [0x08, 0x00, 0x00, 0x00, 0x04]),
+        Writes(name: "exact multiples of eight bits add no pad byte", writes: [Write(0x12, 8), Write(0x3456, 16)],
+               bytes: [0x12, 0x56, 0x34]),
+        // Sixteen single bits make what one 16-bit write of the same value makes.
+        Writes(name: "sixteen single bits",
+               writes: (0..<16).map { Write((0b1010_0110_0101_1100 >> UInt32($0)) & 1, 1) }, bytes: [0x5C, 0xA6]),
+        Writes(name: "one 16-bit write", writes: [Write(0b1010_0110_0101_1100, 16)], bytes: [0x5C, 0xA6]),
+    ]
+
+    @Test(arguments: writes)
+    func theWritesMakeTheseBytes(_ testCase: Writes) {
+        let writer = BitWriter()
+        for write in testCase.writes { writer.write(write.value, bits: write.bits) }
+        #expect(writer.bytes() == testCase.bytes)
     }
 
     @Test func aZeroBitWriteChangesNothing() {
@@ -28,24 +58,6 @@ struct BitWriterTests {
         #expect(writer.bytes() == [0b11])
     }
 
-    @Test func aThirtyTwoBitValueIsWrittenLittleEndian() {
-        let writer = BitWriter()
-        writer.write(0xDEAD_BEEF, bits: 32)
-        #expect(writer.bytes() == [0xEF, 0xBE, 0xAD, 0xDE])
-    }
-
-    @Test func aThirtyTwoBitValueAfterAnOddBitShiftsEveryByte() {
-        let writer = BitWriter()
-        writer.write(1, bits: 1)
-        writer.write(0xFFFF_FFFF, bits: 32)
-        #expect(writer.bytes() == [0xFF, 0xFF, 0xFF, 0xFF, 0x01])
-        let other = BitWriter()
-        other.write(0, bits: 3)
-        other.write(0x8000_0001, bits: 32)
-        // 35 bits: the value shifted up by 3 across five bytes.
-        #expect(other.bytes() == [0x08, 0x00, 0x00, 0x00, 0x04])
-    }
-
     @Test func bytesPadsTheLastByteButDoesNotEndTheStream() {
         let writer = BitWriter()
         writer.write(0b1, bits: 1)
@@ -56,23 +68,6 @@ struct BitWriterTests {
         writer.write(0, bits: 6)
         writer.write(0xAA, bits: 8)
         #expect(writer.bytes() == [0b11, 0xAA])
-    }
-
-    @Test func exactMultiplesOfEightBitsAddNoPadByte() {
-        let writer = BitWriter()
-        writer.write(0x12, bits: 8)
-        writer.write(0x3456, bits: 16)
-        #expect(writer.bytes() == [0x12, 0x56, 0x34])
-    }
-
-    @Test func sixteenSingleBitsMatchOneSixteenBitWrite() {
-        let value: UInt32 = 0b1010_0110_0101_1100
-        let bitByBit = BitWriter()
-        for bit in 0..<16 { bitByBit.write((value >> UInt32(bit)) & 1, bits: 1) }
-        let whole = BitWriter()
-        whole.write(value, bits: 16)
-        #expect(bitByBit.bytes() == whole.bytes())
-        #expect(whole.bytes() == [0x5C, 0xA6])
     }
 
     @Test func theNumberOfBitsWrittenIsTracked() {

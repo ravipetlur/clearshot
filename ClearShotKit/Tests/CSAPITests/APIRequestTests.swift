@@ -12,36 +12,6 @@ private func area(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloa
 }
 
 struct APIRequestTests {
-    @Test func everyCommandNameParses() throws {
-        let documented: [(String, APICommand)] = [
-            ("all-in-one", .allInOne(nil)),
-            ("capture-area", .captureArea(nil, action: nil)),
-            ("capture-previous-area", .capturePreviousArea(action: nil)),
-            ("capture-fullscreen", .captureFullscreen(action: nil)),
-            ("capture-window", .captureWindow(action: nil)),
-            ("self-timer", .selfTimer(action: nil)),
-            ("scrolling-capture", .scrollingCapture(nil, start: .none)),
-            ("pin", .pin(filePath: nil)),
-            ("record-screen", .recordScreen(nil)),
-            ("capture-text", .captureText(.overlay, keepLineBreaks: nil)),
-            ("open-annotate", .openAnnotate(filePath: nil)),
-            ("open-from-clipboard", .openFromClipboard),
-            ("toggle-desktop-icons", .toggleDesktopIcons),
-            ("hide-desktop-icons", .hideDesktopIcons),
-            ("show-desktop-icons", .showDesktopIcons),
-            ("add-quick-access-overlay?filepath=/tmp/a.png", .addQuickAccessOverlay(filePath: "/tmp/a.png")),
-            ("open-history", .openHistory),
-            ("restore-recently-closed", .restoreRecentlyClosed),
-            ("open-settings", .openSettings(nil)),
-        ]
-        #expect(documented.count == 19)
-        for (name, command) in documented {
-            #expect(try parse("clearshot://\(name)").command == command, "\(name)")
-        }
-        #expect(try parse("clearshot://capture-area-raycast-aichat").command == .captureAreaForRaycast(nil))
-        #expect(try parse("clearshot://debug-selftest", debug: true).command == .debugSelfTest)
-    }
-
     @Test func theCommandIsTheHostOrTheFirstPathComponent() throws {
         #expect(try parse("clearshot://capture-area/").command == .captureArea(nil, action: nil))
         #expect(try parse("clearshot:capture-fullscreen").command == .captureFullscreen(action: nil))

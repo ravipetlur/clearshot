@@ -42,16 +42,6 @@ struct InstallFlowHandOffTests {
         #expect(flow.release == release)
     }
 
-    @Test func aHandOffIsNotCancellable() {
-        var flow = lastStep()
-        #expect(take(.handOff, &flow))
-        #expect(!flow.canCancel)
-        let before = flow
-        let cancelled = flow.handle(.cancel)
-        #expect(!cancelled)
-        #expect(flow == before)
-    }
-
     @Test func aHandOffIsRejectedFromEveryOtherPlace() {
         var others: [InstallFlow] = [
             InstallFlow(),
@@ -77,11 +67,12 @@ struct InstallFlowHandOffTests {
         }
     }
 
-    /// The hand-off is left with `dismiss` and nothing else: the image stays mounted for the person, and a new check or a
-    /// retry would start over under it.
+    /// The hand-off is left with `dismiss` and nothing else: it can't be cancelled, the image stays mounted for the
+    /// person, and a new check or a retry would start over under it.
     @Test func aHandOffIsLeftOnlyByDismissing() {
         var handedOff = lastStep()
         #expect(take(.handOff, &handedOff))
+        #expect(!handedOff.canCancel)
         let others: [Event] = [
             .checkStarted, .updateFound(release), .noUpdateFound, .downloadStarted, .downloadProgress(0.5),
             .downloadFinished, .stepPassed(.gatekeeperApp), .installStarted, .failure(.installFailed), .cancel, .retry,

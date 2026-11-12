@@ -81,14 +81,13 @@ struct FeedResultTests {
 
     // MARK: The endpoint
 
-    @Test func theEndpointIsTheLatestReleaseOfTheRepository() {
-        #expect(ReleaseFeed.endpoint(repository: "owner/repo")
-                == URL(string: "https://api.github.com/repos/owner/repo/releases/latest"))
-    }
-
-    @Test func dotsDashesUnderscoresAndDigitsAreAllowed() {
-        #expect(ReleaseFeed.endpoint(repository: "My-Org_2/clear.shot-app_v2")
-                == URL(string: "https://api.github.com/repos/My-Org_2/clear.shot-app_v2/releases/latest"))
+    /// The latest release of the repository; dots, dashes, underscores and digits are allowed in either part.
+    @Test(arguments: [
+        ("owner/repo", "https://api.github.com/repos/owner/repo/releases/latest"),
+        ("My-Org_2/clear.shot-app_v2", "https://api.github.com/repos/My-Org_2/clear.shot-app_v2/releases/latest"),
+    ])
+    func theEndpointIsTheLatestReleaseOfTheRepository(repository: String, endpoint: String) {
+        #expect(ReleaseFeed.endpoint(repository: repository) == URL(string: endpoint))
     }
 
     @Test func aRepositoryThatIsNotOwnerSlashNameHasNoEndpoint() {

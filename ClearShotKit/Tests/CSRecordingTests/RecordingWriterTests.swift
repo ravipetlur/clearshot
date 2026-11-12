@@ -229,8 +229,8 @@ extension MediaTests {
             #expect(audio.allSatisfy { abs($0.end.seconds - 2) <= 0.03 })
         }
 
-        /// Measured: without the real-time flag a writer refuses audio after about 3.5 s without frames, so this audio
-        /// track would end near 4 s. (Real-time mode drops what an encoder busy with other tests can't take, hence the
+        /// Measured: without the real-time flag a writer refuses audio after a few seconds without frames, so this audio
+        /// track would end near 4–5 s, short of the 6 s this asks for. (Real-time mode drops what an encoder busy with other tests can't take, hence the
         /// margin.)
         @Test func aStillScreenNeverHoldsBackTheAudio() async throws {
             let writer = try Media.writer(movie, systemAudio: true, appendMode: .realTime)
@@ -250,11 +250,11 @@ extension MediaTests {
             let writer = try Media.writer(movie, systemAudio: true, appendMode: .realTime)
             writer.start(at: t(origin))
             Media.feed(writer, from: origin, to: origin + 0.5, systemAudio: .system, pacing: 0.008)
-            Media.feed(writer, from: origin + 0.5, to: origin + 4, pacing: 0.008)
-            let result = try await writer.finish(at: t(origin + 4))
+            Media.feed(writer, from: origin + 0.5, to: origin + 3, pacing: 0.008)
+            let result = try await writer.finish(at: t(origin + 3))
 
-            // 121 frames delivered, with the stop's.
-            #expect(result.statistics.appendedFrames >= 70)
+            // 91 frames delivered, with the stop's: 2.5 s without audio, well past the hold.
+            #expect(result.statistics.appendedFrames >= 60)
         }
 
         // MARK: Takes

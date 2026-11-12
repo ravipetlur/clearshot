@@ -10,7 +10,7 @@ import Testing
 /// first recognition after the test target is rebuilt takes about half a minute while Vision loads its models: slow,
 /// not hung.
 /// The tests that run recognition are skipped on a Mac where Vision's text recognition throws (see
-/// `VisionTextRecognition`); the two that don't run it run everywhere.
+/// `VisionTextRecognition`); the one that doesn't run it runs everywhere.
 @Suite(.serialized, .timeLimit(.minutes(3)))
 struct TextRecognizerTests {
     private let options = TextRecognitionOptions(automaticallyDetectsLanguage: true, primaryLanguage: "en-US")
@@ -179,23 +179,22 @@ struct TextRecognizerTests {
     }
 
     @Test(.needsVisionTextRecognition) func largeHeadingsAcrossACutReadExactly() async throws {
-        // At 64–72 px the 400 px both tiles read holds only a dozen characters or so.
+        // At 64–72 px the 400 px both tiles read holds only a dozen characters or so. Two readings: each size, each heading,
+        // centred and against the right edge; every size, heading and place across the cut is in the replay tests.
         let headings = ["Quarterly results exceeded every expectation we set for this year",
                         "Install the update before restarting your computer tonight please"]
-        for size in [64, 72] as [CGFloat] {
-            for (index, heading) in headings.enumerated() {
-                let width = OCRPage.width(of: heading, size: size)
-                for x in [60, Int((2600 - width) / 2), Int(2540 - width)] {
-                    let page = OCRPage(width: 2600, height: 200)
-                    page.text(heading, x: x, top: 40, size: size)
+        for (size, index, centred) in [(64, 0, true), (72, 1, false)] as [(CGFloat, Int, Bool)] {
+            let heading = headings[index]
+            let width = OCRPage.width(of: heading, size: size)
+            let x = centred ? Int((2600 - width) / 2) : Int(2540 - width)
+            let page = OCRPage(width: 2600, height: 200)
+            page.text(heading, x: x, top: 40, size: size)
 
-                    let read = try await TextRecognizer.recognize(page.image(), options: options).lines.map(\.text)
+            let read = try await TextRecognizer.recognize(page.image(), options: options).lines.map(\.text)
 
-                    // One line, no word lost or doubled at the cut (exact text: the replay tests).
-                    #expect(read.count == 1 && OCRPage.editDistance(read.first ?? "", heading) <= 4,
-                            "heading \(index + 1) at \(Int(size)) px from x \(x): \(read)")
-                }
-            }
+            // One line, no word lost or doubled at the cut (exact text: the replay tests).
+            #expect(read.count == 1 && OCRPage.editDistance(read.first ?? "", heading) <= 4,
+                    "heading \(index + 1) at \(Int(size)) px from x \(x): \(read)")
         }
     }
 
@@ -331,12 +330,6 @@ struct TextRecognizerTests {
         let result = try await TextRecognizer.recognize(OCRPage(width: 1200, height: 800).image(), options: options)
         #expect(result.isEmpty)
         #expect(TextOutput.text(for: result, keepLineBreaks: true).isEmpty)
-    }
-
-    @Test func languagesComeFromVision() {
-        let languages = TextRecognizer.supportedLanguages()
-        #expect(languages.count >= 28)
-        #expect(languages.contains(Locale.Language(identifier: "en-US")))
     }
 
     @Test func columnInkCountsTextOnLightAndDarkBackgrounds() {

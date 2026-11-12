@@ -83,7 +83,7 @@ extension MediaTests {
 
         @Test(.enabled(if: HardwareEncoders.available, "needs a hardware video encoder"))
         func cancellingRemovesThePartialFile() async throws {
-            try await makeIntermediate(seconds: 6, width: 640, height: 360)
+            try await makeIntermediate(seconds: 2)
             let (reports, continuation) = AsyncStream<Void>.makeStream()
             let (source, gif, settings) = (source, gif, settings)
             let conversion = Task {

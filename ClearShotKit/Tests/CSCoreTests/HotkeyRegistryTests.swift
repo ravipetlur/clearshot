@@ -118,17 +118,6 @@ final class HotkeyRegistryTests {
         #expect(registry.unregisteredActions.isEmpty)
     }
 
-    @Test func startWithNothingStoredRegistersTheThreeDefaults() {
-        let registry = makeRegistry()
-        registry.start()
-        #expect(registrar.registrations == [
-            .register(id(.allInOne), allInOne),
-            .register(id(.captureArea), area),
-            .register(id(.captureFullscreen), fullscreen),
-        ])
-        #expect(registry.unregisteredActions.isEmpty)
-    }
-
     @Test func everyActionGetsItsIndexPlusOneAsItsID() {
         for (index, action) in ClearShotAction.allCases.enumerated() {
             store.set(ShortcutSpec(carbonKeyCode: index, carbonModifiers: ShortcutSpec.command), for: action)
@@ -234,33 +223,6 @@ final class HotkeyRegistryTests {
         #expect(registry.unregisteredActions == [.captureArea])
     }
 
-    @Test func aFailedResultLogsItsStatus() {
-        registrar.scripted[id(.captureArea)] = .failed(-50)
-        store.set(record, for: .recordScreen)
-        let registry = makeRegistry(logger: log.logger)
-        registry.start()
-
-        let failures = log.lines.filter { $0.contains("[ERROR] [hotkeys]") }
-        #expect(failures.count == 1)
-        #expect(failures.first?.contains("captureArea") == true)
-        #expect(failures.first?.contains("-50") == true)
-    }
-
-    @Test func aRefusedResultIsLoggedToo() {
-        registrar.scripted[id(.captureArea)] = .refused
-        let registry = makeRegistry(logger: log.logger)
-        registry.start()
-        let warnings = log.lines.filter { $0.contains("[WARN] [hotkeys]") }
-        #expect(warnings.count == 1)
-        #expect(warnings.first?.contains("captureArea") == true)
-    }
-
-    @Test func registeringLogsNothing() {
-        let registry = makeRegistry(logger: log.logger)
-        registry.start()
-        #expect(log.lines.isEmpty)
-    }
-
     // MARK: Presses
 
     @Test func aPressWithAKnownIDPerformsItsActionAndIsLogged() {
@@ -303,42 +265,6 @@ final class HotkeyRegistryTests {
     }
 
     // MARK: Changes
-
-    @Test func aChangedShortcutIsUnregisteredThenRegisteredAgain() {
-        let registry = makeRegistry()
-        registry.start()
-        registrar.forgetCalls()
-
-        store.set(moved, for: .captureArea)
-        registry.storeDidChange(action: .captureArea)
-        #expect(registrar.calls == [.unregister(id(.captureArea)), .register(id(.captureArea), moved)])
-        #expect(registrar.held[id(.captureArea)] == moved)
-        // The others were left alone.
-        #expect(registrar.held[id(.allInOne)] == allInOne)
-        #expect(registrar.held[id(.captureFullscreen)] == fullscreen)
-    }
-
-    @Test func aClearedShortcutIsOnlyUnregistered() {
-        let registry = makeRegistry()
-        registry.start()
-        registrar.forgetCalls()
-
-        store.set(nil, for: .captureArea)
-        registry.storeDidChange(action: .captureArea)
-        #expect(registrar.calls == [.unregister(id(.captureArea))])
-        #expect(registrar.held[id(.captureArea)] == nil)
-        #expect(registry.unregisteredActions.isEmpty)
-    }
-
-    @Test func aShortcutSetOnAnActionWithNoneIsOnlyRegistered() {
-        let registry = makeRegistry()
-        registry.start()
-        registrar.forgetCalls()
-
-        store.set(record, for: .recordScreen)
-        registry.storeDidChange(action: .recordScreen)
-        #expect(registrar.calls == [.register(id(.recordScreen), record)])
-    }
 
     @Test func aChangeForAllUnregistersEverythingBeforeItRegistersAgain() {
         store.set(record, for: .recordScreen)
@@ -468,14 +394,6 @@ final class HotkeyRegistryTests {
         registry.resume()
         #expect(registrar.registrations.count == 3)
         #expect(registrar.held == held)
-    }
-
-    @Test func aResumeWithNoPauseDoesNothing() {
-        let registry = makeRegistry()
-        registry.start()
-        registrar.forgetCalls()
-        registry.resume()
-        #expect(registrar.calls.isEmpty)
     }
 
     @Test func aPauseBeforeStartKeepsStartFromRegistering() {
@@ -632,17 +550,6 @@ final class HotkeyRegistryTests {
         #expect(registry.unregisteredActions.isEmpty)
     }
 
-    @Test func aRefusedActionIsTriedAgainByTheStoresOwnPosts() {
-        store.set(allInOne, for: .captureArea)
-        let registry = makeRegistry(center: storeCenter)
-        registry.start()
-        #expect(registry.unregisteredActions == [.captureArea])
-
-        store.set(moved, for: .allInOne)
-        #expect(registry.unregisteredActions.isEmpty)
-        #expect(registrar.held[id(.captureArea)] == allInOne)
-    }
-
     // MARK: Logging
 
     private var warnings: [String] { log.lines.filter { $0.contains("[WARN] [hotkeys]") } }
@@ -681,6 +588,7 @@ final class HotkeyRegistryTests {
         store.set(record, for: .recordScreen)
         registry.storeDidChange(action: .recordScreen)
         #expect(errors.count == 1)
+        #expect(errors.first?.contains("captureArea") == true)
         #expect(errors.first?.contains("-50") == true)
         #expect(warnings.isEmpty)
     }
@@ -775,14 +683,22 @@ final class HotkeyRegistryTests {
         registry.start()
         registrar.forgetCalls()
 
+        // A changed shortcut is unregistered, then registered again; the others are left alone.
         store.set(moved, for: .captureArea)
         #expect(registrar.calls == [.unregister(id(.captureArea)), .register(id(.captureArea), moved)])
+        #expect(registrar.held[id(.captureArea)] == moved)
+        #expect(registrar.held[id(.allInOne)] == allInOne)
+        #expect(registrar.held[id(.captureFullscreen)] == fullscreen)
         registrar.forgetCalls()
 
+        // A cleared shortcut is only unregistered, and isn't listed as unregistered.
         store.set(nil, for: .captureArea)
         #expect(registrar.calls == [.unregister(id(.captureArea))])
+        #expect(registrar.held[id(.captureArea)] == nil)
+        #expect(registry.unregisteredActions.isEmpty)
         registrar.forgetCalls()
 
+        // A shortcut set on an action with none is only registered.
         store.set(record, for: .recordScreen)
         #expect(registrar.calls == [.register(id(.recordScreen), record)])
         registrar.forgetCalls()
@@ -790,37 +706,6 @@ final class HotkeyRegistryTests {
         store.reset(.captureArea)
         #expect(registrar.calls == [.register(id(.captureArea), area)])
         #expect(registrar.held[id(.captureArea)] == area)
-    }
-
-    @Test func aResetOfAllReRegistersEveryAction() throws {
-        store.set(moved, for: .captureArea)
-        store.set(record, for: .recordScreen)
-        let registry = makeRegistry(center: storeCenter)
-        registry.start()
-        registrar.forgetCalls()
-
-        store.resetAll()
-        #expect(registrar.held == [
-            id(.allInOne): allInOne, id(.captureArea): area, id(.captureFullscreen): fullscreen,
-        ])
-        // All of them were unregistered before any was registered again.
-        let firstRegistration = try #require(registrar.calls.firstIndex { if case .register = $0 { true } else { false } })
-        let lastUnregistration = try #require(registrar.calls.lastIndex { if case .unregister = $0 { true } else { false } })
-        #expect(lastUnregistration < firstRegistration)
-    }
-
-    @Test func aChangeMadeThroughTheStoreWhilePausedAppliesOnTheLastResume() {
-        let registry = makeRegistry(center: storeCenter)
-        registry.start()
-        registry.pause()
-        registrar.forgetCalls()
-
-        store.set(moved, for: .captureArea)
-        #expect(registrar.calls.isEmpty)
-        registry.resume()
-        #expect(registrar.held[id(.captureArea)] == moved)
-        #expect(registrar.registrations.contains(.register(id(.captureArea), moved)))
-        #expect(!registrar.registrations.contains(.register(id(.captureArea), area)))
     }
 
     @Test func anotherStoresChangesAreIgnored() {

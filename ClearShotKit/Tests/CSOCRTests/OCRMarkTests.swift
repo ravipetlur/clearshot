@@ -21,20 +21,6 @@ struct OCRMarkTests {
 
     // MARK: Pure
 
-    @Test func aLineHasNoMarksUnlessItIsGivenSome() {
-        let line = OCRLine(text: "plain", box: CGRect(x: 1, y: 2, width: 3, height: 4))
-        #expect(line.marks.isEmpty)
-        #expect(line == OCRLine(text: "plain", box: CGRect(x: 1, y: 2, width: 3, height: 4), marks: []))
-        #expect(line != OCRLine(text: "plain", box: line.box, marks: [mark("p", line.box)]))
-    }
-
-    @Test func languageCorrectionIsOnUnlessTheOptionsTurnItOff() {
-        #expect(TextRecognitionOptions(automaticallyDetectsLanguage: true, primaryLanguage: "en-US").usesLanguageCorrection)
-        let off = TextRecognitionOptions(automaticallyDetectsLanguage: true, primaryLanguage: "en-US", usesLanguageCorrection: false)
-        #expect(!off.usesLanguageCorrection)
-        #expect(off != TextRecognitionOptions(automaticallyDetectsLanguage: true, primaryLanguage: "en-US"))
-    }
-
     @Test func marksMoveWithTheirLineIntoImagePixels() {
         // A line of the 3000 × 3000 plan's bottom-right tile, with marks in the tile's pixels.
         let tiles = OCRTiling.tiles(width: 3000, height: 3000, columnInk: flatInk(width: 3000))

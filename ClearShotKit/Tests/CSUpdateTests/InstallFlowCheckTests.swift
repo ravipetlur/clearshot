@@ -20,45 +20,38 @@ struct InstallFlowCheckTests {
         return flow
     }
 
-    @Test func aFailedCheckWithNothingOnOfferGoesBackToIdle() {
-        var flow = flow(after: .checkStarted)
-        #expect(settle(&flow, .network))
+    /// With nothing on offer (no check before, or one that found the app up to date), a failed check goes back to idle.
+    @Test(arguments: [
+        ([InstallFlow.Event.checkStarted], UpdateFailure.network),
+        ([.checkStarted, .noUpdateFound, .checkStarted], .rateLimited),
+    ])
+    func aFailedCheckWithNothingOnOfferGoesBackToIdle(events: [InstallFlow.Event], failure: UpdateFailure) {
+        var flow = InstallFlow()
+        for event in events {
+            let accepted = flow.handle(event)
+            #expect(accepted, "\(event)")
+        }
+        #expect(settle(&flow, failure))
         #expect(flow.state == .idle)
         #expect(flow.release == nil)
     }
 
-    @Test func aFailedCheckAfterUpToDateGoesBackToIdle() {
-        var flow = flow(after: .checkStarted, .noUpdateFound, .checkStarted)
-        #expect(settle(&flow, .rateLimited))
-        #expect(flow.state == .idle)
-        #expect(flow.release == nil)
-    }
-
-    @Test func aFailedCheckKeepsTheOfferThatWasStanding() {
-        var flow = flow(after: .checkStarted, .updateFound(release), .checkStarted)
-        #expect(settle(&flow, .serverError))
+    /// The offer that was standing is kept, or offered again after a failed install or a cancel.
+    @Test(arguments: [
+        ([InstallFlow.Event.checkStarted, .updateFound(InstallFlowTests.release), .checkStarted], UpdateFailure.serverError),
+        ([.checkStarted, .updateFound(InstallFlowTests.release), .downloadStarted, .failure(.downloadFailed), .checkStarted],
+         .network),
+        ([.checkStarted, .updateFound(InstallFlowTests.release), .downloadStarted, .cancel, .checkStarted], .network),
+    ])
+    func aFailedCheckKeepsTheOfferThatWasStanding(events: [InstallFlow.Event], failure: UpdateFailure) {
+        var flow = InstallFlow()
+        for event in events {
+            let accepted = flow.handle(event)
+            #expect(accepted, "\(event)")
+        }
+        #expect(settle(&flow, failure))
         #expect(flow.state == .available(release))
         #expect(flow.release == release)
-    }
-
-    @Test func aFailedCheckAfterAFailedInstallOffersTheReleaseAgain() {
-        var flow = flow(after: .checkStarted, .updateFound(release), .downloadStarted, .failure(.downloadFailed), .checkStarted)
-        #expect(settle(&flow, .network))
-        #expect(flow.state == .available(release))
-    }
-
-    @Test func aFailedCheckAfterACancelOffersTheReleaseAgain() {
-        var flow = flow(after: .checkStarted, .updateFound(release), .downloadStarted, .cancel, .checkStarted)
-        #expect(settle(&flow, .network))
-        #expect(flow.state == .available(release))
-    }
-
-    @Test func settlingNeverLeavesTheFailedState() {
-        for failure in [UpdateFailure.network, .rateLimited, .serverError] {
-            var flow = flow(after: .checkStarted, .updateFound(release), .checkStarted)
-            #expect(settle(&flow, failure))
-            if case .failed = flow.state { Issue.record("still failed after \(failure)") }
-        }
     }
 
     /// Only a check that is running can fail: anything else is a late result, and changes nothing.
@@ -76,21 +69,6 @@ struct InstallFlowCheckTests {
             var trial = original
             #expect(!settle(&trial, .network), "\(original.state)")
             #expect(trial == original)
-        }
-    }
-}
-
-struct UpdateFailureErrorTests {
-    /// The installer throws a failure, and the update center reads it back.
-    @Test func aFailureCanBeThrownAndCaught() {
-        func throwing() throws { throw UpdateFailure.checksumMismatch }
-        do {
-            try throwing()
-            Issue.record("did not throw")
-        } catch let failure as UpdateFailure {
-            #expect(failure == .checksumMismatch)
-        } catch {
-            Issue.record("a different error: \(error)")
         }
     }
 }

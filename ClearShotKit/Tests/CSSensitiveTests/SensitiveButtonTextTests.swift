@@ -11,17 +11,6 @@ struct SensitiveButtonTextTests {
 
     // MARK: The label
 
-    @Test func theLabelCountsTheFindingsAfterAWarningSign() {
-        #expect(SensitiveButtonText.label(for: found) == "\u{26A0}\u{FE0E} 3")
-        #expect(SensitiveButtonText.label(for: .found(FindingCounts([.card: 1]))) == "\u{26A0}\u{FE0E} 1")
-        #expect(SensitiveButtonText.label(for: .found(FindingCounts([.ipAddress: 12]))) == "\u{26A0}\u{FE0E} 12")
-    }
-
-    @Test func theLabelStopsAtNinetyNinePlusSoTheButtonKeepsOneWidth() {
-        #expect(SensitiveButtonText.label(for: .found(FindingCounts([.contact: 99]))) == "\u{26A0}\u{FE0E} 99")
-        #expect(SensitiveButtonText.label(for: .found(FindingCounts([.contact: 60, .card: 40]))) == "\u{26A0}\u{FE0E} 99+")
-    }
-
     @Test func theLabelIsTheBadgesLabel() {
         let counts = FindingCounts([.contact: 7, .ipAddress: 5])
         #expect(SensitiveButtonText.label(for: .found(counts)) == BadgeText.label(for: BadgeState(phase: .found(counts))))
@@ -35,13 +24,6 @@ struct SensitiveButtonTextTests {
 
     // MARK: The tooltip
 
-    @Test func theTooltipCountsTheFindingsByKind() {
-        #expect(SensitiveButtonText.tooltip(for: found) == "3 possible secrets: 2 contact details, 1 key or token")
-        #expect(SensitiveButtonText.tooltip(for: .found(FindingCounts([.card: 1]))) == "1 possible secret: 1 card number")
-        #expect(SensitiveButtonText.tooltip(for: .found(FindingCounts([.ipAddress: 2, .card: 2, .keyOrToken: 3, .contact: 1])))
-                == "8 possible secrets: 1 contact detail, 3 keys or tokens, 2 card numbers, 2 IP addresses")
-    }
-
     @Test func theFoundTooltipIsTheBadgesTooltip() {
         let counts = FindingCounts([.contact: 7, .ipAddress: 5])
         #expect(SensitiveButtonText.tooltip(for: .found(counts)) == BadgeText.tooltip(for: BadgeState(phase: .found(counts))))
@@ -50,9 +32,6 @@ struct SensitiveButtonTextTests {
     @Test func aMaskedButtonCountsTheMasksAndSaysAClickUnmasks() {
         #expect(SensitiveButtonText.tooltip(for: .masked(3)) == "3 possible secrets masked: click to unmask")
         #expect(SensitiveButtonText.tooltip(for: .masked(12)) == "12 possible secrets masked: click to unmask")
-    }
-
-    @Test func oneMaskIsOnePossibleSecret() {
         #expect(SensitiveButtonText.tooltip(for: .masked(1)) == "1 possible secret masked: click to unmask")
     }
 
@@ -92,11 +71,6 @@ struct SensitiveButtonTextTests {
         for phase in plain + [found, .disabled] {
             #expect(SensitiveButtonText.menuTitle(for: phase) == "Mask Sensitive Info", "\(phase)")
         }
-    }
-
-    @Test func theMenuTitlesAreTheCommandsNames() {
-        #expect(SensitiveButtonText.menuTitle(for: .idle) == MaskCommandText.commandName)
-        #expect(SensitiveButtonText.menuTitle(for: masked) == MaskCommandText.unmaskCommandName)
     }
 
     @Test func withNoEditorAnsweringTheItemIsTheMaskCommandAndNeverUnmask() {

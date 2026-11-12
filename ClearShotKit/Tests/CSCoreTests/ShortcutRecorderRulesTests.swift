@@ -71,34 +71,6 @@ struct ShortcutRecorderRulesTests {
 
     // MARK: Ordinary keys
 
-    @Test func aPlainKeyIsRejected() {
-        #expect(outcome(Key.a) == .reject)
-        #expect(outcome(Key.digit4) == .reject)
-        #expect(outcome(Key.space) == .reject)
-        #expect(outcome(Key.returnKey) == .reject)
-        #expect(outcome(Key.leftArrow) == .reject)
-        #expect(outcome(Key.keypad1) == .reject)
-    }
-
-    @Test func shiftAloneIsNotEnough() {
-        #expect(outcome(Key.a, shift) == .reject)
-        #expect(outcome(Key.digit4, shift) == .reject)
-        #expect(outcome(Key.leftArrow, shift) == .reject)
-    }
-
-    @Test func commandOrControlRecords() {
-        #expect(outcome(Key.a, control) == .record(spec(Key.a, control)))
-        #expect(outcome(Key.a, command) == .record(spec(Key.a, command)))
-        #expect(outcome(Key.a, control | option | shift | command) == .record(spec(Key.a, control | option | shift | command)))
-    }
-
-    @Test func optionWithCommandOrControlRecords() {
-        #expect(outcome(Key.a, option | command) == .record(spec(Key.a, option | command)))
-        #expect(outcome(Key.a, control | option) == .record(spec(Key.a, control | option)))
-        #expect(outcome(Key.a, option | shift | command) == .record(spec(Key.a, option | shift | command)))
-        #expect(outcome(Key.a, control | option | shift) == .record(spec(Key.a, control | option | shift)))
-    }
-
     @Test func optionAloneOrWithShiftAloneIsUnsupportedOnEveryOrdinaryKey() {
         // Since macOS 15 the system doesn't deliver a global hot key whose only modifiers are ⌥ or ⌥⇧.
         for keyCode in [Key.a, Key.digit4, Key.space, Key.returnKey, Key.leftArrow, Key.keypad1, Key.escape, Key.delete] {
@@ -107,26 +79,20 @@ struct ShortcutRecorderRulesTests {
         }
     }
 
-    @Test func optionStillRecordsOnAFunctionKey() {
-        #expect(outcome(Key.f5, option) == .record(spec(Key.f5, option)))
-        #expect(outcome(Key.f13, option | shift) == .record(spec(Key.f13, option | shift)))
-    }
-
-    @Test func theDigitFourWithShiftAndCommandRecordsShiftCommandFour() {
-        #expect(outcome(Key.digit4, shift | command) == .record(.commandShift(Key.digit4)))
-    }
-
-    @Test func everyModifierCombinationIsDecidedByWhatItHasOfCommandControlAndOption() {
+    /// On an ordinary key (a letter, a digit, Space, Return, an arrow, a keypad key) ⌘ or ⌃ records, with whatever
+    /// else is held; ⌥ without either is unsupported; nothing, or ⇧ alone, is rejected.
+    @Test(arguments: [Key.a, Key.digit4, Key.space, Key.returnKey, Key.leftArrow, Key.keypad1])
+    func everyModifierCombinationIsDecidedByWhatItHasOfCommandControlAndOption(keyCode: Int) {
         for mask in allMasks {
             let expected: RecorderKeyOutcome
             if mask & (command | control) != 0 {
-                expected = .record(spec(Key.a, mask))
+                expected = .record(spec(keyCode, mask))
             } else if mask & option != 0 {
                 expected = .unsupported(.optionOnly)
             } else {
                 expected = .reject
             }
-            #expect(outcome(Key.a, mask) == expected, "mask \(mask)")
+            #expect(outcome(keyCode, mask) == expected, "mask \(mask)")
         }
     }
 
@@ -145,11 +111,6 @@ struct ShortcutRecorderRulesTests {
         #expect(outcome(Key.tab, option | shift) == .unsupported(.optionOnly))
     }
 
-    @Test func aKeypadKeyOrArrowRecordsWithAModifier() {
-        #expect(outcome(Key.keypad1, command) == .record(spec(Key.keypad1, command)))
-        #expect(outcome(Key.leftArrow, control | shift) == .record(spec(Key.leftArrow, control | shift)))
-    }
-
     // MARK: Function keys
 
     @Test func functionKeysRecordWithAnyModifiersOrNone() {
@@ -159,11 +120,6 @@ struct ShortcutRecorderRulesTests {
                 #expect(outcome(keyCode, mask) == .record(spec(keyCode, mask)), "key \(keyCode), mask \(mask)")
             }
         }
-    }
-
-    @Test func f5AloneAndShiftF13Record() {
-        #expect(outcome(Key.f5) == .record(spec(Key.f5, 0)))
-        #expect(outcome(Key.f13, shift) == .record(spec(Key.f13, shift)))
     }
 
     // MARK: Stray bits
@@ -309,19 +265,17 @@ struct RecorderOutcomeWithMenuTests {
 }
 
 struct RecorderRejectionTests {
-    @Test func theOptionOnlyMessageSaysWhatToAddAndWhy() {
-        #expect(RecorderRejection.optionOnly.explanation == "Add ⌘ or ⌃: macOS ignores ⌥-only")
-    }
-
-    @Test func theMenuMessageNamesTheItem() {
-        #expect(RecorderRejection.usedByMenu(title: "Close").explanation == "Used by ClearShot's Close command")
-    }
-
-    @Test func aTrailingEllipsisOfTheItemsTitleIsLeftOut() {
-        #expect(RecorderRejection.usedByMenu(title: "Settings…").explanation == "Used by ClearShot's Settings command")
-        #expect(RecorderRejection.usedByMenu(title: "Save As…").explanation == "Used by ClearShot's Save As command")
-        #expect(RecorderRejection.usedByMenu(title: "Print...").explanation == "Used by ClearShot's Print command")
-        #expect(RecorderRejection.usedByMenu(title: "Quit ClearShot").explanation == "Used by ClearShot's Quit ClearShot command")
+    /// The ⌥-only message says what to add and why; the menu message names the item, without a trailing ellipsis.
+    @Test(arguments: [
+        (RecorderRejection.optionOnly, "Add ⌘ or ⌃: macOS ignores ⌥-only"),
+        (.usedByMenu(title: "Close"), "Used by ClearShot's Close command"),
+        (.usedByMenu(title: "Settings…"), "Used by ClearShot's Settings command"),
+        (.usedByMenu(title: "Save As…"), "Used by ClearShot's Save As command"),
+        (.usedByMenu(title: "Print..."), "Used by ClearShot's Print command"),
+        (.usedByMenu(title: "Quit ClearShot"), "Used by ClearShot's Quit ClearShot command"),
+    ])
+    func theMessageSaysWhy(rejection: RecorderRejection, explanation: String) {
+        #expect(rejection.explanation == explanation)
     }
 }
 
@@ -329,10 +283,6 @@ struct RecorderSessionTests {
     private let target = ShortcutSpec.commandShift(KeyCode.digit4)
 
     // MARK: Starting and ending
-
-    @Test func aNewSessionIsIdle() {
-        #expect(!RecorderSession().isRecording)
-    }
 
     @Test func startingWhileIdlePausesTheHotkeysOnce() {
         var session = RecorderSession()
@@ -365,24 +315,18 @@ struct RecorderSessionTests {
 
     // MARK: Keys
 
-    @Test func cancelResumesAndStops() {
+    /// The keys that end a session: cancel and leave only resume; clear and record store first (nothing, or the
+    /// shortcut), then resume.
+    @Test(arguments: [
+        (RecorderKeyOutcome.cancel, [RecorderEffect.resumeHotkeys]),
+        (.clear, [.store(nil), .resumeHotkeys]),
+        (.record(.commandShift(KeyCode.digit4)), [.store(.commandShift(KeyCode.digit4)), .resumeHotkeys]),
+        (.leave, [.resumeHotkeys]),
+    ])
+    func aKeyThatEndsTheSessionResumesLast(key: RecorderKeyOutcome, effects: [RecorderEffect]) {
         var session = RecorderSession()
         _ = session.start()
-        #expect(session.key(.cancel) == [.resumeHotkeys])
-        #expect(!session.isRecording)
-    }
-
-    @Test func clearStoresNothingThenResumes() {
-        var session = RecorderSession()
-        _ = session.start()
-        #expect(session.key(.clear) == [.store(nil), .resumeHotkeys])
-        #expect(!session.isRecording)
-    }
-
-    @Test func recordStoresTheShortcutBeforeItResumes() {
-        var session = RecorderSession()
-        _ = session.start()
-        #expect(session.key(.record(target)) == [.store(target), .resumeHotkeys])
+        #expect(session.key(key) == effects)
         #expect(!session.isRecording)
     }
 
@@ -407,13 +351,6 @@ struct RecorderSessionTests {
         #expect(session.key(.record(target)) == [.store(target), .resumeHotkeys])
     }
 
-    @Test func leavingResumesAndStopsWithoutAStore() {
-        var session = RecorderSession()
-        _ = session.start()
-        #expect(session.key(.leave) == [.resumeHotkeys])
-        #expect(!session.isRecording)
-    }
-
     @Test func aKeyWhileIdleDoesNothing() {
         var session = RecorderSession()
         #expect(session.key(.record(target)) == [])
@@ -435,33 +372,6 @@ struct RecorderSessionTests {
 
     // MARK: Modifiers
 
-    @Test func aModifierPressedWhileRecordingClearsTheExplanation() {
-        // After a refusal ("Add ⌘ or ⌃…") the field shows the reason; a modifier pressed next shows the modifiers held
-        // again, as they are before any key.
-        var session = RecorderSession()
-        _ = session.start()
-        #expect(session.modifiersChanged(from: 0, to: shift) == [.clearExplanation])
-        #expect(session.modifiersChanged(from: option, to: option | shift) == [.clearExplanation])
-        #expect(session.modifiersChanged(from: option | shift, to: option | shift | command) == [.clearExplanation])
-        #expect(session.isRecording)
-    }
-
-    @Test func aModifierLetGoLeavesTheExplanation() {
-        // ⌥ was held for the key that was refused; letting it go must not take the reason away with it.
-        var session = RecorderSession()
-        _ = session.start()
-        #expect(session.modifiersChanged(from: option, to: 0) == [])
-        #expect(session.modifiersChanged(from: option | shift, to: option) == [])
-        #expect(session.modifiersChanged(from: option | shift | command | control, to: 0) == [])
-        #expect(session.modifiersChanged(from: 0, to: 0) == [])
-    }
-
-    @Test func aModifierPassedFromOneKeyToAnotherCountsAsAdded() {
-        var session = RecorderSession()
-        _ = session.start()
-        #expect(session.modifiersChanged(from: option, to: command) == [.clearExplanation])
-    }
-
     @Test func bitsThatAreNotOneOfTheFourModifiersAreNotModifiersChanging() {
         // Caps lock (alphaLock, 1 << 10) and Fn (1 << 17) are not part of a shortcut, so pressing one tells nothing.
         let capsLock = 1 << 10
@@ -473,6 +383,9 @@ struct RecorderSessionTests {
         #expect(session.modifiersChanged(from: option | capsLock, to: option | shift | capsLock) == [.clearExplanation])
     }
 
+    /// After a refusal ("Add ⌘ or ⌃…") the field shows the reason; a modifier pressed next (or passed from one key to
+    /// another) shows the modifiers held again, as they are before any key. Letting one go leaves the reason: ⌥ was held
+    /// for the key that was refused, and letting it go must not take the reason away with it.
     @Test func everyChangeOfModifiersClearsOnlyWhenAModifierIsAdded() {
         var session = RecorderSession()
         _ = session.start()
@@ -566,14 +479,4 @@ struct RecorderSessionTests {
         #expect(effects.filter { $0 == .beep }.count == 3)
     }
 
-    @Test func theStoreAlwaysComesBeforeTheResume() {
-        for outcome in [RecorderKeyOutcome.clear, .record(target)] {
-            var session = RecorderSession()
-            _ = session.start()
-            let effects = session.key(outcome)
-            #expect(effects.count == 2)
-            #expect(effects.last == .resumeHotkeys)
-            if case .store = effects.first {} else { Issue.record("no store first: \(effects)") }
-        }
-    }
 }

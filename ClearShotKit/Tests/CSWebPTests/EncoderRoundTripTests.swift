@@ -4,26 +4,14 @@ import Testing
 /// Every fixture is encoded, decoded by ImageIO and compared with the source under the comparison rule in
 /// `RoundTrip.swift`.
 struct EncoderRoundTripTests {
-    @Test(arguments: Fixtures.catalogue)
+    /// The catalogue, then the shapes: 1x1, 1xN, Nx1 and the longest sides the encoder writes.
+    @Test(arguments: Fixtures.catalogue + Fixtures.shapes)
     func theDecodedImageMatchesTheSource(_ fixture: Fixture) throws {
         try RoundTrip.expectRoundTrip(fixture.make())
     }
 
-    @Test(arguments: Fixtures.shapes)
-    func everyShapeRoundTripsIncludingTheLongestSides(_ fixture: Fixture) throws {
-        try RoundTrip.expectRoundTrip(fixture.make())
-    }
-
-    @Test func aFullyTransparentImageKeepsItsAlpha() throws {
-        let image = Fixtures.allTransparent(33, 17)
-        let file = try WebPLosslessEncoder.encode(rgba: image.rgba, width: 33, height: 17)
-        let decoded = try RoundTrip.decode(file).image
-        #expect(decoded.width == 33 && decoded.height == 17)
-        for y in 0..<17 { for x in 0..<33 { #expect(decoded[x, y].a == 0) } }
-    }
-
-    @Test func theComparisonNamesTheFirstMismatchingPixel() throws {
-        // The helper itself: a corrupted source must be reported at the right pixel with both values.
+    @Test func theComparisonsNameTheFirstMismatchAndIgnoreOnlyTheColourOfInvisiblePixels() throws {
+        // The helpers themselves. A corrupted source must be reported at the right pixel with both values.
         var image = Fixtures.noise(8, 4, seed: 3)
         let file = try WebPLosslessEncoder.encode(rgba: image.rgba, width: 8, height: 4)
         let decoded = try RoundTrip.decode(file)
@@ -34,19 +22,26 @@ struct EncoderRoundTripTests {
         #expect(message.contains("(5, 2)"))
         #expect(message.contains("expected \(image[5, 2])"))
         #expect(message.contains("got \(original)"))
-    }
 
-    @Test func theComparisonIgnoresTheColourOfInvisiblePixelsButNotTheirAlpha() throws {
-        var image = Fixtures.binaryAlpha(12, 12)
-        let file = try WebPLosslessEncoder.encode(rgba: image.rgba, width: 12, height: 12)
-        let decoded = try RoundTrip.decode(file)
+        // The colour of an invisible pixel does not count; its alpha does.
+        var alphaImage = Fixtures.binaryAlpha(12, 12)
+        let alphaDecoded = try RoundTrip.decode(
+            try WebPLosslessEncoder.encode(rgba: alphaImage.rgba, width: 12, height: 12))
         var invisible: (Int, Int)?
-        for y in 0..<12 { for x in 0..<12 where image[x, y].a == 0 { invisible = (x, y) } }
+        for y in 0..<12 { for x in 0..<12 where alphaImage[x, y].a == 0 { invisible = (x, y) } }
         let (x, y) = try #require(invisible)
-        image[x, y] = Pixel(1, 2, 3, 0)
-        #expect(RoundTrip.firstMismatch(source: image, decoded: decoded) == nil)
-        image[x, y] = Pixel(1, 2, 3, 9)
-        #expect(RoundTrip.firstMismatch(source: image, decoded: decoded)?.contains("alpha differs") == true)
+        alphaImage[x, y] = Pixel(1, 2, 3, 0)
+        #expect(RoundTrip.firstMismatch(source: alphaImage, decoded: alphaDecoded) == nil)
+        alphaImage[x, y] = Pixel(1, 2, 3, 9)
+        #expect(RoundTrip.firstMismatch(source: alphaImage, decoded: alphaDecoded)?.contains("alpha differs") == true)
+
+        // A decoded image with colour at alpha 0 is reported at its place.
+        var flat = RGBAImage(width: 4, height: 3, fill: Pixel(10, 20, 30, 255))
+        flat[2, 1] = Pixel(0, 0, 0, 0)
+        #expect(RoundTrip.firstColouredTransparentPixel(in: RoundTrip.Decoded(image: flat, premultiplied: false)) == nil)
+        flat[3, 2] = Pixel(0, 9, 0, 0)
+        #expect(RoundTrip.firstColouredTransparentPixel(in: RoundTrip.Decoded(image: flat, premultiplied: false))?
+            .contains("(3, 2)") == true)
     }
 
     @Test func invisiblePixelsComeBackBlack() throws {
@@ -67,16 +62,5 @@ struct EncoderRoundTripTests {
             }
             #expect(sawTransparent)
         }
-    }
-
-    @Test func theTransparentColourCheckNamesThePixel() throws {
-        // The check itself: a decoded image with colour at alpha 0 is reported at its place.
-        var image = RGBAImage(width: 4, height: 3, fill: Pixel(10, 20, 30, 255))
-        image[2, 1] = Pixel(0, 0, 0, 0)
-        let clean = RoundTrip.Decoded(image: image, premultiplied: false)
-        #expect(RoundTrip.firstColouredTransparentPixel(in: clean) == nil)
-        image[3, 2] = Pixel(0, 9, 0, 0)
-        let dirty = RoundTrip.Decoded(image: image, premultiplied: false)
-        #expect(RoundTrip.firstColouredTransparentPixel(in: dirty)?.contains("(3, 2)") == true)
     }
 }

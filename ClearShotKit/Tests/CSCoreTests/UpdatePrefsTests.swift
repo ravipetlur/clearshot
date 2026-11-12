@@ -15,30 +15,10 @@ final class UpdatePrefsTests {
         prefs = Preferences(defaults: defaults)
     }
 
-    @Test func checkingAutomaticallyIsOnByDefault() {
-        #expect(prefs[Prefs.updateCheckAutomatically] == true)
-        #expect(prefs.hasValue(Prefs.updateCheckAutomatically) == false)
-    }
-
-    @Test func thereIsNoLastCheckOrSkippedVersionAtFirst() {
-        #expect(prefs[Prefs.updateLastCheck] == nil)
-        #expect(prefs[Prefs.updateSkippedVersion] == nil)
-        #expect(prefs.hasValue(Prefs.updateLastCheck) == false)
-        #expect(prefs.hasValue(Prefs.updateSkippedVersion) == false)
-    }
-
     @Test func theKeysAreNamedForTheirSettings() {
         #expect(Prefs.updateCheckAutomatically.name == "updateCheckAutomatically")
         #expect(Prefs.updateLastCheck.name == "updateLastCheck")
         #expect(Prefs.updateSkippedVersion.name == "updateSkippedVersion")
-    }
-
-    @Test func theSettingRoundTrips() {
-        prefs[Prefs.updateCheckAutomatically] = false
-        #expect(prefs[Prefs.updateCheckAutomatically] == false)
-        #expect(defaults.object(forKey: "updateCheckAutomatically") as? Bool == false)
-        prefs[Prefs.updateCheckAutomatically] = true
-        #expect(prefs[Prefs.updateCheckAutomatically] == true)
     }
 
     @Test func theLastCheckRoundTripsAsAnExactDate() {

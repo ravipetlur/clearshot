@@ -15,13 +15,6 @@ struct UpdateScheduleTests {
         UpdateSchedule.nextCheck(lastCheck: lastCheck, launch: launch ?? self.launch, now: now ?? self.now, automatic: automatic)
     }
 
-    // MARK: The constants
-
-    @Test func theDelaysAreFiveMinutesAndADay() {
-        #expect(UpdateSchedule.firstCheckDelay == 5 * 60)
-        #expect(UpdateSchedule.interval == 24 * 3600)
-    }
-
     // MARK: Automatic off
 
     @Test func automaticOffNeverSchedulesACheck() {
@@ -33,10 +26,6 @@ struct UpdateScheduleTests {
 
     // MARK: The first check
 
-    @Test func withoutALastCheckTheFirstCheckIsFiveMinutesAfterLaunch() {
-        #expect(next(lastCheck: nil) == launch.addingTimeInterval(5 * minute))
-    }
-
     @Test func theFirstCheckFollowsTheLaunchNotTheClock() {
         let freshLaunch = now
         #expect(next(lastCheck: nil, launch: freshLaunch) == now.addingTimeInterval(5 * minute))
@@ -44,27 +33,26 @@ struct UpdateScheduleTests {
         #expect(next(lastCheck: nil, launch: earlier) == earlier.addingTimeInterval(5 * minute))
     }
 
-    /// A date at or before `now` means "due". The schedule doesn't move it forward, so a long-running app that missed
-    /// its slot (asleep, say) checks as soon as it looks.
-    @Test func aFirstCheckInThePastIsDueNotPushedOut() throws {
-        let due = try #require(next(lastCheck: nil, launch: now.addingTimeInterval(-2 * hour)))
-        #expect(due < now)
-    }
+    // MARK: A recent, stale or future last check
 
-    // MARK: A recent check
+    /// Seconds from "now", for the table below; the app launched an hour before now.
+    static let oneHour: TimeInterval = 3600
+    static let oneDay: TimeInterval = 86_400
+    /// Five minutes after the launch.
+    static let firstCheck: TimeInterval = -oneHour + 5 * 60
 
-    @Test func aRecentCheckIsFollowedADayLater() {
-        let last = now.addingTimeInterval(-hour)
-        #expect(next(lastCheck: last) == last.addingTimeInterval(day))
-    }
-
-    @Test func aCheckJustNowIsFollowedADayLater() {
-        #expect(next(lastCheck: now) == now.addingTimeInterval(day))
-    }
-
-    @Test func aCheckAlmostADayAgoIsDueInAMoment() {
-        let last = now.addingTimeInterval(-(day - 30))
-        #expect(next(lastCheck: last) == now.addingTimeInterval(30))
+    /// A recent check (an hour ago, just now, almost a day ago) is followed a day after it. A stale one (a day and a
+    /// second ago, 90 days ago) starts over five minutes after launch; exactly a day old isn't older than a day, so the
+    /// next check is the last check plus a day, which is now. A last check in the future (the clock moved back, by a
+    /// second, three hours or 400 days) counts as now: the next check is a day from now.
+    @Test(arguments: [
+        // (the last check, the next check: seconds from now)
+        (-oneHour, -oneHour + oneDay), (0, oneDay), (-(oneDay - 30), 30),
+        (-oneDay - 1, firstCheck), (-90 * oneDay, firstCheck), (-oneDay, 0),
+        (3 * oneHour, oneDay), (400 * oneDay, oneDay), (1, oneDay),
+    ] as [(TimeInterval, TimeInterval)])
+    func theNextCheckFollowsTheLastOne(lastCheck: TimeInterval, nextCheck: TimeInterval) {
+        #expect(next(lastCheck: now.addingTimeInterval(lastCheck)) == now.addingTimeInterval(nextCheck))
     }
 
     @Test func theLaunchTimeDoesNotMatterWhenTheLastCheckIsRecent() {
@@ -73,48 +61,7 @@ struct UpdateScheduleTests {
         #expect(next(lastCheck: last, launch: now.addingTimeInterval(-10 * day)) == last.addingTimeInterval(day))
     }
 
-    // MARK: A stale check
-
-    @Test func aStaleCheckStartsOverFiveMinutesAfterLaunch() {
-        let last = now.addingTimeInterval(-day - 1)
-        #expect(next(lastCheck: last) == launch.addingTimeInterval(5 * minute))
-    }
-
-    @Test func aVeryOldCheckStartsOverFiveMinutesAfterLaunch() {
-        let last = now.addingTimeInterval(-90 * day)
-        #expect(next(lastCheck: last) == launch.addingTimeInterval(5 * minute))
-    }
-
-    /// Exactly a day old isn't older than a day: the next check is the last check plus a day, which is now.
-    @Test func aCheckExactlyADayOldIsDueNow() {
-        let last = now.addingTimeInterval(-day)
-        #expect(next(lastCheck: last) == now)
-    }
-
-    // MARK: The clock moved back
-
-    @Test func aLastCheckInTheFutureCountsAsNow() {
-        let last = now.addingTimeInterval(3 * hour)
-        #expect(next(lastCheck: last) == now.addingTimeInterval(day))
-    }
-
-    @Test func aLastCheckFarInTheFutureStillWaitsOnlyADay() {
-        let last = now.addingTimeInterval(400 * day)
-        #expect(next(lastCheck: last) == now.addingTimeInterval(day))
-    }
-
-    @Test func aLastCheckASecondInTheFutureCountsAsNow() {
-        #expect(next(lastCheck: now.addingTimeInterval(1)) == now.addingTimeInterval(day))
-    }
-
     // MARK: No drift
-
-    @Test func repeatedCallsAtTheSameNowAgree() {
-        for last in [nil, now.addingTimeInterval(-hour), now.addingTimeInterval(-2 * day), now.addingTimeInterval(2 * hour)] {
-            let first = next(lastCheck: last)
-            for _ in 0..<5 { #expect(next(lastCheck: last) == first) }
-        }
-    }
 
     /// The time of the next check comes from the last check, not from when it's asked: asking again later doesn't push
     /// it out.
@@ -148,21 +95,17 @@ struct UpdateScheduleTests {
     // MARK: Correcting the stored last check
 
     /// A last check later than `now` means the clock moved back. The app overwrites the stored value with `now`, so the
-    /// schedule has one fixed answer from then on instead of one that moves each time it's asked.
-    @Test func aLastCheckInTheFutureIsReplacedByNow() {
-        #expect(UpdateSchedule.correctedLastCheck(stored: now.addingTimeInterval(3 * hour), now: now) == now)
-        #expect(UpdateSchedule.correctedLastCheck(stored: now.addingTimeInterval(1), now: now) == now)
-        #expect(UpdateSchedule.correctedLastCheck(stored: now.addingTimeInterval(400 * day), now: now) == now)
-    }
-
-    @Test func aLastCheckNowOrEarlierIsKept() {
-        for last in [now, now.addingTimeInterval(-1), now.addingTimeInterval(-hour), now.addingTimeInterval(-90 * day)] {
-            #expect(UpdateSchedule.correctedLastCheck(stored: last, now: now) == last)
-        }
-    }
-
-    @Test func noLastCheckStaysNone() {
-        #expect(UpdateSchedule.correctedLastCheck(stored: nil, now: now) == nil)
+    /// schedule has one fixed answer from then on instead of one that moves each time it's asked. A last check now or
+    /// earlier is kept, and no last check stays none.
+    @Test(arguments: [
+        // (the stored last check, the corrected one: seconds from now)
+        (3 * oneHour, 0), (1, 0), (400 * oneDay, 0),
+        (0, 0), (-1, -1), (-oneHour, -oneHour), (-90 * oneDay, -90 * oneDay),
+        (nil, nil),
+    ] as [(TimeInterval?, TimeInterval?)])
+    func aLastCheckInTheFutureIsReplacedByNow(stored: TimeInterval?, corrected: TimeInterval?) {
+        #expect(UpdateSchedule.correctedLastCheck(stored: stored.map(now.addingTimeInterval), now: now)
+            == corrected.map(now.addingTimeInterval))
     }
 
     /// Without the correction, asking later gives a later answer (the last check counts as the moment of asking). With

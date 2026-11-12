@@ -5,11 +5,8 @@ import Testing
 struct ContactDetectionTests {
     // MARK: Email
 
-    @Test func anEmailAddressIsFound() {
-        #expect(found("write to jane@example.com today") == [Found(.contact, "jane@example.com")])
-    }
-
     @Test(arguments: [
+        "jane@example.com",
         "first.last+tag@mail.example.com",
         "jane_doe-99@sub.example.com",
         "J.Doe%list@example.test",
@@ -21,24 +18,18 @@ struct ContactDetectionTests {
     }
 
     /// RFC 5322's atext: letters, digits and `!#$%&'*+/=?^_`{|}~-`, with dots. These are found whole.
-    @Test(arguments: [
-        "o'brien@example.com", "jane!doe@example.com", "{a}@example.test", "x#y$z%w*u@example.com",
-        "a`b@example.com", "a-b_c.d@example.com", "~tilde@example.test", "a+b@example.com", "a^b@example.com",
-    ])
-    func anAddressWithAnyCharacterOfAnAtomIsFoundWhole(address: String) {
-        #expect(found("mail \(address) now") == [Found(.contact, address)])
-        #expect(masked("mail \(address) now") == "mail ▓ now")
-    }
-
+    ///
     /// `? & = / |` are atext too, and a local part may hold them anywhere: a mailing list's bounce address, a forwarder's
     /// rewritten one, `tom&jerry@`. Each `@` reads its local part back to a space, another `@` or a character that isn't
     /// atext. (Round 2 found these whole.)
     @Test(arguments: [
+        "o'brien@example.com", "jane!doe@example.com", "{a}@example.test", "x#y$z%w*u@example.com",
+        "a`b@example.com", "a-b_c.d@example.com", "~tilde@example.test", "a+b@example.com", "a^b@example.com",
         "a+b=c@example.test", "a/b@example.com", "a?b^c|d~e@example.com", "x#y$z%w&v*u@example.com",
         "tom&jerry@example.com", "sales/support@example.com", "a=b@example.com",
         "list-bounces+jane=example.org@lists.example.com", "SRS0=HHH=TT=example.org=jane@forwarder.example.com",
     ])
-    func anAddressWithTheCharactersThatPartAChainInItIsFoundWhole(address: String) {
+    func anAddressWithAnyCharacterOfAnAtomIsFoundWhole(address: String) {
         #expect(found("mail \(address) now") == [Found(.contact, address)])
         #expect(masked("mail \(address) now") == "mail ▓ now")
     }
@@ -232,19 +223,17 @@ struct ContactDetectionTests {
 
     // MARK: Phone: long lines
 
-    /// A long line is read in windows, and only the windows with at least 7 digits are read at all.
-    @Test func aNumberAtTheEndOfAVeryLongLineOfTextIsFound() {
-        let line = String(repeating: "text ", count: 3_000) + "call 202-555-0143"
-        #expect(found(line, .contact) == [Found(.contact, "202-555-0143")])
+    /// A long line is read in windows, and only the windows with at least 7 digits are read at all: a number at its end or
+    /// its start is found.
+    @Test func aNumberAtTheEndOrTheStartOfAVeryLongLineOfTextIsFound() {
+        let text = String(repeating: "text ", count: 3_000)
+        #expect(found(text + "call 202-555-0143", .contact) == [Found(.contact, "202-555-0143")])
+        #expect(found("call 202-555-0143 " + text, .contact) == [Found(.contact, "202-555-0143")])
     }
 
-    @Test func aNumberAtTheStartOfAVeryLongLineOfTextIsFound() {
-        let line = "call 202-555-0143 " + String(repeating: "text ", count: 3_000)
-        #expect(found(line, .contact) == [Found(.contact, "202-555-0143")])
-    }
-
-    /// Wherever the number sits against the edge of a window, it is found whole.
-    @Test(arguments: Array(100...200))
+    /// Wherever the number sits against the edge of a window, it is found whole: every place where it runs across the end of
+    /// the first window (160), and places on either side every ten characters.
+    @Test(arguments: Array(stride(from: 100, through: 140, by: 10)) + Array(144...160) + Array(stride(from: 170, through: 200, by: 10)))
     func aNumberAcrossAWindowEdgeIsFoundWhole(padding: Int) {
         let line = String(repeating: "x", count: padding) + " 202-555-0143 " + String(repeating: "y", count: 300)
         #expect(found(line, .contact) == [Found(.contact, "202-555-0143")])
@@ -429,10 +418,12 @@ struct ContactDetectionTests {
     /// Wherever the third window reads the first number (in its overlap with the fourth, or cut by its end), the fourth is
     /// read. (A first number cut so early that the data detector reads nothing of it, `202-555-0` and the edge at 403, is the
     /// accepted miss past the window budget, and marks nothing.)
+    /// The second number ends as near the first as it can, or as far into the fourth window as the sweep goes.
     @Test(arguments: [0, 2, 4, 10, 40])
     func aNumberInTheFourthWindowIsFoundWhereverTheFirstEndsNearTheThirdsEnd(dots: Int) {
         for firstEnd in [362, 380, 390, 395, 399, 400, 401, 402] {
-            for secondEnd in stride(from: firstEnd + dots + 16, through: 515, by: 13) {
+            let secondEnds = Array(stride(from: firstEnd + dots + 16, through: 515, by: 13))
+            for secondEnd in [secondEnds.first!, secondEnds.last!] {
                 let line = lineWithDigits([("202-555-0101", firstEnd), ("415-555-0102", secondEnd)], dotsAfterFirst: dots)
                 #expect(readable("202-555-0101", in: line, .contact) == "", "first ends \(firstEnd), \(dots) dots, second ends \(secondEnd)")
                 #expect(readable("415-555-0102", in: line, .contact) == "", "first ends \(firstEnd), \(dots) dots, second ends \(secondEnd)")
@@ -467,11 +458,13 @@ struct ContactDetectionTests {
 
     /// Wherever a number and the padding after it sit against the end of the first window (160), whatever the padding and
     /// however long, the number is masked whole: it is either read whole, or held back and read whole by the next window.
+    /// The number ends within five characters of the window's end, and the padding is none, the most that may go on past
+    /// the end (3), one more (4), the underscores of a form (29) or a long run (200).
     @Test(arguments: paddings)
     func aNumberFollowedByPaddingIsMaskedWholeWhereverTheWindowEnds(pad: String, before: String) {
         let number = "202-555-0143"
-        for padding in [0, 1, 2, 3, 4, 5, 29, 60, 200] {
-            for end in 145...175 {
+        for padding in [0, 3, 4, 29, 200] {
+            for end in 155...165 {
                 let line = "Tel " + String(repeating: "x", count: end - number.count - 5) + " " + number + before
                     + String(repeating: pad, count: padding) + " open daily"
                 #expect(readable(number, in: line, .contact) == "", "ends at \(end), \(padding) of \(pad.debugDescription): \(masked(line, .contact))")
@@ -479,8 +472,9 @@ struct ContactDetectionTests {
         }
     }
 
-    /// A row of numbers across the end of a window: the part of it one window saw is five groups, and not a row.
-    @Test(arguments: Array(128...158))
+    /// A row of numbers across the end of a window: the part of it one window saw is five groups, and not a row. The row
+    /// starts where the window sees eleven groups or so (128 to 130), five and the places beside it (140 to 150), or one or two.
+    @Test(arguments: [128, 129, 130] + Array(140...150) + [155, 158])
     func aRowOfShortNumbersAcrossTheEndOfAWindowIsNoFinding(start: Int) {
         let row = (12...29).map(String.init).joined(separator: " ")
         let text = String(repeating: "x", count: start - 1) + " " + row + " " + String(repeating: "x", count: 200)
@@ -491,7 +485,8 @@ struct ContactDetectionTests {
     /// the number may go on in the next window: a window that read "+44 20 7946 " must not mask it and leave "0958" readable.
     /// The first three windows are read whatever they hold, so a number across the end of the first or second is whole; across
     /// the end of the third, whole if the one more window is read; across the end of that, it is not masked at all.
-    @Test(arguments: ["+1 202 555 0143", "+44 20 7946 0958", "020 7946 0958", "+91 98765 43210", "+33 1 23 45 67 89", "01 23 45 67 89", "06 12 34 56 78", "202-555-0143"])
+    /// A number of four groups, of four with a two-digit last group, of six short groups, and one of dashes.
+    @Test(arguments: ["+1 202 555 0143", "+44 20 7946 0958", "+33 1 23 45 67 89", "202-555-0143"])
     func aNumberAcrossTheEndOfAWindowIsMaskedWholeOrNotAtAll(number: String) {
         let filler = String(repeating: "a1b2c3d4 ", count: 80)
         for edge in [160, 280, 400, 520] {

@@ -8,47 +8,37 @@ private func object(_ kind: ObjectKind, width: Double = 4) -> AnnotationObject {
 }
 
 struct HitTestTests {
-    @Test func outlineRectanglesHitOnTheirEdgeOnly() {
+    /// Where each kind of object catches a click: an outline rectangle on its edge only, a filled shape inside, an ellipse on
+    /// its ring, a line near the segment, a curved arrow along the curve, a counter within its circle, and a single-point
+    /// stroke near the point.
+    @Test func eachKindHitsWhereItIsDrawn() {
         let rect = object(.rectangle(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        #expect(ObjectGeometry.hitTest(rect, at: CGPoint(x: 1, y: 50), tolerance: 2))
-        #expect(!ObjectGeometry.hitTest(rect, at: CGPoint(x: 50, y: 50), tolerance: 2))
-        #expect(!ObjectGeometry.hitTest(rect, at: CGPoint(x: 120, y: 50), tolerance: 2))
-    }
-
-    @Test func filledShapesHitInside() {
         let filled = object(.filledRectangle(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        #expect(ObjectGeometry.hitTest(filled, at: CGPoint(x: 50, y: 50), tolerance: 0))
-    }
-
-    @Test func ellipsesHitOnTheirRing() {
         let ellipse = object(.ellipse(CGRect(x: 0, y: 0, width: 100, height: 50)))
-        #expect(ObjectGeometry.hitTest(ellipse, at: CGPoint(x: 1, y: 25), tolerance: 2))
-        #expect(!ObjectGeometry.hitTest(ellipse, at: CGPoint(x: 50, y: 25), tolerance: 2))
-        #expect(!ObjectGeometry.hitTest(ellipse, at: CGPoint(x: 2, y: 2), tolerance: 2))
-    }
-
-    @Test func linesHitNearTheSegment() {
         let line = object(.line(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 100, y: 0)))
-        #expect(ObjectGeometry.hitTest(line, at: CGPoint(x: 50, y: 3), tolerance: 2))
-        #expect(!ObjectGeometry.hitTest(line, at: CGPoint(x: 50, y: 10), tolerance: 2))
-        #expect(!ObjectGeometry.hitTest(line, at: CGPoint(x: 110, y: 0), tolerance: 2))
-    }
-
-    @Test func curvedArrowsHitAlongTheCurve() {
         let arrow = object(.arrow(ArrowShape(start: .zero, end: CGPoint(x: 100, y: 0), control: CGPoint(x: 50, y: 80), style: .curved)))
-        #expect(ObjectGeometry.hitTest(arrow, at: CGPoint(x: 50, y: 40), tolerance: 3))
-        #expect(!ObjectGeometry.hitTest(arrow, at: CGPoint(x: 50, y: 0), tolerance: 3))
-    }
-
-    @Test func countersHitWithinTheirCircle() {
         let counter = object(.counter(CounterObject(center: CGPoint(x: 50, y: 50), value: 1, style: .numbers, diameter: 20)))
-        #expect(ObjectGeometry.hitTest(counter, at: CGPoint(x: 58, y: 50), tolerance: 0))
-        #expect(!ObjectGeometry.hitTest(counter, at: CGPoint(x: 65, y: 50), tolerance: 0))
-    }
-
-    @Test func singlePointStrokesHitNearThePoint() {
         let dot = object(.stroke(StrokeObject(points: [CGPoint(x: 10, y: 10)], smoothed: false)), width: 6)
-        #expect(ObjectGeometry.hitTest(dot, at: CGPoint(x: 12, y: 10), tolerance: 1))
+        let rows: [(name: String, object: AnnotationObject, point: CGPoint, tolerance: Double, hits: Bool)] = [
+            ("rectangle edge", rect, CGPoint(x: 1, y: 50), 2, true),
+            ("rectangle inside", rect, CGPoint(x: 50, y: 50), 2, false),
+            ("rectangle outside", rect, CGPoint(x: 120, y: 50), 2, false),
+            ("filled inside", filled, CGPoint(x: 50, y: 50), 0, true),
+            ("ellipse ring", ellipse, CGPoint(x: 1, y: 25), 2, true),
+            ("ellipse inside", ellipse, CGPoint(x: 50, y: 25), 2, false),
+            ("ellipse bounds corner", ellipse, CGPoint(x: 2, y: 2), 2, false),
+            ("line near", line, CGPoint(x: 50, y: 3), 2, true),
+            ("line far", line, CGPoint(x: 50, y: 10), 2, false),
+            ("line past its end", line, CGPoint(x: 110, y: 0), 2, false),
+            ("arrow on the curve", arrow, CGPoint(x: 50, y: 40), 3, true),
+            ("arrow on the chord", arrow, CGPoint(x: 50, y: 0), 3, false),
+            ("counter inside", counter, CGPoint(x: 58, y: 50), 0, true),
+            ("counter outside", counter, CGPoint(x: 65, y: 50), 0, false),
+            ("dot near", dot, CGPoint(x: 12, y: 10), 1, true),
+        ]
+        for row in rows {
+            #expect(ObjectGeometry.hitTest(row.object, at: row.point, tolerance: row.tolerance) == row.hits, "\(row.name)")
+        }
     }
 
     /// The object a click at `point` picks, the way the select tool looks for it: the one drawn on top.
@@ -474,33 +464,26 @@ struct TextLayoutTests {
         #expect(boxed.height > plain.height)
     }
 
-    @Test func emptyTextStillHasAHeight() {
-        #expect(TextLayout.frame(of: TextObject(origin: .zero, string: "", style: .standard, fontSize: 20)).height > 0)
-    }
-
     @Test func monoStylesUseAFixedPitchFont() {
         #expect(TextLayout.font(for: .mono, size: 20).isFixedPitch)
         #expect(TextLayout.font(for: .monoBox, size: 20).isFixedPitch)
         #expect(!TextLayout.font(for: .standard, size: 20).isFixedPitch)
     }
 
-    @Test func aTrailingNewlineAddsALine() {
-        let plain = TextLayout.frame(of: TextObject(origin: .zero, string: "abc", style: .standard, fontSize: 20))
-        let returned = TextLayout.frame(of: TextObject(origin: .zero, string: "abc\n", style: .standard, fontSize: 20))
+    /// Text that ends in white space, or is nothing else, is measured as typed: empty text still has a line's height, a
+    /// trailing newline adds a line, a trailing space adds width, and a string of only spaces has width.
+    @Test func whiteSpaceIsMeasuredAsTyped() {
+        func frame(_ string: String) -> CGRect {
+            TextLayout.frame(of: TextObject(origin: .zero, string: string, style: .standard, fontSize: 20))
+        }
+        let blank = frame(""), plain = frame("abc")
+        #expect(blank.height > 0)
+        #expect(blank.width == 0)
+        let returned = frame("abc\n")
         #expect(returned.height > plain.height)
         #expect(abs(returned.width - plain.width) < 1)
-    }
-
-    @Test func aTrailingSpaceIsMeasured() {
-        let plain = TextLayout.frame(of: TextObject(origin: .zero, string: "abc", style: .standard, fontSize: 20))
-        let spaced = TextLayout.frame(of: TextObject(origin: .zero, string: "abc ", style: .standard, fontSize: 20))
-        #expect(spaced.width > plain.width)
-    }
-
-    @Test func aStringOfOnlySpacesStillHasWidth() {
-        let blank = TextLayout.frame(of: TextObject(origin: .zero, string: "", style: .standard, fontSize: 20))
-        let spaces = TextLayout.frame(of: TextObject(origin: .zero, string: "   ", style: .standard, fontSize: 20))
-        #expect(blank.width == 0)
+        #expect(frame("abc ").width > plain.width)
+        let spaces = frame("   ")
         #expect(spaces.width > blank.width)
         #expect(spaces.height == blank.height)
     }

@@ -99,38 +99,39 @@ struct PaletteTransformTests {
 
     // MARK: Packing
 
-    @Test func eightTwoColourIndicesShareAPixelFirstInTheLowestBit() throws {
-        // Colours 0xFF000000 and 0xFFFFFFFF, equally common; indices 1, 0, 1, 1, 0, 1, 0, 0 then 1.
-        let a: UInt32 = 0xFF00_0000, b: UInt32 = 0xFFFF_FFFF
-        let bits = [1, 0, 1, 1, 0, 1, 0, 0, 1]
-        let pixels = bits.map { $0 == 0 ? a : b }
-        let palette = try #require(PaletteTransform(colors: [a, b]))
-        let packed = palette.packed(pixels: pixels, width: 9, height: 1)
-        // 1 + 4 + 8 + 32 = 0b00101101 = 0x2D in the first pixel; the ninth index alone in the second.
-        #expect(packed == [0xFF00_2D00, 0xFF00_0100])
+    /// A colour table of `colors` entries, the indices of a one-row image, and the packed pixels they make.
+    struct Packing: Sendable, CustomTestStringConvertible {
+        let name: String
+        let colors: [UInt32]
+        let indices: [Int]
+        let packed: [UInt32]
+        var testDescription: String { name }
     }
 
-    @Test func fourFourColourIndicesShareAPixelTwoBitsEach() throws {
-        let colors: [UInt32] = [0xFF00_0001, 0xFF00_0002, 0xFF00_0003, 0xFF00_0004]
-        let palette = try #require(PaletteTransform(colors: colors))
-        // Indices 3, 0, 2, 1 then 1: 3 | 0 << 2 | 2 << 4 | 1 << 6 = 0x63, and 1.
-        let pixels = [3, 0, 2, 1, 1].map { colors[$0] }
-        #expect(palette.packed(pixels: pixels, width: 5, height: 1) == [0xFF00_6300, 0xFF00_0100])
-    }
+    static let packings: [Packing] = [
+        // Equally common colours; 1 + 4 + 8 + 32 = 0b00101101 = 0x2D in the first pixel, the ninth index alone in
+        // the second.
+        Packing(name: "eight 2-colour indices share a pixel, first in the lowest bit",
+                colors: [0xFF00_0000, 0xFFFF_FFFF], indices: [1, 0, 1, 1, 0, 1, 0, 0, 1],
+                packed: [0xFF00_2D00, 0xFF00_0100]),
+        // 3 | 0 << 2 | 2 << 4 | 1 << 6 = 0x63, and 1.
+        Packing(name: "four 4-colour indices share a pixel, two bits each",
+                colors: [0xFF00_0001, 0xFF00_0002, 0xFF00_0003, 0xFF00_0004], indices: [3, 0, 2, 1, 1],
+                packed: [0xFF00_6300, 0xFF00_0100]),
+        // 15 | 2 << 4 = 0x2F, and 7.
+        Packing(name: "two 16-colour indices share a pixel, four bits each",
+                colors: (0..<16).map { 0xFF00_0000 | UInt32($0) }, indices: [15, 2, 7],
+                packed: [0xFF00_2F00, 0xFF00_0700]),
+        Packing(name: "more than 16 colours put each index in its own pixel",
+                colors: (0..<40).map { 0xFF00_0000 | UInt32($0) }, indices: [39, 0, 17, 17],
+                packed: [0xFF00_2700, 0xFF00_0000, 0xFF00_1100, 0xFF00_1100]),
+    ]
 
-    @Test func twoSixteenColourIndicesShareAPixelFourBitsEach() throws {
-        let colors: [UInt32] = (0..<16).map { 0xFF00_0000 | UInt32($0) }
-        let palette = try #require(PaletteTransform(colors: colors))
-        // Indices 15, 2, 7: 15 | 2 << 4 = 0x2F, and 7.
-        let pixels = [15, 2, 7].map { colors[$0] }
-        #expect(palette.packed(pixels: pixels, width: 3, height: 1) == [0xFF00_2F00, 0xFF00_0700])
-    }
-
-    @Test func aTableOfMoreThan16ColoursPutsEachIndexInItsOwnPixel() throws {
-        let colors: [UInt32] = (0..<40).map { 0xFF00_0000 | UInt32($0) }
-        let palette = try #require(PaletteTransform(colors: colors))
-        let pixels = [39, 0, 17, 17].map { colors[$0] }
-        #expect(palette.packed(pixels: pixels, width: 4, height: 1) == [0xFF00_2700, 0xFF00_0000, 0xFF00_1100, 0xFF00_1100])
+    @Test(arguments: packings)
+    func theIndicesArePackedIntoPixels(_ packing: Packing) throws {
+        let palette = try #require(PaletteTransform(colors: packing.colors))
+        let pixels = packing.indices.map { packing.colors[$0] }
+        #expect(palette.packed(pixels: pixels, width: pixels.count, height: 1) == packing.packed)
     }
 
     @Test func eachRowIsPackedOnItsOwn() throws {

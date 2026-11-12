@@ -10,20 +10,19 @@ struct HistoryTimeTests {
         HistoryTime.label(for: now.addingTimeInterval(-secondsAgo), now: now, locale: locale)
     }
 
-    @Test func underAMinuteIsJustNow() {
-        #expect(label(secondsAgo: 0) == "Just now")
-        #expect(label(secondsAgo: 59.9) == "Just now")
-    }
-
-    @Test func aDateInTheFutureIsJustNow() {
-        #expect(label(secondsAgo: -30) == "Just now")
-    }
-
-    @Test func olderDatesUseTheRelativeFormatter() {
-        #expect(label(secondsAgo: 60) == "1 minute ago")
-        #expect(label(secondsAgo: 59 * 60) == "59 minutes ago")
-        #expect(label(secondsAgo: 3 * 3_600) == "3 hours ago")
-        #expect(label(secondsAgo: 26 * 3_600) == "1 day ago")
-        #expect(label(secondsAgo: 8 * 86_400) == "1 week ago")
+    @Test(arguments: [
+        // Under a minute is just now, and so is a date in the future.
+        (0, "Just now"),
+        (59.9, "Just now"),
+        (-30, "Just now"),
+        // Older dates use the relative formatter.
+        (60, "1 minute ago"),
+        (59 * 60, "59 minutes ago"),
+        (3 * 3_600, "3 hours ago"),
+        (26 * 3_600, "1 day ago"),
+        (8 * 86_400, "1 week ago"),
+    ] as [(TimeInterval, String)])
+    func theLabelSaysHowLongAgo(secondsAgo: TimeInterval, text: String) {
+        #expect(label(secondsAgo: secondsAgo) == text)
     }
 }

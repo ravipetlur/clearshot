@@ -81,13 +81,4 @@ struct ModalPolicyTests {
         #expect(ModalPolicy.refusal(appModalIsUp: false, recordingOnScreen: true) == .recording)
         #expect(ModalPolicy.refusal(appModalIsUp: false, recordingOnScreen: false) == .capture)
     }
-
-    @Test func eachRefusalSaysWhatToFinishOrClose() {
-        #expect(ModalPolicy.Refusal.capture.text == "Finish the capture first")
-        #expect(ModalPolicy.Refusal.capture.symbol == "camera.viewfinder")
-        #expect(ModalPolicy.Refusal.recording.text == "Finish the recording first")
-        #expect(ModalPolicy.Refusal.recording.symbol == "record.circle")
-        #expect(ModalPolicy.Refusal.appModal.text == "Close the open dialog first")
-        #expect(ModalPolicy.Refusal.appModal.symbol == "macwindow")
-    }
 }

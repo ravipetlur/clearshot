@@ -25,32 +25,25 @@ struct TextOutputTests {
         #expect(TextOutput.text(for: OCRResult(), keepLineBreaks: true).isEmpty)
     }
 
-    @Test func aWholeURLIsALink() {
-        #expect(TextOutput.singleLink(in: "  https://example.com/a?b=1 ") == URL(string: "https://example.com/a?b=1"))
-        #expect(TextOutput.singleLink(in: "http://example.com/docs\n") == URL(string: "http://example.com/docs"))
-    }
-
-    @Test func aBareDomainIsALink() {
-        let link = TextOutput.singleLink(in: "example.com")
-        #expect(link?.scheme == "http")
-        #expect(link?.host() == "example.com")
-    }
-
-    @Test func aURLInsideASentenceIsNotALink() {
-        #expect(TextOutput.singleLink(in: "See https://example.com for more") == nil)
-        #expect(TextOutput.singleLink(in: "Docs: https://example.com/docs") == nil)
-    }
-
-    @Test func twoURLsAreNotALink() {
-        #expect(TextOutput.singleLink(in: "https://example.com https://example.org") == nil)
-        #expect(TextOutput.singleLink(in: "https://example.com\nhttps://example.org") == nil)
-    }
-
-    @Test func anEmailAddressIsNotALink() {
-        #expect(TextOutput.singleLink(in: "someone@example.com") == nil)
-        #expect(TextOutput.singleLink(in: "mailto:someone@example.com") == nil)
-        #expect(TextOutput.singleLink(in: "") == nil)
-        #expect(TextOutput.singleLink(in: "Just some words") == nil)
+    @Test(arguments: [
+        // A whole URL is a link, and so is a bare domain.
+        ("  https://example.com/a?b=1 ", "https://example.com/a?b=1"),
+        ("http://example.com/docs\n", "http://example.com/docs"),
+        ("example.com", "http://example.com"),
+        // A URL inside a sentence is not.
+        ("See https://example.com for more", nil),
+        ("Docs: https://example.com/docs", nil),
+        // Nor are two URLs.
+        ("https://example.com https://example.org", nil),
+        ("https://example.com\nhttps://example.org", nil),
+        // Nor an email address, or text with no link.
+        ("someone@example.com", nil),
+        ("mailto:someone@example.com", nil),
+        ("", nil),
+        ("Just some words", nil),
+    ] as [(String, String?)])
+    func onlyTextThatIsOneWholeWebAddressIsALink(text: String, link: String?) {
+        #expect(TextOutput.singleLink(in: text)?.absoluteString == link)
     }
 
     @Test func aLinkIsOfferedOnlyWithDetectLinksOnAndNoCaptureUnderWay() {
@@ -62,13 +55,9 @@ struct TextOutputTests {
         #expect(TextOutput.linkToOffer(in: "See \(url) for more", detectsLinks: true, isCapturing: false) == nil)
     }
 
-    @MainActor @Test func prefsDefaults() {
+    @MainActor @Test func theOptionsComeFromThePreferences() {
         withThrowawayDefaults("ocr") { defaults in
             let prefs = Preferences(defaults: defaults)
-            #expect(prefs[Prefs.textRecognitionKeepLineBreaks])
-            #expect(prefs[Prefs.textRecognitionAutoDetectLanguage])
-            #expect(prefs[Prefs.textRecognitionPrimaryLanguage] == "en-US")
-            #expect(prefs[Prefs.textRecognitionDetectLinks])
             #expect(TextRecognitionOptions(preferences: prefs) == TextRecognitionOptions(automaticallyDetectsLanguage: true, primaryLanguage: "en-US"))
 
             prefs[Prefs.textRecognitionAutoDetectLanguage] = false

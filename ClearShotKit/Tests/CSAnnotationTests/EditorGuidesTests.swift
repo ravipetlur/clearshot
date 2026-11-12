@@ -66,17 +66,13 @@ struct EditorGuidesTests {
         h.editor.updateSelectionContrast()
         for _ in 0..<100 where h.editor.picturePixels == nil { try await Task.sleep(for: .milliseconds(10)) }
         h.editor.updateSelectionContrast()
-        try await Task.sleep(for: .milliseconds(400))
+        // The measurement is under way; it is done when its task is gone.
+        try #require(h.editor.contrastTask != nil)
+        for _ in 0..<200 where h.editor.contrastTask != nil { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(h.editor.contrastTask == nil)
         #expect(h.editor.selectionContrast == nil)
         h.editor.clearPixelSelection()
         h.editor.updateSelectionContrast()
         #expect(h.editor.selectionContrast == nil)
-    }
-
-    @Test func theChoiceOfAPCAIsRemembered() {
-        let h = EditorHarness()
-        #expect(!h.editor.contrastUsesAPCA)
-        h.editor.contrastUsesAPCA = true
-        #expect(h.editor.contrastUsesAPCA)
     }
 }

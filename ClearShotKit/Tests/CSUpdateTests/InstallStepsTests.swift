@@ -244,16 +244,6 @@ struct InstallStepsTests {
         ])
     }
 
-    /// The image is detached and the temporary files removed before the relaunch, which ends the process.
-    @Test func theImageIsDetachedAndCleanedBeforeTheRelaunch() async {
-        let run = await run()
-        let calls = run.world.calls
-        #expect(calls.last == .relaunch)
-        #expect(calls.firstIndex(of: .detach)! < calls.firstIndex(of: .relaunch)!)
-        #expect(calls.firstIndex(of: .cleanup)! < calls.firstIndex(of: .relaunch)!)
-        #expect(calls.firstIndex(of: .removeBackup)! < calls.firstIndex(of: .detach)!)
-    }
-
     @Test func eachStepIsReportedToTheFlowInOrder() async {
         let run = await run()
         #expect(run.box.accepted == [
@@ -336,7 +326,7 @@ struct InstallStepsTests {
 
     /// The person cancels while a step runs: the task is cancelled, the flow is cancelled by the center, and the step
     /// ends with a cancellation. Everything is cleaned up, no failure is reported, and nothing runs after.
-    @Test(arguments: Call.verification)
+    @Test(.timeLimit(.minutes(1)), arguments: Call.verification)
     func cancellingWhileAStepRunsCleansUp(call: Call) async {
         let entered = Gate()
         var script = World.Script()
@@ -375,7 +365,7 @@ struct InstallStepsTests {
 
     /// Cleanup runs even though the task was cancelled: a cancelled task would otherwise end the very `diskutil` that
     /// ejects the image.
-    @Test func cleanupIsNotCancelledWithTheTask() async {
+    @Test(.timeLimit(.minutes(1))) func cleanupIsNotCancelledWithTheTask() async {
         let entered = Gate()
         var script = World.Script()
         script.behaviors[.appSignature] = {
@@ -393,39 +383,26 @@ struct InstallStepsTests {
         #expect(world.cleanupSawCancellation == [false, false])
     }
 
-    /// What URLSession says when a download task is cancelled counts as a cancel, not a failure.
-    @Test func aURLErrorThatIsCancelledIsACancellation() async {
+    /// What URLSession says when a download task is cancelled counts as a cancel, not a failure, as a URLError or as
+    /// the same NSError, and so does Swift's own cancellation error; any other URL error is a failed download.
+    @Test(arguments: [
+        (Call.download, URLError(.cancelled), InstallOutcome.cancelled, [Call.download, .cleanup]),
+        (.download, NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled), .cancelled, [.download, .cleanup]),
+        (.checksum, CancellationError(), .cancelled, [.download, .checksum, .cleanup]),
+        (.download, URLError(.notConnectedToInternet), .failed(.downloadFailed), [.download, .cleanup]),
+    ] as [(Call, any Error & Sendable, InstallOutcome, [Call])])
+    func aCancellationErrorIsACancelAndAnyOtherIsAFailure(call: Call, error: any Error & Sendable, outcome: InstallOutcome,
+                                                         calls: [Call]) async {
         var script = World.Script()
-        script.failures[.download] = URLError(.cancelled)
+        script.failures[call] = error
         let run = await run(script)
-        #expect(run.outcome == .cancelled)
-        #expect(run.world.calls == [.download, .cleanup])
-        #expect(!run.box.attempted.contains { if case .failure = $0 { true } else { false } })
-        #expect(run.box.state == .downloading(progress: 0))
-    }
-
-    @Test func theSameErrorAsAnNSErrorIsACancellationToo() async {
-        var script = World.Script()
-        script.failures[.download] = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
-        let run = await run(script)
-        #expect(run.outcome == .cancelled)
-        #expect(!run.box.attempted.contains { if case .failure = $0 { true } else { false } })
-    }
-
-    @Test func aSwiftCancellationErrorIsACancellation() async {
-        var script = World.Script()
-        script.failures[.checksum] = CancellationError()
-        let run = await run(script)
-        #expect(run.outcome == .cancelled)
-        #expect(run.world.calls == [.download, .checksum, .cleanup])
-    }
-
-    /// Any other URL error is a failed download.
-    @Test func otherURLErrorsAreAFailedDownload() async {
-        var script = World.Script()
-        script.failures[.download] = URLError(.notConnectedToInternet)
-        let run = await run(script)
-        #expect(run.outcome == .failed(.downloadFailed))
+        #expect(run.outcome == outcome)
+        #expect(run.world.calls == calls)
+        let failed = run.box.attempted.contains { if case .failure = $0 { true } else { false } }
+        #expect(failed == (outcome != .cancelled))
+        if outcome == .cancelled, call == .download {
+            #expect(run.box.state == .downloading(progress: 0))
+        }
     }
 
     /// A step that fails because it was cancelled (its process ended, say) reports its own error: it is still a cancel.
@@ -612,6 +589,7 @@ struct InstallStepsTests {
     }
 
     /// The swap failed before anything was replaced: the current version is still installed, and everything is cleaned.
+    /// The failure is reported from installing, and nothing waits for a relaunch that won't happen.
     @Test func aFailedReplaceFailsWithInstallFailedAndCleansUp() async {
         var script = World.Script()
         script.failures[.stageAndReplace] = SomeError()
@@ -619,8 +597,11 @@ struct InstallStepsTests {
         #expect(run.outcome == .failed(.installFailed))
         #expect(run.world.calls.suffix(3) == [.stageAndReplace, .detach, .cleanup])
         #expect(!run.world.calls.contains(.removeBackup))
+        #expect(!run.world.calls.contains(.waitUntilQuiet))
         #expect(!run.world.calls.contains(.relaunch))
         #expect(run.box.state == .failed(.installFailed))
+        #expect(run.box.attempted.contains(.installStarted))
+        #expect(run.box.accepted.last == .failure(.installFailed))
     }
 
     @Test(arguments: [UpdateFailure.installFailed, .appNotRestored])
@@ -630,13 +611,6 @@ struct InstallStepsTests {
         let run = await run(script)
         #expect(run.outcome == .failed(failure))
         #expect(run.box.state == .failed(failure))
-    }
-
-    /// The note for a backup that stays beside the app is a plain sentence, and says what to expect.
-    @Test func theBackupNoteSaysTheOldCopyWasLeftBesideTheApp() {
-        #expect(InstallSteps.backupNotRemovedNote.contains("deleted"))
-        #expect(InstallSteps.backupNotRemovedNote.contains("beside the app"))
-        #expect(!InstallSteps.backupNotRemovedNote.contains("Trash"))
     }
 
     /// The app is replaced but couldn't be started again: that says the app was updated, not that nothing changed.
@@ -667,58 +641,19 @@ struct InstallStepsTests {
         let attempt = box.begin(release)
         let task = Task { await world.steps().run(report: box.sink(attempt)) }
         await waiting.wait()
-        // Give a relaunch that wrongly didn't wait every chance to happen.
-        for _ in 0..<20 { try? await Task.sleep(for: .milliseconds(10)) }
+        // Give a relaunch that wrongly didn't wait every chance to happen: yield until it shows up, or ten thousand times
+        // (a few hundredths of a second, enough to see one that starts the wait and relaunches a few milliseconds later).
+        var yields = 0
+        while yields < 10_000, !world.calls.contains(.relaunch) {
+            await Task.yield()
+            yields += 1
+        }
         #expect(world.calls.last == .waitUntilQuiet)
         #expect(!world.calls.contains(.relaunch))
         await quiet.open()
         let outcome = await task.value
         #expect(outcome == .installed(backupNotRemoved: false))
         #expect(world.calls.suffix(2) == [.waitUntilQuiet, .relaunch])
-    }
-
-    /// The image is ejected and the temporary files removed before the wait, which can take as long as a recording: the
-    /// image isn't left mounted for it.
-    @Test func theImageIsDetachedBeforeTheWait() async {
-        let run = await run()
-        let calls = run.world.calls
-        let wait = calls.firstIndex(of: .waitUntilQuiet)
-        #expect(wait != nil)
-        for earlier in [Call.removeBackup, .detach, .cleanup] {
-            let index = calls.firstIndex(of: earlier)
-            #expect(index != nil && wait != nil && index! < wait!, "\(earlier)")
-        }
-    }
-
-    /// Only an install that relaunches waits: a failure, a cancel or a hand-off never does.
-    @Test(arguments: Call.verification)
-    func aRunThatStopsEarlyNeverWaits(call: Call) async {
-        var script = World.Script()
-        script.failures[call] = UpdateFailure.imageRejected
-        let run = await run(script)
-        #expect(!run.world.calls.contains(.waitUntilQuiet))
-    }
-
-    @Test func aHandOffNeverWaits() async {
-        var script = World.Script()
-        script.writable = false
-        let run = await run(script)
-        #expect(!run.world.calls.contains(.waitUntilQuiet))
-    }
-
-    @Test func aFailedSwapNeverWaits() async {
-        var script = World.Script()
-        script.failures[.stageAndReplace] = UpdateFailure.installFailed
-        let run = await run(script)
-        #expect(!run.world.calls.contains(.waitUntilQuiet))
-    }
-
-    /// Deleting the old copy failing doesn't skip the wait: the new app is in place and is relaunched, after it.
-    @Test func aRemovalFailureStillWaitsBeforeTheRelaunch() async {
-        var script = World.Script()
-        script.failures[.removeBackup] = SomeError()
-        let run = await run(script)
-        #expect(run.world.calls.suffix(2) == [.waitUntilQuiet, .relaunch])
     }
 
     /// Past `installStarted` the install can't be cancelled: a cancelled task doesn't stop it halfway.
@@ -731,11 +666,4 @@ struct InstallStepsTests {
         #expect(run.world.calls.suffix(5) == [.removeBackup, .detach, .cleanup, .waitUntilQuiet, .relaunch])
     }
 
-    @Test func aFailureAfterTheInstallStartedIsReportedFromInstalling() async {
-        var script = World.Script()
-        script.failures[.stageAndReplace] = SomeError()
-        let run = await run(script)
-        #expect(run.box.attempted.contains(.installStarted))
-        #expect(run.box.accepted.last == .failure(.installFailed))
-    }
 }

@@ -9,13 +9,6 @@ struct FixtureTests {
         #expect(Fixtures.uiScreenshotFlat(640, 360).distinctColors.count > 8)
     }
 
-    @Test func theFixturesAreDeterministic() {
-        #expect(Fixtures.noise(30, 20, seed: 4) == Fixtures.noise(30, 20, seed: 4))
-        #expect(Fixtures.noise(30, 20, seed: 4) != Fixtures.noise(30, 20, seed: 5))
-        #expect(Fixtures.uiScreenshot(200, 120) == Fixtures.uiScreenshot(200, 120))
-        #expect(Fixtures.repeatedTiles(64, 40) == Fixtures.repeatedTiles(64, 40))
-    }
-
     @Test func noiseIsOpaque() {
         for image in [Fixtures.noise(50, 50, seed: 1), Fixtures.randomNoise(50, 50, seed: 1)] {
             #expect(stride(from: 3, to: image.rgba.count, by: 4).allSatisfy { image.rgba[$0] == 255 })

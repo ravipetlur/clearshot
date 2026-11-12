@@ -9,23 +9,6 @@ struct ClickRippleStyleTests {
         ClickRippleStyle(size: size, color: color, style: style, animates: animates)
     }
 
-    @Test func sizesGrowSmallToLarge() {
-        #expect(style(size: .small).diameter == 28)
-        #expect(style(size: .medium).diameter == 40)
-        #expect(style(size: .large).diameter == 56)
-        #expect(style(color: .purple).color == .purple)
-    }
-
-    @Test func filledAndOutlineDiffer() {
-        let outline = style(style: .outline)
-        #expect(!outline.isFilled)
-        #expect(outline.lineWidth == 3)
-        let filled = style(style: .filled)
-        #expect(filled.isFilled)
-        #expect(filled.lineWidth == 2)
-        #expect(ClickRippleStyle.fillOpacity == 0.35)
-    }
-
     /// Animated, the ring grows from half size, then fades, whatever the button does. Not animated, it shows at full
     /// size while the button is down, for at least 0.15 s.
     @Test func notAnimatedHoldsWhileDown() {

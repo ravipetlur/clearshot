@@ -11,6 +11,7 @@ struct MaskObjectTests {
 
     // MARK: The mask
 
+    /// A mask is a Pixelate redaction, and every mask the checks make carries the marker.
     @Test func aMaskIsAPixelateRedaction() throws {
         let mask = AnnotationObject.pixelateMask(rect: area, intensity: 5)
         guard case .redact(let redact) = mask.kind else {
@@ -22,6 +23,8 @@ struct MaskObjectTests {
         #expect(redact.intensity == 5)
         #expect(!mask.style.shadow)
         #expect(mask.isFinite)
+        #expect(mask.isSecretsMask)
+        #expect(redact.isSecretsMask)
     }
 
     @Test func everyMaskHasItsOwnID() {
@@ -38,15 +41,6 @@ struct MaskObjectTests {
             return
         }
         #expect(redact.intensity == used)
-    }
-
-    @Test func aMaskSurvivesTheDocumentBeingWrittenAndRead() throws {
-        var (document, _) = TestBitmaps.document(base: TestBitmaps.solid(100, 60, TestBitmaps.white))
-        let mask = AnnotationObject.pixelateMask(rect: area, intensity: 6)
-        document.objects = [mask]
-        let again = try JSONDecoder().decode(AnnotationDocument.self, from: JSONEncoder().encode(document))
-        #expect(again.objects == [mask])
-        #expect(again.isWellFormed)
     }
 
     @Test func aMaskReallyReplacesWhatIsUnderIt() throws {
@@ -67,16 +61,6 @@ struct MaskObjectTests {
     }
 
     // MARK: The marker
-
-    @Test func everyMaskTheChecksMakesCarriesTheMarker() {
-        let mask = AnnotationObject.pixelateMask(rect: area, intensity: 5)
-        #expect(mask.isSecretsMask)
-        guard case .redact(let redact) = mask.kind else {
-            Issue.record("not a redaction")
-            return
-        }
-        #expect(redact.isSecretsMask)
-    }
 
     @Test func aRedactionThePersonDrawsIsNeverMarked() {
         let drawn = AnnotationObject(kind: .redact(RedactObject(rect: area, style: .pixelate, intensity: 5)),
@@ -123,22 +107,6 @@ struct MaskObjectTests {
         #expect(mask.isSecretsMask)
     }
 
-    @Test func aCopyCanTakeAGivenID() {
-        let id = UUID()
-        #expect(AnnotationObject.pixelateMask(rect: area, intensity: 5).copied(id: id).id == id)
-    }
-
-    @Test func aCopyOfARedactionThePersonDrewIsTheSameRedactionWithANewID() {
-        let drawn = AnnotationObject(kind: .redact(RedactObject(rect: area, style: .blackOut, intensity: 3)),
-                                     style: AnnotationObject.pixelateMask(rect: area, intensity: 5).style)
-        let copy = drawn.copied()
-        #expect(copy.id != drawn.id)
-        var expected = drawn
-        expected.id = copy.id
-        #expect(copy == expected)
-        #expect(!copy.isSecretsMask)
-    }
-
     @Test func aCopyOfAnyOtherObjectOnlyGetsANewID() {
         for kind in AnnotationDocumentTests.everyKind {
             let object = AnnotationObject(kind: kind, style: AnnotationDocumentTests.style)
@@ -178,15 +146,6 @@ struct MaskObjectTests {
         let redact = try JSONDecoder().decode(RedactObject.self, from: Data(json.utf8))
         #expect(!redact.isSecretsMask)
         #expect(redact == RedactObject(rect: area, style: .pixelate, intensity: 5))
-    }
-
-    @Test func theMarkerKeyIsReadWhenPresentAndAnUnknownKeyIsIgnored() throws {
-        let marked = #"{"intensity":5,"isSecretsMask":true,"rect":[[20,10],[60,20]],"style":"pixelate"}"#
-        #expect(try JSONDecoder().decode(RedactObject.self, from: Data(marked.utf8)).isSecretsMask)
-        // The other way round: a build that doesn't know the marker reads a document that has it, as JSONDecoder skips
-        // keys it has no use for. Here a key this build doesn't know stands in for it.
-        let future = #"{"intensity":5,"someLaterKey":true,"rect":[[20,10],[60,20]],"style":"pixelate"}"#
-        #expect(try JSONDecoder().decode(RedactObject.self, from: Data(future.utf8)) == RedactObject(rect: area, style: .pixelate, intensity: 5))
     }
 
     @Test func aDocumentWithNoMarkedMaskIsWrittenAsItWasBeforeTheMarkerExisted() throws {

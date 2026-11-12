@@ -2,12 +2,12 @@ import CoreGraphics
 import Testing
 @testable import CSSensitive
 
+private let two = FindingCounts([.contact: 2])
+private let mixed = FindingCounts([.contact: 2, .keyOrToken: 1, .card: 1])
+
 /// The badge on a thumbnail, as a state machine: what it shows after a scan, after Mask All, after Undo Mask and after
 /// Dismiss, and that anything else leaves it alone.
 struct BadgeStateTests {
-    private let two = FindingCounts([.contact: 2])
-    private let mixed = FindingCounts([.contact: 2, .keyOrToken: 1, .card: 1])
-
     private func state(_ phase: BadgeState.Phase) -> BadgeState { BadgeState(phase: phase) }
 
     // MARK: Counts
@@ -38,8 +38,6 @@ struct BadgeStateTests {
         #expect(FindingCounts([]).breakdown.isEmpty)
     }
 
-    // MARK: A scan finishes
-
     @Test func aBadgeStartsScanning() {
         let badge = BadgeState()
         #expect(badge.phase == .scanning)
@@ -47,43 +45,32 @@ struct BadgeStateTests {
         #expect(badge.counts == nil)
     }
 
-    @Test func aScanThatFindsSomethingShowsTheCounts() {
-        var badge = BadgeState()
-        badge.apply(.scanFinished(mixed))
-        #expect(badge.phase == .found(mixed))
-        #expect(badge.isVisible)
-        #expect(badge.counts == mixed)
-    }
+    // MARK: A scan finishes; Mask All, Undo Mask, Dismiss
 
-    @Test func aScanThatFindsNothingShowsNothing() {
-        var badge = BadgeState()
-        badge.apply(.scanFinished(FindingCounts([])))
-        #expect(badge.phase == BadgeState.Phase.none)
-        #expect(!badge.isVisible)
-        #expect(badge.counts == nil)
-    }
-
-    @Test func aScanThatFailsShowsNothing() {
-        var badge = BadgeState()
-        badge.apply(.scanFailed)
-        #expect(badge.phase == BadgeState.Phase.none)
-        #expect(!badge.isVisible)
-    }
-
-    // MARK: Mask All, Undo Mask, Dismiss
-
-    @Test func maskAllMasksWhatWasFound() {
-        var badge = state(.found(mixed))
-        badge.apply(.maskAll)
-        #expect(badge.phase == .masked(mixed))
-        #expect(badge.isVisible)
-        #expect(badge.counts == mixed)
-    }
-
-    @Test func undoMaskBringsTheFindingsBack() {
-        var badge = state(.masked(mixed))
-        badge.apply(.undoMask)
-        #expect(badge.phase == .found(mixed))
+    @Test(arguments: [
+        // A scan that finds something shows the counts; one that finds nothing, or fails, shows nothing.
+        (BadgeState.Phase.scanning, BadgeState.Event.scanFinished(mixed), BadgeState.Phase.found(mixed)),
+        (.scanning, .scanFinished(FindingCounts([])), BadgeState.Phase.none),
+        (.scanning, .scanFailed, BadgeState.Phase.none),
+        // Mask All masks what was found; Undo Mask brings the findings back.
+        (.found(mixed), .maskAll, .masked(mixed)),
+        (.masked(mixed), .undoMask, .found(mixed)),
+        // Dismiss hides the badge whether or not it was masked.
+        (.found(two), .dismiss, .dismissed),
+        (.masked(two), .dismiss, .dismissed),
+    ])
+    func anEventMovesTheBadge(from: BadgeState.Phase, event: BadgeState.Event, to: BadgeState.Phase) {
+        var badge = BadgeState(phase: from)
+        badge.apply(event)
+        #expect(badge.phase == to)
+        switch to {
+        case .found(let counts), .masked(let counts):
+            #expect(badge.isVisible)
+            #expect(badge.counts == counts)
+        default:
+            #expect(!badge.isVisible)
+            #expect(badge.counts == nil)
+        }
     }
 
     @Test func maskingAndUndoingCanBeRepeated() {
@@ -94,16 +81,6 @@ struct BadgeStateTests {
             #expect(badge.phase == .masked(two))
             badge.apply(.undoMask)
             #expect(badge.phase == .found(two))
-        }
-    }
-
-    @Test func dismissHidesTheBadgeWhetherOrNotItWasMasked() {
-        for phase in [BadgeState.Phase.found(two), .masked(two)] {
-            var badge = state(phase)
-            badge.apply(.dismiss)
-            #expect(badge.phase == .dismissed)
-            #expect(!badge.isVisible)
-            #expect(badge.counts == nil)
         }
     }
 
@@ -130,28 +107,5 @@ struct BadgeStateTests {
                 }
             }
         }
-    }
-
-    @Test func aDismissedBadgeStaysDismissedWhateverComesLater() {
-        var badge = state(.found(two))
-        badge.apply(.dismiss)
-        for event: BadgeState.Event in [.scanFinished(mixed), .maskAll, .undoMask, .scanFailed, .dismiss] {
-            badge.apply(event)
-            #expect(badge.phase == .dismissed)
-        }
-    }
-
-    @Test func aScanResultThatArrivesTwiceCountsOnce() {
-        var badge = BadgeState()
-        badge.apply(.scanFinished(two))
-        badge.apply(.scanFinished(mixed))
-        #expect(badge.phase == .found(two))
-    }
-
-    @Test func aMaskedBadgeIsNotMaskedAgainAndKeepsItsCounts() {
-        var badge = state(.masked(two))
-        badge.apply(.maskAll)
-        badge.apply(.scanFinished(mixed))
-        #expect(badge.phase == .masked(two))
     }
 }

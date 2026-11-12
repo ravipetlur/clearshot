@@ -128,23 +128,12 @@ struct SecretRedactionTests {
         ("mysql://root:9#xY7!q@localhost", "9#xY7!q"),
         ("DATABASE_URL=postgres://app:123?abc@postgres:5432/app", "123?abc"),
         ("amqp://guest:1234#@rabbit:5672", "1234#"),
+        ("postgres://admin:2024#Winter@db.example.com/app", "2024#Winter"),
     ])
     func aPasswordThatStartsLikeAPortIsMaskedWhole(line: String, password: String) {
         #expect(found(line, .keysAndTokens) == [Found(.keyOrToken, password)])
         #expect(readable(password, in: line, .keysAndTokens) == "", "\(masked(line, .keysAndTokens))")
         #expect(readable(password, in: line) == "", "\(masked(line))")
-    }
-
-    @Test func aPasswordWithADottedHostThatStartsLikeAPortIsMaskedWhole() {
-        let line = "postgres://admin:2024#Winter@db.example.com/app"
-        #expect(readable("2024#Winter", in: line, .keysAndTokens) == "")
-        #expect(readable("2024#Winter", in: line) == "")
-    }
-
-    @Test func anAddressAfterAPortIsMaskedWholeWithContactDetailsAlone() {
-        let line = "http://localhost:3000?email=jane@example.com"
-        #expect(readable("jane@example.com", in: line, .contact) == "", "\(masked(line, .contact))")
-        #expect(readable("jane@example.com", in: line) == "", "\(masked(line))")
     }
 
     @Test func aPasswordAndAnAddressInTheQueryAfterItAreBothMasked() {
@@ -155,46 +144,33 @@ struct SecretRedactionTests {
         #expect(readable("jane@example.com", in: line) == "", "\(masked(line))")
     }
 
-    @Test func anAddressForAUserNameAndThePasswordAfterItAreBothMasked() {
-        let line = "smtp://jane@example.com:mailpass@localhost"
-        #expect(readable("mailpass", in: line, .keysAndTokens) == "")
-        #expect(readable("mailpass", in: line) == "")
-        #expect(readable("jane@example.com", in: line) == "")
-    }
-
     // MARK: A value with an & in it
 
-    @Test func anAmpersandInAnUnquotedValueIsPartOfTheValue() {
-        #expect(masked("set password: Tr0ub4dor&3 now") == "set password: ▓ now")
-        #expect(masked("set password: P&ssw0rd now") == "set password: ▓ now")
-        #expect(masked("set token=a&b&c now") == "set token=▓ now")
-    }
-
-    @Test func anAmpersandAtTheStartOfALineValueIsPartOfTheValue() {
-        #expect(masked("password: Tr0ub4dor&3") == "password: ▓")
-        #expect(masked("password: P&ssw0rd") == "password: ▓")
-    }
-
-    @Test func anAmpersandThatStartsAQueryFieldEndsTheValue() {
-        #expect(masked("curl -d password=abc&user=bob now") == "curl -d password=▓&user=bob now")
-        #expect(masked("x password=Pq9&ssw0rd=y z") == "x password=▓&ssw0rd=y z")
-    }
-
-    @Test func inAQueryStringTheAmpersandEndsTheValue() {
-        #expect(masked("https://example.com/r?token=hunter2&next=/home") == "https://example.com/r?token=▓&next=/home")
-        #expect(masked("https://example.com/r?a=1&password=abc&cd&x=1") == "https://example.com/r?a=1&password=▓&cd&x=1")
-        #expect(masked("https://example.com/r?client_secret=abcd&ef") == "https://example.com/r?client_secret=▓&ef")
+    @Test(arguments: [
+        // In an unquoted value, an ampersand is part of the value, in the middle of a line or at its start.
+        ("set password: Tr0ub4dor&3 now", "set password: ▓ now"),
+        ("set password: P&ssw0rd now", "set password: ▓ now"),
+        ("set token=a&b&c now", "set token=▓ now"),
+        ("password: Tr0ub4dor&3", "password: ▓"),
+        ("password: P&ssw0rd", "password: ▓"),
+        // One that starts a query field ends the value.
+        ("curl -d password=abc&user=bob now", "curl -d password=▓&user=bob now"),
+        ("x password=Pq9&ssw0rd=y z", "x password=▓&ssw0rd=y z"),
+        // In a query string the ampersand ends the value.
+        ("https://example.com/r?token=hunter2&next=/home", "https://example.com/r?token=▓&next=/home"),
+        ("https://example.com/r?a=1&password=abc&cd&x=1", "https://example.com/r?a=1&password=▓&cd&x=1"),
+        ("https://example.com/r?client_secret=abcd&ef", "https://example.com/r?client_secret=▓&ef"),
+    ])
+    func anAmpersandIsPartOfAValueUnlessItStartsAQueryField(line: String, left: String) {
+        #expect(masked(line) == left)
     }
 
     // MARK: A value of several words
 
-    @Test func aPassphraseRunsToTheEndOfTheLine() {
+    @Test func aPassphraseRunsToTheEndOfTheLineWhereverTheLabelIs() {
         #expect(masked("passphrase: correct horse battery staple") == "passphrase: ▓")
         #expect(masked("ssh_passphrase = correct horse battery staple") == "ssh_passphrase = ▓")
         #expect(found("passphrase: correct horse battery staple") == [Found(.keyOrToken, "correct horse battery staple")])
-    }
-
-    @Test func aPassphraseRunsToTheEndOfTheLineWhereverTheLabelIs() {
         #expect(masked("my passphrase: correct horse battery staple") == "my passphrase: ▓")
         #expect(masked("enter passphrase=correct horse battery staple.") == "enter passphrase=▓")
     }
@@ -236,18 +212,16 @@ struct SecretRedactionTests {
         #expect(found("password: ******** (hidden)") == [])
     }
 
-    @Test func aLineValueIsMaskedForItsFirst1024Characters() throws {
-        let value = String(repeating: "word ", count: 400)
-        let line = "password: " + value
+    /// A line value, and a token's value, are masked for their first 1024 characters, from the value's first.
+    @Test(arguments: [
+        ("password: ", String(repeating: "word ", count: 400)),
+        ("set token=", String(repeating: "a", count: 1500)),
+    ])
+    func aValueIsMaskedForItsFirst1024Characters(label: String, value: String) throws {
+        let line = label + value
         let finding = try #require(SensitiveDetector.findings(in: line, kinds: .all).first)
         #expect(line[finding.range].count == 1024)
-        #expect(line[finding.range].first == "w")
-    }
-
-    @Test func aTokenValueIsMaskedForItsFirst1024Characters() throws {
-        let line = "set token=" + String(repeating: "a", count: 1500)
-        let finding = try #require(SensitiveDetector.findings(in: line, kinds: .all).first)
-        #expect(line[finding.range].count == 1024)
+        #expect(line[finding.range].first == value.first)
     }
 
     // MARK: A quoted value with a quote in it
@@ -328,9 +302,7 @@ struct SecretRedactionTests {
         #expect(masked("smtp://jane@example.com:mailpass@localhost", .keysAndTokens) == "smtp://jane@example.com:▓@localhost")
         #expect(masked("smtp://jane@example.com:mailpass@localhost") == "smtp://▓:▓@localhost")
         #expect(found("smtp://jane@example.com:mailpass@localhost", .keysAndTokens) == [Found(.keyOrToken, "mailpass")])
-    }
-
-    @Test func thePasswordIsSplitFromTheUserAtTheFirstColon() {
+        // The password is split from the user at the first colon.
         #expect(masked("postgres://admin:P@ssw0rd!@db.example.com", .keysAndTokens) == "postgres://admin:▓@db.example.com")
         #expect(masked("mongodb://user:p@ss:w@rd@host.example.com", .keysAndTokens) == "mongodb://user:▓@host.example.com")
         #expect(masked("x://a@b.test:p@ss@host.test", .keysAndTokens) == "x://a@b.test:▓@host.test")

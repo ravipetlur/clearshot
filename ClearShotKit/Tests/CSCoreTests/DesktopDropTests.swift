@@ -16,112 +16,72 @@ struct DesktopDropTests {
 
     // MARK: Move or copy
 
-    @Test func sameVolumeMoves() {
-        #expect(operation() == .move)
-    }
-
-    @Test func otherVolumeCopies() {
-        #expect(operation(sameVolume: false) == .copy)
-    }
-
-    @Test func optionCopiesOnTheSameVolume() {
-        #expect(operation(optionHeld: true) == .copy)
-    }
-
-    @Test func aSourceThatOnlyAllowsCopyIsCopied() {
-        #expect(operation(allowsMove: false) == .copy)
-        // And the other way round: a source that only allows a move is moved, even across volumes.
-        #expect(operation(sameVolume: false, allowsCopy: false) == .move)
-    }
-
-    @Test func aSourceThatAllowsNeitherIsRefused() {
-        #expect(operation(allowsMove: false, allowsCopy: false) == nil)
-        #expect(operation(sameVolume: false, optionHeld: true, allowsMove: false, allowsCopy: false) == nil)
-    }
-
-    @Test func aFileAlreadyOnTheDesktopIsRefused() {
-        #expect(operation(alreadyThere: true) == nil)
-        #expect(operation(optionHeld: true, alreadyThere: true) == nil)
+    /// The same volume moves and another copies; Option copies on the same volume. A source that allows only one of the
+    /// two gets that one, even across volumes, and one that allows neither is refused, as is a file already on the
+    /// desktop.
+    @Test(arguments: [
+        // (same volume, Option held, allows move, allows copy, already there, operation)
+        (true, false, true, true, false, .move),
+        (false, false, true, true, false, .copy),
+        (true, true, true, true, false, .copy),
+        (true, false, false, true, false, .copy),
+        (false, false, true, false, false, .move),
+        (true, false, false, false, false, nil),
+        (false, true, false, false, false, nil),
+        (true, false, true, true, true, nil),
+        (true, true, true, true, true, nil),
+    ] as [(Bool, Bool, Bool, Bool, Bool, DesktopDrop.Operation?)])
+    func theOperationIsTheOneFinderWouldUse(sameVolume: Bool, optionHeld: Bool, allowsMove: Bool, allowsCopy: Bool,
+                                            alreadyThere: Bool, expected: DesktopDrop.Operation?) {
+        #expect(operation(sameVolume: sameVolume, optionHeld: optionHeld, allowsMove: allowsMove, allowsCopy: allowsCopy,
+                          alreadyThere: alreadyThere) == expected)
     }
 
     // MARK: Names
 
-    @Test func aFreeNameIsKept() {
-        #expect(name("Shot.png", taken: ["Other.png"]) == "Shot.png")
-    }
-
-    @Test func aClashGetsTwo() {
-        #expect(name("Shot.png", taken: ["Shot.png"]) == "Shot 2.png")
-    }
-
-    @Test func aClashWithTwoTakenGetsThree() {
-        #expect(name("Shot.png", taken: ["Shot.png", "Shot 2.png"]) == "Shot 3.png")
-    }
-
-    @Test func aNameEndingInANumberCountsOn() {
-        #expect(name("Shot 2.png", taken: ["Shot 2.png"]) == "Shot 3.png")
-        // 1 isn't a copy number, and neither is a zero-padded counter.
-        #expect(name("Shot 1.png", taken: ["Shot 1.png"]) == "Shot 1 2.png")
-        #expect(name("IMG 007.png", taken: ["IMG 007.png"]) == "IMG 007 2.png")
-    }
-
-    @Test func aYearIsNotACounter() {
-        #expect(name("Report 2024.pdf", taken: ["Report 2024.pdf"]) == "Report 2024 2.pdf")
-    }
-
-    @Test func aLargeNumberIsNotACounter() {
-        #expect(name("IMG 1234.png", taken: ["IMG 1234.png"]) == "IMG 1234 2.png")
-    }
-
-    @Test func ninetyNineStillCountsOn() {
-        #expect(name("Shot 99.png", taken: ["Shot 99.png"]) == "Shot 100.png")
-    }
-
-    @Test func aHundredIsNotACounter() {
-        #expect(name("Shot 100.png", taken: ["Shot 100.png"]) == "Shot 100 2.png")
-    }
-
-    @Test func clashesIgnoreCase() {
-        #expect(name("Shot.png", taken: ["shot.PNG"]) == "Shot 2.png")
-        #expect(name("Shot.png", taken: ["shot.PNG", "SHOT 2.png"]) == "Shot 3.png")
-    }
-
-    @Test func aFolderKeepsItsDots() {
-        #expect(name("My.Folder", splitsExtension: false, taken: ["My.Folder"]) == "My.Folder 2")
-    }
-
-    @Test func aDotFileHasNoExtension() {
-        #expect(name(".zshrc", taken: [".zshrc"]) == ".zshrc 2")
-    }
-
-    @Test func onlyTheLastExtensionIsSplit() {
-        #expect(name("a.tar.gz", taken: ["a.tar.gz"]) == "a.tar 2.gz")
+    /// A free name is kept; a clash counts on from 2. A trailing number from 2 to 99 is a copy number and counts on;
+    /// 1, a zero-padded counter, a year or any number from 100 is part of the name. Clashes ignore case, a folder keeps
+    /// its dots, a dot file has no extension, and only the last extension is split off.
+    @Test(arguments: [
+        ("Shot.png", true, ["Other.png"], "Shot.png"),
+        ("Shot.png", true, ["Shot.png"], "Shot 2.png"),
+        ("Shot.png", true, ["Shot.png", "Shot 2.png"], "Shot 3.png"),
+        ("Shot 2.png", true, ["Shot 2.png"], "Shot 3.png"),
+        ("Shot 1.png", true, ["Shot 1.png"], "Shot 1 2.png"),
+        ("IMG 007.png", true, ["IMG 007.png"], "IMG 007 2.png"),
+        ("Report 2024.pdf", true, ["Report 2024.pdf"], "Report 2024 2.pdf"),
+        ("IMG 1234.png", true, ["IMG 1234.png"], "IMG 1234 2.png"),
+        ("Shot 99.png", true, ["Shot 99.png"], "Shot 100.png"),
+        ("Shot 100.png", true, ["Shot 100.png"], "Shot 100 2.png"),
+        ("Shot.png", true, ["shot.PNG"], "Shot 2.png"),
+        ("Shot.png", true, ["shot.PNG", "SHOT 2.png"], "Shot 3.png"),
+        ("My.Folder", false, ["My.Folder"], "My.Folder 2"),
+        (".zshrc", true, [".zshrc"], ".zshrc 2"),
+        ("a.tar.gz", true, ["a.tar.gz"], "a.tar 2.gz"),
+    ] as [(String, Bool, Set<String>, String)])
+    func theNameIsFreeOrCountsOn(original: String, splitsExtension: Bool, taken: Set<String>, expected: String) {
+        #expect(name(original, splitsExtension: splitsExtension, taken: taken) == expected)
     }
 
     // MARK: Files kept back
 
-    @Test func oneKeptFileIsNamedWithTheReason() {
-        let text = DesktopDrop.undeliveredAlert(names: ["IMG_1.heic"], reason: "You don't have permission.",
-                                                inUndeliveredDrops: true)
-        #expect(text.message == "Couldn't put “IMG_1.heic” on the Desktop")
-        #expect(text.detail == "You don't have permission. It's kept in ClearShot's Undelivered Drops folder.")
-    }
-
-    @Test func severalKeptFilesAreTheFiles() {
-        let text = DesktopDrop.undeliveredAlert(names: ["IMG_1.heic", "IMG_2.heic"], reason: "The disk is full.",
-                                                inUndeliveredDrops: true)
-        #expect(text.message == "Couldn't put the files on the Desktop")
-        #expect(text.detail == "The disk is full. They're kept in ClearShot's Undelivered Drops folder.")
-    }
-
-    @Test func aFileLeftInTheTemporaryFolderSaysSo() {
-        // Only when it couldn't be moved into Undelivered Drops either; macOS empties that folder on its own.
-        let reason = "The disk is full."
-        let one = DesktopDrop.undeliveredAlert(names: ["IMG_1.heic"], reason: reason, inUndeliveredDrops: false)
-        #expect(one.detail == "\(reason) It's in a temporary folder that macOS empties after a few days.")
-        let several = DesktopDrop.undeliveredAlert(names: ["IMG_1.heic", "IMG_2.heic"], reason: reason,
-                                                   inUndeliveredDrops: false)
-        #expect(several.detail == "\(reason) They're in a temporary folder that macOS empties after a few days.")
+    /// One kept file is named, several are "the files"; the detail gives the reason, then where they are: Undelivered
+    /// Drops, or, only when they couldn't be moved there either, a temporary folder macOS empties on its own.
+    @Test(arguments: [
+        (["IMG_1.heic"], "You don't have permission.", true, "Couldn't put “IMG_1.heic” on the Desktop",
+         "You don't have permission. It's kept in ClearShot's Undelivered Drops folder."),
+        (["IMG_1.heic", "IMG_2.heic"], "The disk is full.", true, "Couldn't put the files on the Desktop",
+         "The disk is full. They're kept in ClearShot's Undelivered Drops folder."),
+        (["IMG_1.heic"], "The disk is full.", false, "Couldn't put “IMG_1.heic” on the Desktop",
+         "The disk is full. It's in a temporary folder that macOS empties after a few days."),
+        (["IMG_1.heic", "IMG_2.heic"], "The disk is full.", false, "Couldn't put the files on the Desktop",
+         "The disk is full. They're in a temporary folder that macOS empties after a few days."),
+    ] as [([String], String, Bool, String, String)])
+    func theAlertSaysWhatWasKeptAndWhere(names: [String], reason: String, inUndeliveredDrops: Bool, message: String,
+                                         detail: String) {
+        let text = DesktopDrop.undeliveredAlert(names: names, reason: reason, inUndeliveredDrops: inUndeliveredDrops)
+        #expect(text.message == message)
+        #expect(text.detail == detail)
     }
 
     // MARK: Copying in

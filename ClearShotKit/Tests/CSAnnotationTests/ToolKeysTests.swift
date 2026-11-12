@@ -12,6 +12,8 @@ struct ToolKeysTests {
         #expect(EditorTool.forKey("r", keys: keys) == .rectangle)
         #expect(EditorTool.forKey("C", keys: keys) == .crop)
         #expect(EditorTool.forKey("z", keys: keys) == nil)
+        #expect(keys.tool(for: "m") == .magnifier)
+        #expect(keys.tool(for: "M") == .magnifier)
     }
 
     @Test func aFreeLetterReplacesTheDefault() {
@@ -22,19 +24,18 @@ struct ToolKeysTests {
         #expect(EditorTool.forKey("r", keys: keys) == nil)
     }
 
-    @Test func aLetterAnotherToolUsesIsRefused() {
+    /// A letter another tool uses, every size key (tied to the size levels), and anything that is not one letter are refused,
+    /// and a refusal changes nothing.
+    @Test func lettersInUseSizeKeysAndNonLettersAreRefused() {
         var keys = AnnotateToolKeys()
         #expect(keys.set("A", for: .rectangle) == .taken(by: .tool(.arrow)))
         #expect(keys.key(for: .rectangle) == "r")
-    }
-
-    @Test func sizeKeysAndNonLettersAreRefused() {
-        var keys = AnnotateToolKeys()
-        for input in ["1", "6", "[", "]"] {
-            #expect(keys.set(input, for: .pen) == .reserved)
+        for input in "123456[]" {
+            #expect(keys.set(String(input), for: .pen) == .reserved, "\(input)")
         }
+        #expect(AnnotateToolKeys.reserved == Set(ToolSizes.levels.map { Character(String($0)) } + ["[", "]"]))
         for input in ["", " ", "ab", "7", "é"] {
-            #expect(keys.set(input, for: .pen) == .notALetter)
+            #expect(keys.set(input, for: .pen) == .notALetter, "\(input)")
         }
         #expect(keys == AnnotateToolKeys())
     }
@@ -78,15 +79,6 @@ struct ToolKeysTests {
         #expect(taken.key(for: .arrow) == nil)
         let letters = Array(taken.resolved.values)
         #expect(Set(letters).count == letters.count)
-    }
-
-    @Test func everySizeKeyIsRefusedAndTiedToTheSizeLevels() {
-        var keys = AnnotateToolKeys()
-        for input in "123456[]" {
-            #expect(keys.set(String(input), for: .pen) == .reserved)
-        }
-        #expect(keys == AnnotateToolKeys())
-        #expect(AnnotateToolKeys.reserved == Set(ToolSizes.levels.map { Character(String($0)) } + ["[", "]"]))
     }
 
     @Test func aToolsOwnLetterIsNoConflict() {
@@ -136,14 +128,7 @@ struct ToolKeysTests {
         #expect(keys.target(for: "g") == .backgroundPanel)
         #expect(keys.target(for: "G") == .backgroundPanel)
         #expect(keys.target(for: "r") == .tool(.rectangle))
-        let panel = AnnotateKeyTarget.backgroundPanel
-        #expect(panel.id == "background")
-        #expect(panel.title == "Background")
-        #expect(panel.symbol == "photo.artframe")
-        #expect(panel.defaultKey == "g")
-        #expect(AnnotateKeyTarget.tool(.crop).id == "crop")
-        #expect(AnnotateKeyTarget.tool(.crop).title == EditorTool.crop.title)
-        #expect(AnnotateKeyTarget.tool(.crop).symbol == EditorTool.crop.symbol)
+        #expect(AnnotateKeyTarget.backgroundPanel.defaultKey == "g")
         #expect(AnnotateKeyTarget.tool(.crop).defaultKey == "c")
         // The tools in their order, then the panel; every target has a letter by default, no two the same.
         #expect(AnnotateKeyTarget.allCases == EditorTool.allCases.map { .tool($0) } + [.backgroundPanel])

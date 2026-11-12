@@ -47,7 +47,11 @@ struct IPAddressDetectionTests {
         #expect(addresses("host \(address) up") == [])
     }
 
-    @Test(arguments: ["128.0.0.1", "126.255.255.255", "192.0.1.5", "192.0.3.5", "198.51.99.7", "198.51.101.7", "203.0.112.9", "203.0.114.9", "0.0.0.1", "255.255.255.0"])
+    @Test(arguments: [
+        "128.0.0.1", "126.255.255.255", "192.0.1.5", "192.0.3.5", "198.51.99.7", "198.51.101.7", "203.0.112.9", "203.0.114.9", "0.0.0.1", "255.255.255.0",
+        // The neighbours of the IPv6 documentation prefix.
+        "2001:db9::1", "2001:db7::1", "2002:db8::1",
+    ])
     func addressesBesideTheExcludedRangesAreFound(address: String) {
         #expect(addresses("host \(address) up") == [address])
     }
@@ -85,12 +89,6 @@ struct IPAddressDetectionTests {
     ])
     func anExcludedIPv6AddressIsNotFound(address: String) {
         #expect(addresses("host \(address) up") == [])
-    }
-
-    @Test func theNeighboursOfTheDocumentationPrefixAreFound() {
-        #expect(addresses("2001:db9::1") == ["2001:db9::1"])
-        #expect(addresses("2001:db7::1") == ["2001:db7::1"])
-        #expect(addresses("2002:db8::1") == ["2002:db8::1"])
     }
 
     @Test(arguments: [

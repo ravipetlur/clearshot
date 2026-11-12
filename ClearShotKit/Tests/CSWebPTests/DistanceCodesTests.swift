@@ -19,6 +19,14 @@ struct DistanceCodesTests {
         }
         #expect(map.filter { $0.y == 0 }.count == 8)
         #expect((1...7).allSatisfy { row in map.filter { $0.y == row }.count == 16 })
+        // The RFC's own words: "distance code 1 ... the pixel above" and "code 3 the top-left pixel" (section
+        // 3.6.2.2.1), and the two ends.
+        #expect(map[0] == (x: 0, y: 1))
+        #expect(map[1] == (x: 1, y: 0))
+        #expect(map[2] == (x: 1, y: 1))
+        #expect(map[3] == (x: -1, y: 1))
+        #expect(map[118] == (x: 8, y: 6))
+        #expect(map[119] == (x: 8, y: 7))
     }
 
     @Test func theEncodersMapIsTheRFCsMapInTheRFCsOrder() {
@@ -27,16 +35,6 @@ struct DistanceCodesTests {
             let entry = DistanceCodes.neighbourhood[index]
             #expect(entry.x == expected.x && entry.y == expected.y, "code \(index + 1)")
         }
-    }
-
-    @Test func theMapMatchesTheRFCsWorkedWords() {
-        // "distance code 1 ... the pixel above" and "code 3 the top-left pixel" (section 3.6.2.2.1), and the two ends.
-        #expect(DistanceCodes.neighbourhood[0] == (x: 0, y: 1))
-        #expect(DistanceCodes.neighbourhood[1] == (x: 1, y: 0))
-        #expect(DistanceCodes.neighbourhood[2] == (x: 1, y: 1))
-        #expect(DistanceCodes.neighbourhood[3] == (x: -1, y: 1))
-        #expect(DistanceCodes.neighbourhood[119] == (x: 8, y: 7))
-        #expect(DistanceCodes.neighbourhood[118] == (x: 8, y: 6))
     }
 
     // MARK: Decoding

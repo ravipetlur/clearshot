@@ -16,42 +16,20 @@ struct ClipboardWriterTests {
         NSPasteboard(name: NSPasteboard.Name("test.clearshot.pasteboard.\(UUID().uuidString)"))
     }
 
-    @Test func fileAndImageWritesBoth() {
+    /// Each mode writes one item with the image, the file, or both. File only without a file falls back to the image.
+    @Test(arguments: [
+        (ClipboardMode.fileAndImage, true, true, true),
+        (.imageOnly, true, true, false),
+        (.fileOnly, true, false, true),
+        (.fileOnly, false, true, false),
+    ])
+    func eachModeWritesWhatItNames(mode: ClipboardMode, withFile: Bool, image: Bool, fileURL: Bool) {
         let board = pasteboard()
-        #expect(ClipboardWriter.write(pngData: png, fileURL: file, mode: .fileAndImage, to: board))
+        #expect(ClipboardWriter.write(pngData: png, fileURL: withFile ? file : nil, mode: mode, to: board))
         let types = board.types ?? []
-        #expect(board.data(forType: .png) == png)
-        #expect(types.contains(.fileURL))
-        #expect(board.pasteboardItems?.count == 1)
-        board.releaseGlobally()
-    }
-
-    @Test func imageOnlyLeavesTheFileOut() {
-        let board = pasteboard()
-        #expect(ClipboardWriter.write(pngData: png, fileURL: file, mode: .imageOnly, to: board))
-        let types = board.types ?? []
-        #expect(types.contains(.png))
-        #expect(!types.contains(.fileURL))
-        #expect(board.pasteboardItems?.count == 1)
-        board.releaseGlobally()
-    }
-
-    @Test func fileOnlyLeavesTheImageOut() {
-        let board = pasteboard()
-        #expect(ClipboardWriter.write(pngData: png, fileURL: file, mode: .fileOnly, to: board))
-        let types = board.types ?? []
-        #expect(types.contains(.fileURL))
-        #expect(!types.contains(.png))
-        #expect(board.pasteboardItems?.count == 1)
-        board.releaseGlobally()
-    }
-
-    @Test func fileOnlyWithoutAFileFallsBackToTheImage() {
-        let board = pasteboard()
-        #expect(ClipboardWriter.write(pngData: png, fileURL: nil, mode: .fileOnly, to: board))
-        let types = board.types ?? []
-        #expect(types.contains(.png))
-        #expect(!types.contains(.fileURL))
+        #expect(types.contains(.png) == image)
+        if image { #expect(board.data(forType: .png) == png) }
+        #expect(types.contains(.fileURL) == fileURL)
         #expect(board.pasteboardItems?.count == 1)
         board.releaseGlobally()
     }

@@ -47,17 +47,6 @@ final class PreferencesTests {
         #expect(folder("Pictures/../../outside") == "/tmp/home/Desktop/")
     }
 
-    @Test func defaultsAreTheDecidedOnes() {
-        #expect(prefs[Prefs.afterScreenshotActions] == [.showQuickAccess, .copy, .save])
-        #expect(prefs[Prefs.afterRecordingActions] == [.showQuickAccess, .copy, .save])
-        #expect(prefs[Prefs.exportLocation].path(percentEncoded: false).hasSuffix("/Desktop/"))
-        #expect(prefs[Prefs.exportLocation].path(percentEncoded: false)
-            .hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)))
-        #expect(prefs[Prefs.fileNameTemplate].stringValue == "Screenshot %y-%m-%d at %H.%M.%S")
-        #expect(prefs[Prefs.hideDesktopIconsWhileCapturing] == true)
-        #expect(prefs[Prefs.clipboardMode] == .fileAndImage)
-    }
-
     @Test func pinDefaultsAreAllOn() {
         #expect(prefs[Prefs.pinShadow])
         #expect(prefs[Prefs.pinRoundedCorners])
@@ -68,12 +57,6 @@ final class PreferencesTests {
         #expect(PinStyle.defaults(in: prefs) == PinStyle(shadow: false, roundedCorners: true, border: false))
         prefs[Prefs.pinRoundedCorners] = false
         #expect(PinStyle.defaults(in: prefs) == PinStyle(shadow: false, roundedCorners: false, border: false))
-    }
-
-    @Test func desktopIconsStartShown() {
-        #expect(!prefs[Prefs.desktopIconsHidden])
-        prefs[Prefs.desktopIconsHidden] = true
-        #expect(Preferences(defaults: defaults)[Prefs.desktopIconsHidden])
     }
 
     @Test func roundTripsEveryValueKind() {

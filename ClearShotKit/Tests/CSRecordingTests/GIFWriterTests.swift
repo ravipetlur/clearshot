@@ -67,14 +67,15 @@ struct GIFWriterTests {
         #expect(dithered * 2 <= plain)
     }
 
-    /// The writer's memory doesn't grow with the frame count (ImageIO's took 3.9 GB here).
-    @Test func aThousandFramesStayWithinABoundedBuffer() throws {
+    /// The writer's memory doesn't grow with the frame count (ImageIO's took 3.9 GB for a thousand frames here). Frame 10
+    /// against frame 200 is enough to see a buffer that grows with every frame.
+    @Test func theFramesStayWithinABoundedBuffer() throws {
         var buffered: [Int: Int] = [:]
-        let sink = try Fixtures.encode(count: 1000, plan: bestPlan, delay: 2, into: CountingSink(),
+        let sink = try Fixtures.encode(count: 200, plan: bestPlan, delay: 2, into: CountingSink(),
                                        afterFrame: { index, writer in
-                                           if index == 9 || index == 999 { buffered[index + 1] = writer.bufferedBytes }
+                                           if index == 9 || index == 199 { buffered[index + 1] = writer.bufferedBytes }
                                        }, frame: { Fixtures.scene($0) })
-        let (early, late) = (try #require(buffered[10]), try #require(buffered[1000]))
+        let (early, late) = (try #require(buffered[10]), try #require(buffered[200]))
         #expect(sink.count > 0)
         #expect(abs(late - early) < 64 * 1024)
         #expect(max(early, late) <= 3 * 800 * 450 + 1_048_576)

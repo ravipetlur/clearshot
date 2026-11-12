@@ -25,52 +25,34 @@ private func choice(window: Bool, shift: Bool, screenshot: BackgroundPreset? = n
 }
 
 struct AutoApplyTests {
-    @Test func anAreaWithAPresetGetsIt() {
-        #expect(choice(window: false, shift: false, screenshot: screenshotPreset) == .preset(screenshotPreset.style))
-    }
-
-    @Test func shiftSkipsAnAreasPreset() {
-        #expect(choice(window: false, shift: true, screenshot: screenshotPreset) == .none)
-    }
-
-    @Test func anAreaWithoutAPresetGetsNothingEvenWithShift() {
-        #expect(choice(window: false, shift: true) == .none)
-        #expect(choice(window: false, shift: false) == .none)
-    }
-
-    @Test func aWindowWithAPresetGetsIt() {
-        #expect(choice(window: true, shift: false, windowPreset: windowPreset, mode: .transparent) == .preset(windowPreset.style))
-        #expect(choice(window: true, shift: false, windowPreset: windowPreset, mode: .wallpaper) == .preset(windowPreset.style))
-    }
-
-    @Test func shiftSkipsAWindowPresetForTheWallpaperSettingAsItIs() {
-        #expect(choice(window: true, shift: true, windowPreset: windowPreset, mode: .wallpaper) == .windowWallpaper)
-    }
-
-    @Test func shiftSkipsAWindowPresetForTheTransparentSettingAsItIs() {
-        #expect(choice(window: true, shift: true, windowPreset: windowPreset, mode: .transparent) == .none)
-    }
-
-    @Test func withoutAWindowPresetShiftTurnsTransparentIntoWallpaper() {
-        #expect(choice(window: true, shift: true, mode: .transparent) == .windowWallpaper)
-    }
-
-    @Test func withoutAWindowPresetShiftTurnsWallpaperIntoTransparent() {
-        #expect(choice(window: true, shift: true, mode: .wallpaper) == .none)
-    }
-
-    @Test func aTransparentWindowWithoutAPresetGetsNothing() {
-        #expect(choice(window: true, shift: false, mode: .transparent) == .none)
-    }
-
-    @Test func aWallpaperWindowWithoutAPresetGetsTheWallpaper() {
-        #expect(choice(window: true, shift: false, mode: .wallpaper) == .windowWallpaper)
-    }
-
-    @Test func aWindowIgnoresTheScreenshotPreset() {
-        #expect(choice(window: true, shift: false, screenshot: screenshotPreset, mode: .transparent) == .none)
-        #expect(choice(window: true, shift: false, screenshot: screenshotPreset, mode: .wallpaper) == .windowWallpaper)
-        #expect(choice(window: true, shift: true, screenshot: screenshotPreset, mode: .transparent) == .windowWallpaper)
+    /// The auto-apply table. An area gets its preset unless Shift is held, and nothing without one. A window gets its preset
+    /// in either window mode; Shift skips it for the window setting as it is, and without a preset Shift swaps transparent and
+    /// wallpaper. A window ignores the screenshot preset.
+    @Test func theAutoApplyTable() {
+        let rows: [(choice: CaptureBackgroundChoice, expected: CaptureBackgroundChoice)] = [
+            // An area.
+            (choice(window: false, shift: false, screenshot: screenshotPreset), .preset(screenshotPreset.style)),
+            (choice(window: false, shift: true, screenshot: screenshotPreset), .none),
+            (choice(window: false, shift: true), .none),
+            (choice(window: false, shift: false), .none),
+            // A window with a preset.
+            (choice(window: true, shift: false, windowPreset: windowPreset, mode: .transparent), .preset(windowPreset.style)),
+            (choice(window: true, shift: false, windowPreset: windowPreset, mode: .wallpaper), .preset(windowPreset.style)),
+            (choice(window: true, shift: true, windowPreset: windowPreset, mode: .wallpaper), .windowWallpaper),
+            (choice(window: true, shift: true, windowPreset: windowPreset, mode: .transparent), .none),
+            // A window without one.
+            (choice(window: true, shift: true, mode: .transparent), .windowWallpaper),
+            (choice(window: true, shift: true, mode: .wallpaper), .none),
+            (choice(window: true, shift: false, mode: .transparent), .none),
+            (choice(window: true, shift: false, mode: .wallpaper), .windowWallpaper),
+            // A window with only the screenshot preset.
+            (choice(window: true, shift: false, screenshot: screenshotPreset, mode: .transparent), .none),
+            (choice(window: true, shift: false, screenshot: screenshotPreset, mode: .wallpaper), .windowWallpaper),
+            (choice(window: true, shift: true, screenshot: screenshotPreset, mode: .transparent), .windowWallpaper),
+        ]
+        for (index, row) in rows.enumerated() {
+            #expect(row.choice == row.expected, "row \(index)")
+        }
     }
 
     @MainActor @Test func presetsResolveIDs() {
@@ -178,7 +160,7 @@ final class CaptureDocumentTests {
             $0.padding = 10
         }
         let (document, images, _) = try made(TestBitmaps.solid(100, 60, TestBitmaps.blue), asked,
-                                             picture: TestBitmaps.solid(6000, 4000, TestBitmaps.red))
+                                             picture: TestBitmaps.solid(600, 400, TestBitmaps.red))
         let frame = try #require(document.backgroundLayout()?.frame.size)
         #expect(frame == CGSize(width: 120, height: 80))
         let ref = try #require(document.background?.image)

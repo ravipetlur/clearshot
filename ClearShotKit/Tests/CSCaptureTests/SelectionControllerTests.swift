@@ -96,127 +96,113 @@ struct SelectionControllerTests {
         #expect(controller.phase == .cancelled)
     }
 
-    @Test func setRectEntersAdjusting() {
-        var controller = SelectionController(bounds: main, confirmsOnMouseUp: false)
-        controller.setRect(CGRect(x: 900, y: 700, width: 400, height: 400))
-        #expect(controller.phase == .adjusting)
-        #expect(controller.rect == CGRect(x: 900, y: 700, width: 100, height: 100))
-    }
-
     // MARK: setRect validation
 
-    @Test func setRectReportsThatItWasApplied() {
+    @Test func setRectEntersAdjustingAndReportsThatItWasApplied() {
         var controller = SelectionController(bounds: main, confirmsOnMouseUp: false)
         let first = controller.setRect(CGRect(x: 900, y: 700, width: 400, height: 400))
         #expect(first)
+        #expect(controller.phase == .adjusting)
+        #expect(controller.rect == CGRect(x: 900, y: 700, width: 100, height: 100))
         // Adjusting can be re-seeded with another valid rect.
         let second = controller.setRect(CGRect(x: 10, y: 20, width: 30, height: 40))
         #expect(second)
         #expect(controller.phase == .adjusting)
         #expect(controller.rect == CGRect(x: 10, y: 20, width: 30, height: 40))
-    }
-
-    @Test func setRectOutsideTheBoundsIsRejected() {
-        var controller = SelectionController(bounds: main)
-        let outside = controller.setRect(CGRect(x: 2000, y: 2000, width: 100, height: 100))
-        #expect(!outside)
-        #expect(controller.phase == .idle)
-        #expect(controller.rect == .zero)
-        // Touching an edge leaves a zero-width intersection, which is no selection either.
-        let touching = controller.setRect(CGRect(x: 1000, y: 100, width: 50, height: 50))
-        #expect(!touching)
-        #expect(controller.phase == .idle)
-        #expect(controller.rect == .zero)
-    }
-
-    @Test func setRectBelowTheMinimumSizeIsRejected() {
-        var controller = SelectionController(bounds: main)
-        let tiny = controller.setRect(CGRect(x: 10, y: 10, width: 2, height: 2))
-        #expect(!tiny)
-        #expect(controller.phase == .idle)
-        #expect(controller.rect == .zero)
-        // Clipping to the display counts: only 2 pt of this rect are on screen.
-        let clipped = controller.setRect(CGRect(x: 998, y: 100, width: 100, height: 100))
-        #expect(!clipped)
-        #expect(controller.phase == .idle)
-        #expect(controller.rect == .zero)
-        // Exactly the minimum is allowed.
-        let minimum = controller.setRect(CGRect(x: 10, y: 10, width: 4, height: 4))
+        // Exactly the minimum size is allowed.
+        var fresh = SelectionController(bounds: main)
+        let minimum = fresh.setRect(CGRect(x: 10, y: 10, width: 4, height: 4))
         #expect(minimum)
-        #expect(controller.phase == .adjusting)
+        #expect(fresh.phase == .adjusting)
     }
 
-    @Test func aRejectedSetRectKeepsTheCurrentAdjustingSelection() {
-        var controller = SelectionController(bounds: main, confirmsOnMouseUp: false)
-        controller.setRect(CGRect(x: 100, y: 100, width: 200, height: 200))
-        let rejected = controller.setRect(CGRect(x: 5000, y: 5000, width: 100, height: 100))
-        #expect(!rejected)
-        #expect(controller.phase == .adjusting)
-        #expect(controller.rect == CGRect(x: 100, y: 100, width: 200, height: 200))
-    }
-
-    @Test func setRectCannotReviveACancelledOrConfirmedSelection() {
-        var cancelled = SelectionController(bounds: main)
-        cancelled.cancel()
-        let revived = cancelled.setRect(CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(!revived)
-        #expect(cancelled.phase == .cancelled)
-
-        var confirmed = SelectionController(bounds: main)
-        drag(&confirmed, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 200))
-        #expect(confirmed.phase == .done)
-        let reopened = confirmed.setRect(CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(!reopened)
-        #expect(confirmed.phase == .done)
-        #expect(confirmed.rect == CGRect(x: 100, y: 100, width: 100, height: 100))
-    }
-
-    @Test func setRectIsIgnoredWhileTheMouseIsDown() {
-        var dragging = SelectionController(bounds: main)
-        dragging.mouseDown(at: CGPoint(x: 100, y: 100))
-        dragging.mouseDragged(to: CGPoint(x: 200, y: 200), modifiers: [])
-        let whileDragging = dragging.setRect(CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(!whileDragging)
-        #expect(dragging.phase == .dragging)
-        #expect(dragging.rect == CGRect(x: 100, y: 100, width: 100, height: 100))
-
-        dragging.spaceDown(at: CGPoint(x: 200, y: 200))
-        let whileMoving = dragging.setRect(CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(!whileMoving)
-        #expect(dragging.phase == .moving)
+    /// A rejected rect reports so and leaves the phase and the selection as they were.
+    @Test func setRectIsRejectedOffTheDisplayBelowTheMinimumAndOutsideIdleOrAdjusting() {
+        struct Row {
+            let name: String
+            let make: (SelectionControllerTests) -> SelectionController
+            let rect: CGRect
+            let phase: SelectionController.Phase
+            /// The selection afterwards, when it is checked.
+            let keeps: CGRect?
+        }
+        let idle: (SelectionControllerTests) -> SelectionController = { SelectionController(bounds: $0.main) }
+        let rows: [Row] = [
+            Row(name: "outside the bounds", make: idle, rect: CGRect(x: 2000, y: 2000, width: 100, height: 100),
+                phase: .idle, keeps: .zero),
+            // Touching an edge leaves a zero-width intersection, which is no selection either.
+            Row(name: "touching an edge", make: idle, rect: CGRect(x: 1000, y: 100, width: 50, height: 50),
+                phase: .idle, keeps: .zero),
+            Row(name: "below the minimum size", make: idle, rect: CGRect(x: 10, y: 10, width: 2, height: 2),
+                phase: .idle, keeps: .zero),
+            // Clipping to the display counts: only 2 pt of this rect are on screen.
+            Row(name: "below the minimum once clipped", make: idle, rect: CGRect(x: 998, y: 100, width: 100, height: 100),
+                phase: .idle, keeps: .zero),
+            Row(name: "outside, while adjusting", make: {
+                var controller = SelectionController(bounds: $0.main, confirmsOnMouseUp: false)
+                controller.setRect(CGRect(x: 100, y: 100, width: 200, height: 200))
+                return controller
+            }, rect: CGRect(x: 5000, y: 5000, width: 100, height: 100), phase: .adjusting,
+                keeps: CGRect(x: 100, y: 100, width: 200, height: 200)),
+            // A cancelled or confirmed selection can't be revived.
+            Row(name: "cancelled", make: {
+                var controller = SelectionController(bounds: $0.main)
+                controller.cancel()
+                return controller
+            }, rect: CGRect(x: 10, y: 10, width: 100, height: 100), phase: .cancelled, keeps: nil),
+            Row(name: "confirmed", make: {
+                var controller = SelectionController(bounds: $0.main)
+                $0.drag(&controller, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 200))
+                return controller
+            }, rect: CGRect(x: 10, y: 10, width: 100, height: 100), phase: .done,
+                keeps: CGRect(x: 100, y: 100, width: 100, height: 100)),
+            // Ignored while the mouse is down.
+            Row(name: "while dragging", make: {
+                var controller = SelectionController(bounds: $0.main)
+                controller.mouseDown(at: CGPoint(x: 100, y: 100))
+                controller.mouseDragged(to: CGPoint(x: 200, y: 200), modifiers: [])
+                return controller
+            }, rect: CGRect(x: 10, y: 10, width: 100, height: 100), phase: .dragging,
+                keeps: CGRect(x: 100, y: 100, width: 100, height: 100)),
+            Row(name: "while moving", make: {
+                var controller = SelectionController(bounds: $0.main)
+                controller.mouseDown(at: CGPoint(x: 100, y: 100))
+                controller.mouseDragged(to: CGPoint(x: 200, y: 200), modifiers: [])
+                controller.spaceDown(at: CGPoint(x: 200, y: 200))
+                return controller
+            }, rect: CGRect(x: 10, y: 10, width: 100, height: 100), phase: .moving, keeps: nil),
+        ]
+        for row in rows {
+            var controller = row.make(self)
+            #expect(controller.phase == row.phase, "\(row.name): set up")
+            let applied = controller.setRect(row.rect)
+            #expect(!applied, "\(row.name)")
+            #expect(controller.phase == row.phase, "\(row.name)")
+            if let keeps = row.keeps { #expect(controller.rect == keeps, "\(row.name)") }
+        }
     }
 
     // MARK: ⇧ and ⌥ at the display edge
 
-    @Test func shiftStaysSquareAtTheDisplayEdge() {
-        var controller = SelectionController(bounds: main)
-        drag(&controller, from: CGPoint(x: 900, y: 100), to: CGPoint(x: 1000, y: 300), modifiers: .shift)
-        #expect(controller.rect == CGRect(x: 900, y: 100, width: 100, height: 100))
-    }
-
-    @Test func shiftStaysSquareWhenDraggingTowardTheLowerEdgesAndPastTheDisplay() {
-        var controller = SelectionController(bounds: main)
-        drag(&controller, from: CGPoint(x: 100, y: 100), to: CGPoint(x: -50, y: 300), modifiers: .shift)
-        #expect(controller.rect == CGRect(x: 0, y: 100, width: 100, height: 100))
-        var beyond = SelectionController(bounds: main)
-        drag(&beyond, from: CGPoint(x: 900, y: 700), to: CGPoint(x: 3000, y: 900), modifiers: .shift)
-        #expect(beyond.rect == CGRect(x: 900, y: 700, width: 100, height: 100))
-    }
-
-    @Test func optionStaysCenteredAtTheDisplayEdge() {
-        var controller = SelectionController(bounds: main)
-        drag(&controller, from: CGPoint(x: 50, y: 400), to: CGPoint(x: 150, y: 450), modifiers: .option)
-        #expect(controller.rect == CGRect(x: 0, y: 350, width: 100, height: 100))
-    }
-
-    @Test func shiftAndOptionGiveASquareAroundTheAnchorAtTheDisplayEdge() {
-        var controller = SelectionController(bounds: main)
-        drag(&controller, from: CGPoint(x: 50, y: 400), to: CGPoint(x: 200, y: 420), modifiers: [.shift, .option])
-        #expect(controller.rect == CGRect(x: 0, y: 350, width: 100, height: 100))
-        // Away from every edge the square is simply the larger side, centered on the anchor.
-        var open = SelectionController(bounds: main)
-        drag(&open, from: CGPoint(x: 500, y: 400), to: CGPoint(x: 540, y: 460), modifiers: [.shift, .option])
-        #expect(open.rect == CGRect(x: 440, y: 340, width: 120, height: 120))
+    /// ⇧ stays square and ⌥ stays centred at the display edge; together they give a square around the anchor, which
+    /// away from every edge is simply the larger side.
+    @Test func shiftAndOptionHoldAtTheDisplayEdge() {
+        let rows: [(from: CGPoint, to: CGPoint, modifiers: SelectionModifiers, rect: CGRect)] = [
+            (CGPoint(x: 900, y: 100), CGPoint(x: 1000, y: 300), .shift, CGRect(x: 900, y: 100, width: 100, height: 100)),
+            // Toward the lower edges, and past the display.
+            (CGPoint(x: 100, y: 100), CGPoint(x: -50, y: 300), .shift, CGRect(x: 0, y: 100, width: 100, height: 100)),
+            (CGPoint(x: 900, y: 700), CGPoint(x: 3000, y: 900), .shift, CGRect(x: 900, y: 700, width: 100, height: 100)),
+            (CGPoint(x: 50, y: 400), CGPoint(x: 150, y: 450), .option, CGRect(x: 0, y: 350, width: 100, height: 100)),
+            (CGPoint(x: 50, y: 400), CGPoint(x: 200, y: 420), [.shift, .option],
+             CGRect(x: 0, y: 350, width: 100, height: 100)),
+            (CGPoint(x: 500, y: 400), CGPoint(x: 540, y: 460), [.shift, .option],
+             CGRect(x: 440, y: 340, width: 120, height: 120)),
+        ]
+        for row in rows {
+            var controller = SelectionController(bounds: main)
+            drag(&controller, from: row.from, to: row.to, modifiers: row.modifiers)
+            #expect(controller.rect == row.rect, "\(row.from) to \(row.to), \(row.modifiers)")
+        }
     }
 
     // MARK: The modifiers the drag began with (the ⇧ that skips the background preset)

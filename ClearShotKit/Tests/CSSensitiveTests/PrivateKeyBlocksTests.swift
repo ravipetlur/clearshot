@@ -78,18 +78,13 @@ struct PrivateKeyBlocksTests {
         return "\"private_key\": \"" + header + escape + lines.joined(separator: escape) + escape + end + escape + "\","
     }
 
+    /// Wrapped at any width, the key is one block to its last line, and the prose below it is left alone.
     @Test(arguments: Array(24...120))
-    func aKeyWrappedAtAnyWidthIsOneBlockToItsLastLine(width: Int) throws {
+    func aKeyWrappedAtAnyWidthIsOneBlockToItsLastLineAndLeavesTheProseBelowAlone(width: Int) throws {
         let key = TextWrapping.words(of: jsonKey, width: width)
-        let lines = key + prose
         let first = try #require(key.firstIndex { $0.contains("BEGIN") })
         let lastOfHeader = try #require(key.firstIndex { $0.contains("KEY-----") })
-        #expect(blocks(lines) == [block(first...lastOfHeader, key.count - 1)], "width \(width): \(key)")
-    }
-
-    @Test(arguments: Array(24...120))
-    func aKeyWrappedAtAnyWidthLeavesTheProseBelowAlone(width: Int) {
-        let key = TextWrapping.words(of: jsonKey, width: width)
+        #expect(blocks(key + prose) == [block(first...lastOfHeader, key.count - 1)], "width \(width): \(key)")
         let result = blocks(key + prose + key + prose)
         #expect(result.count == 2, "width \(width)")
         #expect(result.allSatisfy { $0.last < key.count + prose.count + key.count }, "width \(width)")

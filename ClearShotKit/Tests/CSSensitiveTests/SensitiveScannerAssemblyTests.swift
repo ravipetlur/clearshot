@@ -662,13 +662,6 @@ struct SensitiveScannerAssemblyTests {
         #expect(found.count == 3 && found.allSatisfy { !$0.spansLines }, "\(found)")
     }
 
-    @Test func aKeyWrappedByTheScreenIsMarkedAsOverSeveralLines() async throws {
-        let json = "\"private_key\": \"" + Fake.privateKeyBegin() + escape + (1...4).map { Fake.privateKeyBody(64, line: $0) }.joined(separator: escape)
-            + escape + Fake.privateKeyEnd() + escape + "\","
-        let lines = TextWrapping.chunks(of: json, width: 38).enumerated().map { index, text in line(text, y: 200 + CGFloat(index) * 40) }
-        #expect(try only(try await scan(lines)).spansLines)
-    }
-
     @Test func bodyLinesWithoutAHeaderAreNotFindings() async throws {
         #expect(try await scan(keyLines(header: false)).isEmpty)
     }
@@ -701,6 +694,7 @@ struct SensitiveScannerAssemblyTests {
         #expect(finding.rect == ([first, second] + rest + [end]).map(\.box).reduce(CGRect.null) { $0.union($1) })
     }
 
+    /// One finding, marked as over several lines.
     @Test func aKeyWrappedByTheScreenIsOneFindingOverEveryLine() async throws {
         let json = "\"private_key\": \"" + Fake.privateKeyBegin() + escape + (1...4).map { Fake.privateKeyBody(64, line: $0) }.joined(separator: escape)
             + escape + Fake.privateKeyEnd() + escape + "\","
@@ -712,6 +706,7 @@ struct SensitiveScannerAssemblyTests {
         let finding = try only(try await scan(lines + [below]))
 
         #expect(finding.kind == .keyOrToken)
+        #expect(finding.spansLines)
         // Through the line that completes the END marker; the `\n",` that closes the string after it holds nothing of the key.
         let last = try #require(pieces.lastIndex { $0.contains("KEY-----") })
         let keyBox = lines[0...last].map(\.box).reduce(CGRect.null) { $0.union($1) }

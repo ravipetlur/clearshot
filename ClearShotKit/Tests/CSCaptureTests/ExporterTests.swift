@@ -167,11 +167,13 @@ struct ExporterTests {
         }
     }
 
-    @Test func writeCopyReplacesTheFileAtAnExactURL() throws {
+    /// At an exact URL, the copy replaces a file that is there or makes one that isn't, and leaves nothing beside it.
+    @Test(arguments: [true, false])
+    func writeCopyWritesTheFileAtAnExactURL(replacing: Bool) throws {
         let source = try mediaFile()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appending(path: "chosen.mp4")
-        try Data("older".utf8).write(to: url)
+        if replacing { try Data("older".utf8).write(to: url) }
         try Exporter.writeCopy(of: source, to: url)
         #expect(try Data(contentsOf: url) == Data(contentsOf: source))
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) == ["chosen.mp4"])
@@ -189,15 +191,6 @@ struct ExporterTests {
         }
         #expect(try Data(contentsOf: url) == Data("older".utf8))
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) == ["chosen.mp4"])
-    }
-
-    @Test func writeCopyMakesAFileThatDidntExist() throws {
-        let source = try mediaFile()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appending(path: "new.mp4")
-        try Exporter.writeCopy(of: source, to: url)
-        #expect(try Data(contentsOf: url) == Data(contentsOf: source))
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) == ["new.mp4"])
     }
 
     /// The density of the file at `url`, as ImageIO reads it.

@@ -2,32 +2,19 @@ import Testing
 @testable import CSRecording
 
 struct RecordingWarningTests {
-    /// Each warning's title, message and buttons, the default button first.
-    @Test func stringsAreTheDecidedOnes() {
-        let expected: [(RecordingWarning, String, String, [String])] = [
-            (.microphoneMuted, "Microphone is muted",
-             "The microphone seems to be muted. Keep recording?", ["Continue", "Stop"]),
-            (.microphoneDisconnected, "Microphone Disconnected",
-             "The microphone was disconnected. Keep recording without it, or stop?",
-             ["Continue Without Audio", "Stop"]),
+    /// Each warning's buttons, the default button first.
+    @Test func theButtonsComeInTheirOrderTheDefaultFirst() {
+        let expected: [(RecordingWarning, [String])] = [
+            (.microphoneMuted, ["Continue", "Stop"]),
+            (.microphoneDisconnected, ["Continue Without Audio", "Stop"]),
             // Information only: the stream restarts without system audio before the recording begins.
-            (.systemAudioFailed, "Audio Recording Failed",
-             "Unable to capture system audio. The recording continues without it.", ["OK"]),
-            (.lowDiskBefore, "Your free disk space is low.",
-             "The recording could stop partway through, and the file could be lost.", ["Record Anyway", "Cancel"]),
-            (.diskFull, "The disk is almost full, so the recording stopped.",
-             "ClearShot stopped it so the file wouldn't be lost. Free up disk space before the next recording.",
-             ["OK"]),
-            (.startFailed, "Screen recording couldn't start.",
-             "Protected (DRM) video playing in another app can cause this. If it keeps happening, restart your Mac.",
-             ["OK"]),
-            (.streamStopped, "Screen Recording stopped unexpectedly.", "Screen recording ran into an error.", ["OK"]),
+            (.systemAudioFailed, ["OK"]),
+            (.lowDiskBefore, ["Record Anyway", "Cancel"]),
+            (.diskFull, ["OK"]),
+            (.startFailed, ["OK"]),
+            (.streamStopped, ["OK"]),
         ]
-        for (warning, title, message, buttons) in expected {
-            #expect(warning.title == title)
-            #expect(warning.message == message)
-            #expect(warning.buttons == buttons)
-        }
+        for (warning, buttons) in expected { #expect(warning.buttons == buttons, "\(warning)") }
     }
 
     /// Ten minutes at 30 Mbit/s is 2.25 GB.

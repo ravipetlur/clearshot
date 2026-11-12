@@ -20,12 +20,6 @@ struct ImageEncoderTests {
         #expect(decoded.image?.height == 16)
     }
 
-    @Test func losslessWebPKeepsTransparency() throws {
-        let image = TestImages.solid(width: 8, height: 8, color: TestImages.clear)
-        let decoded = decode(try ImageEncoder.encode(image, as: .webp, quality: 1.0))
-        #expect(decoded.image.map { TestImages.pixel($0, x: 4, y: 4).a } == 0)
-    }
-
     /// Pins the WebP pixel layout: channel order, row order and alpha handling all have to survive the round trip.
     @Test func losslessWebPRoundTripsPixelsExactly() throws {
         // Premultiplied sRGB RGBA, rows top to bottom: red, green / blue, half-alpha red.

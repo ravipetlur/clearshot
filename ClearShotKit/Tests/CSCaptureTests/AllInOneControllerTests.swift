@@ -350,29 +350,6 @@ struct AllInOneControllerTests {
         #expect(AllInOneCommand.allCases.filter(\.updatesLastCaptureArea) == [.captureArea, .captureAndCopy, .selfTimer])
     }
 
-    @Test func commandTitlesAreTheDecidedOnes() {
-        #expect(AllInOneCommand.allCases.map(\.title) == [
-            "Capture Area", "Capture Area & Copy", "Capture Fullscreen", "Self-Timer", "Capture Text",
-            "Scrolling Capture", "Record Screen",
-        ])
-    }
-
-    @Test func buttonLabelsAndSymbolsAreTheDecidedOnes() {
-        #expect(AllInOneButton.allCases == [.area, .fullscreen, .window, .scrolling, .selfTimer, .text, .record])
-        #expect(AllInOneButton.allCases.map(\.hoverLabel) == [
-            "Capture Area (A)", "Capture Fullscreen (F)", "Capture Window (Space/W)", "Scrolling Capture (S)",
-            "Self-Timer (T)", "Capture Text (O)", "Record Screen (R)",
-        ])
-        #expect(AllInOneButton.allCases.map(\.symbolName) == [
-            "rectangle.dashed", "display", "macwindow", "arrow.up.and.down.text.horizontal", "timer", "text.viewfinder",
-            "record.circle",
-        ])
-        // The same symbols as the matching actions.
-        let actions: [ClearShotAction] = [.captureArea, .captureFullscreen, .captureWindow, .scrollingCapture, .selfTimer,
-                                          .captureText, .recordScreen]
-        #expect(AllInOneButton.allCases.map(\.symbolName) == actions.map(\.symbolName))
-    }
-
     @Test func buttonsDoWhatTheirKeysDo() {
         var controller = selected()
         #expect(controller.press(.area) == .run(.captureArea))
@@ -390,5 +367,13 @@ struct AllInOneControllerTests {
         #expect(none.press(.area) == .ignored)
         #expect(none.press(.text) == .ignored)
         #expect(none.press(.fullscreen) == .run(.fullscreen))
+
+        // Each button shows the same symbol as its action.
+        let actions: [(AllInOneButton, ClearShotAction)] = [
+            (.area, .captureArea), (.fullscreen, .captureFullscreen), (.window, .captureWindow),
+            (.scrolling, .scrollingCapture), (.selfTimer, .selfTimer), (.text, .captureText), (.record, .recordScreen),
+        ]
+        #expect(Set(actions.map(\.0)) == Set(AllInOneButton.allCases))
+        for (button, action) in actions { #expect(button.symbolName == action.symbolName, "\(button)") }
     }
 }

@@ -4,99 +4,80 @@ import Testing
 
 /// A capture is never lost. It ends up saved, shown (a thumbnail, the editor or a pin), or copied.
 struct AfterCapturePlanTests {
-    @Test func aShownThumbnailKeepsTheCaptureSoNothingIsCopied() {
-        let plan = AfterCapturePlan(actions: [.showQuickAccess])
-        #expect(plan.showsQuickAccess)
-        #expect(plan.showsThumbnail)
-        #expect(!plan.saves)
-        #expect(plan.copy(saved: false, shown: true) == .none)
+    /// What a set of actions plans to do. A nil is not checked for that row.
+    @Test func theActionsMakeThePlan() {
+        struct Row {
+            let actions: Set<AfterCaptureAction>
+            var askForName = false
+            var saves: Bool?
+            var defersSave: Bool?
+            var showsQuickAccess: Bool?
+            var showsThumbnail: Bool?
+            var showsCapture: Bool?
+            var opensEditor: Bool?
+            var pins: Bool?
+        }
+        let rows: [Row] = [
+            // A shown thumbnail keeps the capture.
+            Row(actions: [.showQuickAccess], saves: false, showsQuickAccess: true, showsThumbnail: true,
+                showsCapture: true),
+            // The editor keeps the capture like a thumbnail.
+            Row(actions: [.openEditor], showsThumbnail: false, showsCapture: true, opensEditor: true),
+            // So does a pin.
+            Row(actions: [.pin], saves: false, showsQuickAccess: false, showsThumbnail: false, showsCapture: true,
+                pins: true),
+            Row(actions: [.showQuickAccess, .openEditor], pins: false),
+            Row(actions: [.save], saves: true, showsThumbnail: false, showsCapture: false),
+            Row(actions: [.copy], saves: false),
+            Row(actions: [.copy, .save], saves: true, showsCapture: false),
+            // With nothing that saves, shows or copies the capture, nothing keeps it.
+            Row(actions: [], saves: false, showsThumbnail: false, showsCapture: false),
+            // Ask for name moves the save into the thumbnail.
+            Row(actions: [.save], askForName: true, showsCapture: true),
+            Row(actions: [.save, .copy], askForName: true, saves: false, defersSave: true, showsQuickAccess: false,
+                showsThumbnail: true),
+            // Without a save it changes nothing.
+            Row(actions: [.showQuickAccess, .copy], askForName: true, saves: false, defersSave: false,
+                showsThumbnail: true),
+        ]
+        for row in rows {
+            let plan = AfterCapturePlan(actions: row.actions, askForName: row.askForName)
+            let name = "\(row.actions.map { "\($0)" }.sorted()), ask for name \(row.askForName)"
+            if let saves = row.saves { #expect(plan.saves == saves, "\(name)") }
+            if let defers = row.defersSave { #expect(plan.defersSave == defers, "\(name)") }
+            if let quickAccess = row.showsQuickAccess { #expect(plan.showsQuickAccess == quickAccess, "\(name)") }
+            if let thumbnail = row.showsThumbnail { #expect(plan.showsThumbnail == thumbnail, "\(name)") }
+            if let capture = row.showsCapture { #expect(plan.showsCapture == capture, "\(name)") }
+            if let editor = row.opensEditor { #expect(plan.opensEditor == editor, "\(name)") }
+            if let pins = row.pins { #expect(plan.pins == pins, "\(name)") }
+        }
     }
 
-    @Test func theEditorKeepsTheCaptureLikeAThumbnail() {
-        let plan = AfterCapturePlan(actions: [.openEditor])
-        #expect(plan.opensEditor)
-        #expect(!plan.showsThumbnail)
-        #expect(plan.showsCapture)
-        #expect(plan.copy(saved: false, shown: true) == .none)
-        // An editor that couldn't open (no history item) keeps nothing, so the capture is copied.
-        #expect(plan.copy(saved: false, shown: false) == .fallback)
-    }
-
-    @Test func aPinKeepsTheCaptureSoNothingIsCopied() {
-        let plan = AfterCapturePlan(actions: [.pin])
-        #expect(plan.pins)
-        #expect(plan.showsCapture)
-        #expect(!plan.showsThumbnail)
-        #expect(!plan.saves)
-        #expect(plan.copy(saved: false, shown: true) == .none)
-        // No history item means no pin, so the capture is copied.
-        #expect(plan.copy(saved: false, shown: false) == .fallback)
-    }
-
-    @Test func showsCaptureCountsThumbnailEditorAndPin() {
-        #expect(AfterCapturePlan(actions: [.showQuickAccess]).showsCapture)
-        #expect(AfterCapturePlan(actions: [.save], askForName: true).showsCapture)
-        #expect(AfterCapturePlan(actions: [.openEditor]).showsCapture)
-        #expect(AfterCapturePlan(actions: [.pin]).showsCapture)
-        #expect(!AfterCapturePlan(actions: [.save]).showsCapture)
-        #expect(!AfterCapturePlan(actions: [.copy, .save]).showsCapture)
-        #expect(!AfterCapturePlan(actions: [.pin]).showsQuickAccess)
-        #expect(!AfterCapturePlan(actions: [.showQuickAccess, .openEditor]).pins)
-    }
-
-    @Test func aThumbnailThatCouldntBeShownCopiesAsAFallback() {
-        let plan = AfterCapturePlan(actions: [.showQuickAccess])
-        #expect(plan.copy(saved: false, shown: false) == .fallback)
-    }
-
-    @Test func aSuccessfulSaveNeedsNoCopy() {
-        let plan = AfterCapturePlan(actions: [.save])
-        #expect(plan.saves)
-        #expect(!plan.showsThumbnail)
-        #expect(plan.copy(saved: true, shown: false) == .none)
-    }
-
-    @Test func aFailedSaveWithNoThumbnailCopiesAsAFallback() {
-        let plan = AfterCapturePlan(actions: [.save])
-        #expect(plan.copy(saved: false, shown: false) == .fallback)
-    }
-
-    @Test func copyIsRequestedNotAFallback() {
-        let plan = AfterCapturePlan(actions: [.copy])
-        #expect(!plan.saves)
-        #expect(plan.copy(saved: false, shown: false) == .requested)
-        #expect(plan.copy(saved: false, shown: true) == .requested)
-    }
-
-    @Test func copyAndSaveCopiesAsRequestedWhetherOrNotTheSaveWorked() {
-        let plan = AfterCapturePlan(actions: [.copy, .save])
-        #expect(plan.saves)
-        #expect(plan.copy(saved: true, shown: false) == .requested)
-        #expect(plan.copy(saved: false, shown: false) == .requested)
-    }
-
-    /// With nothing that saves, shows or copies the capture, it is copied so it isn't lost. The editor and a pin both
-    /// keep the capture (`showsCaptureCountsThumbnailEditorAndPin`), so only the empty set is left here.
-    @Test func actionsThatKeepNothingVisibleCopyAsAFallback() {
-        let plan = AfterCapturePlan(actions: [])
-        #expect(!plan.saves)
-        #expect(!plan.showsThumbnail)
-        #expect(!plan.showsCapture)
-        #expect(plan.copy(saved: false, shown: false) == .fallback)
-    }
-
-    @Test func askForNameMovesTheSaveIntoTheThumbnail() {
-        let plan = AfterCapturePlan(actions: [.save, .copy], askForName: true)
-        #expect(!plan.saves)
-        #expect(plan.defersSave)
-        #expect(plan.showsThumbnail)
-        #expect(!plan.showsQuickAccess)
-    }
-
-    @Test func askForNameWithoutSaveChangesNothing() {
-        let plan = AfterCapturePlan(actions: [.showQuickAccess, .copy], askForName: true)
-        #expect(!plan.defersSave)
-        #expect(!plan.saves)
-        #expect(plan.showsThumbnail)
+    /// Whether the capture is copied, given whether the save worked and whether the capture could be shown.
+    @Test func theCaptureIsCopiedWhenAskedOrWhenNothingElseKeepsIt() {
+        let rows: [(actions: Set<AfterCaptureAction>, saved: Bool, shown: Bool, copy: CopyDecision)] = [
+            // A thumbnail, the editor or a pin that was shown keeps the capture, so nothing is copied.
+            ([.showQuickAccess], false, true, .none),
+            ([.openEditor], false, true, .none),
+            ([.pin], false, true, .none),
+            // One that couldn't be shown (for the editor and a pin, no history item) keeps nothing, so it is copied.
+            ([.showQuickAccess], false, false, .fallback),
+            ([.openEditor], false, false, .fallback),
+            ([.pin], false, false, .fallback),
+            // A save that worked needs no copy; one that failed with no thumbnail copies as a fallback.
+            ([.save], true, false, .none),
+            ([.save], false, false, .fallback),
+            // Copy is requested, not a fallback, whether or not the save worked.
+            ([.copy], false, false, .requested),
+            ([.copy], false, true, .requested),
+            ([.copy, .save], true, false, .requested),
+            ([.copy, .save], false, false, .requested),
+            // Nothing that keeps the capture: it is copied so it isn't lost.
+            ([], false, false, .fallback),
+        ]
+        for row in rows {
+            #expect(AfterCapturePlan(actions: row.actions).copy(saved: row.saved, shown: row.shown) == row.copy,
+                    "\(row.actions.map { "\($0)" }.sorted()), saved \(row.saved), shown \(row.shown)")
+        }
     }
 }

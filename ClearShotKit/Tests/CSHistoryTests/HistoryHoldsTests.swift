@@ -80,20 +80,4 @@ final class HistoryHoldsTests {
         #expect(store.item(id: item.id) == nil)
         #expect(!exists(item.folder(in: root)))
     }
-
-    @Test func purgeAndClearNeverRemoveAHeldItem() throws {
-        let store = HistoryStore(root: root)
-        let item = try create(store, age: 40 * 86_400)
-        store.holds.hold(item.id)
-        #expect(store.purge(retention: .oneMonth, now: now) == 0)
-        store.clear(now: now)
-        #expect(store.items.map(\.id) == [item.id])
-        #expect(exists(item.folder(in: root)))
-    }
-
-    @Test func aStoreUsesTheHoldsItIsGiven() {
-        let holds = HistoryHolds()
-        let store = HistoryStore(root: root, holds: holds)
-        #expect(store.holds === holds)
-    }
 }

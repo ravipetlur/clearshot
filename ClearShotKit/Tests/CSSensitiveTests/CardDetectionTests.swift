@@ -18,6 +18,9 @@ struct CardDetectionTests {
     ])
     func aCardNumberThatPassesLuhnIsFound(number: String) {
         #expect(found("card \(number) exp 12/30", .cards) == [Found(.card, number)])
+        // Luhn-passing numbers stay a card as before, whether or not a label or grouping helps.
+        #expect(cards(number) == [number])
+        #expect(cards("order \(number)") == [number])
     }
 
     @Test func allCardLengthsFromThirteenToNineteenAreFound() {
@@ -72,27 +75,26 @@ struct CardDetectionTests {
         #expect(masked("Ref 1004 4111 1111 1111 1111 ok", .cards) == "Ref ▓ ok")
     }
 
-    /// A number that fails Luhn is a card only in a card's grouping or after a card label (below). Written run together
-    /// with nothing before it, or in some other grouping, it isn't.
-    @Test func aNumberThatFailsLuhnWithNoCardGroupingOrLabelIsNotACard() {
-        #expect(!Fake.luhnHolds("4242424242424241") && !Fake.luhnHolds("378282246310006") && !Fake.luhnHolds("424242424242421"))
-        #expect(cards("4242424242424241") == [])
-        #expect(cards("378282246310006") == [])
-        #expect(cards("42424 24242 42421") == [])
-    }
-
-    @Test func aTwelveDigitRunIsNotACard() {
-        #expect(cards("424242424242") == [])
-        #expect(cards("4242 4242 4242") == [])
-    }
-
-    @Test func tooLongARunIsNotACard() {
-        #expect(cards(Fake.cardDigits(prefix: "4", length: 20)) == [])
-    }
-
-    @Test func aRunOfZerosIsNotACard() {
-        #expect(cards("0000 0000 0000 0000") == [])
-        #expect(cards("0000000000000") == [])
+    @Test(arguments: [
+        // A number that fails Luhn is a card only in a card's grouping or after a card label (below). Written run together
+        // with nothing before it, or in some other grouping, it isn't.
+        "4242424242424241", "378282246310006", "42424 24242 42421",
+        // Twelve digits are too few, and twenty too many.
+        "424242424242", "4242 4242 4242", Fake.cardDigits(prefix: "4", length: 20),
+        // A run of zeros.
+        "0000 0000 0000 0000", "0000000000000",
+        // Dates, phone numbers and addresses.
+        "2026-10-09 10:45:12", "202-555-0143", "192.168.1.20", "1,234,567,890,123",
+        // A card grouping needs exactly those groups, not just their total: 14 digits as 4-4-6 is not Diners (4-6-4), and
+        // 15 digits as 5-6-4 is not Amex (4-6-5).
+        "3056 9309 025905", "37828 224631 0006",
+        // A number after a label that has fewer than 13 digits, or more than 19, is not a card.
+        "card 422222222222", "card 4222 2222 2222", "card 42222222222234331234", "Card number: 123456",
+        // Nor is one that is all zeros.
+        "card 0000 0000 0000 0000", "card: 0000000000000000", "visa 0000-0000-0000-0000-000",
+    ])
+    func aNumberThatIsNotACardIsNotFound(text: String) {
+        #expect(cards(text) == [])
     }
 
     @Test func aNumberBeforeTheCardIsNotPartOfIt() {
@@ -126,10 +128,9 @@ struct CardDetectionTests {
         #expect(!CardPatterns.passesLuhn([1]))
         // Doubling an 8 or a 9 gives two digits: 16 and 18 count as 7 and 9.
         #expect(CardPatterns.passesLuhn([8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8]) == Fake.luhnHolds("80000000000000008"))
-    }
-
-    @Test func cardNumbersAreNotReportedWhenCardsAreOff() {
-        #expect(found("4242 4242 4242 4242", [.contact, .keysAndTokens, .ipAddresses]).allSatisfy { $0.kind != .card })
+        // Premises of the numbers that are not cards: they fail Luhn.
+        #expect(!Fake.luhnHolds("4242424242424241") && !Fake.luhnHolds("378282246310006") && !Fake.luhnHolds("424242424242421"))
+        #expect(!Fake.luhnHolds("30569309025905") && !Fake.luhnHolds("378282246310006"))
     }
 
     // MARK: Without the checksum: a card's own grouping, or a card label
@@ -137,13 +138,18 @@ struct CardDetectionTests {
     /// Premise of the tests below: the number fails Luhn, so only the grouping or the label can make it a finding.
     private func failsLuhn(_ digits: String) -> Bool { !Fake.luhnHolds(digits) }
 
-    /// The owner's smoke test: this line was left readable because the sum is 59.
+    /// The owner's smoke test: this line was left readable because the sum is 59. The spec's labels with it.
     @Test func theLineFromTheSmokeTestIsMaskedWhole() {
         #expect(failsLuhn("4222222222223433"))
         #expect(!CardPatterns.passesLuhn([4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 3, 3]))
         #expect(masked("card : 4222 2222 2222 3433", .cards) == "card : ▓")
         #expect(readable("4222 2222 2222 3433", in: "card : 4222 2222 2222 3433", .cards) == "")
         #expect(masked("card : 4222 2222 2222 3433") == "card : ▓")
+        // And the labels from the spec.
+        #expect(masked("Card number: 4222222222223433", .cards) == "Card number: ▓")
+        #expect(masked("CC# 4222 2222 2222 343", .cards) == "CC# ▓")
+        #expect(failsLuhn("4111111111111112") && failsLuhn("422222222222343"))
+        #expect(masked("visa 4111111111111112", .cards) == "visa ▓")
     }
 
     @Test(arguments: [
@@ -179,15 +185,6 @@ struct CardDetectionTests {
         #expect(failsLuhn(number.filter(\.isNumber)), "\(number) passes Luhn")
         #expect(cards(number) == [])
         #expect(masked("ref \(number)", .cards) == "ref \(number)")
-    }
-
-    @Test func aCardGroupingNeedsExactlyThoseGroupsNotJustTheirTotal() {
-        // 14 digits as 4-6-4 is Diners; as 4-4-6 it is not.
-        #expect(failsLuhn("30569309025905"))
-        #expect(cards("3056 9309 025905") == [])
-        // 15 digits as 4-6-5 is Amex; as 5-6-4 it is not.
-        #expect(failsLuhn("378282246310006"))
-        #expect(cards("37828 224631 0006") == [])
     }
 
     @Test(arguments: [
@@ -230,27 +227,6 @@ struct CardDetectionTests {
         #expect(failsLuhn(number.filter(\.isNumber)), "\(number) passes Luhn")
         #expect(masked("card \(number)", .cards) == "card ▓", "\(number)")
         #expect(masked("CC# \(number) exp 12/30", .cards) == "CC# ▓ exp 12/30", "\(number)")
-    }
-
-    @Test func theLabelsFromTheSmokeTestAndTheSpecAreMasked() {
-        #expect(masked("Card number: 4222222222223433", .cards) == "Card number: ▓")
-        #expect(masked("CC# 4222 2222 2222 343", .cards) == "CC# ▓")
-        #expect(failsLuhn("4111111111111112") && failsLuhn("422222222222343"))
-        #expect(masked("visa 4111111111111112", .cards) == "visa ▓")
-    }
-
-    /// A number after a label that has fewer than 13 digits, or more than 19, is not a card.
-    @Test func aLabelledRunOutsideThirteenToNineteenDigitsIsNotACard() {
-        #expect(cards("card 422222222222") == [])
-        #expect(cards("card 4222 2222 2222") == [])
-        #expect(cards("card 42222222222234331234") == [])
-        #expect(cards("Card number: 123456") == [])
-    }
-
-    @Test func aLabelledRunThatIsAllZerosIsNotACard() {
-        #expect(cards("card 0000 0000 0000 0000") == [])
-        #expect(cards("card: 0000000000000000") == [])
-        #expect(cards("visa 0000-0000-0000-0000-000") == [])
     }
 
     /// The number has to follow the label directly: only the few characters allowed (see the tests on the label's
@@ -337,21 +313,21 @@ struct CardDetectionTests {
         #expect(masked("card 4222222222223433 exp 12/30", .cards) == "card ▓ exp 12/30")
     }
 
-    @Test func aCardThatPassesLuhnAndTheOneThatFailsAreBothMaskedWhenAnyKindIsOn() {
-        #expect(masked("card : 4222 2222 2222 3433", .all) == "card : ▓")
-        #expect(masked("card : 4242 4242 4242 4242", .all) == "card : ▓")
-    }
-
-    @Test func aCardThatFailsLuhnIsNotReportedWhenCardsAreOff() {
-        #expect(found("card : 4222 2222 2222 3433", [.contact, .keysAndTokens, .ipAddresses]).allSatisfy { $0.kind != .card })
-        #expect(masked("4222 2222 2222 3433", [.keysAndTokens, .ipAddresses]) == "4222 2222 2222 3433")
-    }
-
-    /// Luhn-passing numbers stay a card as before, in every shape they were, whether or not a label or grouping helps.
-    @Test func aNumberThatPassesLuhnIsStillACardWithNoLabelAndNoCardGrouping() {
-        #expect(cards("4222 2222 2222 2") == ["4222 2222 2222 2"])
-        #expect(cards("378282246310005") == ["378282246310005"])
-        #expect(cards("order 4242424242424242") == ["4242424242424242"])
+    /// A card, Luhn-passing or not, is reported only when cards are on, whatever the other kinds; with any kind on it is masked.
+    @Test(arguments: [
+        ("4242 4242 4242 4242", [.contact, .keysAndTokens, .ipAddresses], nil, nil),
+        ("card : 4222 2222 2222 3433", [.contact, .keysAndTokens, .ipAddresses], nil, nil),
+        ("4222 2222 2222 3433", [.keysAndTokens, .ipAddresses], nil, "4222 2222 2222 3433"),
+        ("card=4222222222223433", [.keysAndTokens, .ipAddresses], nil, nil),
+        ("cardNumber: '4222222222223433'", [.cards], "4222222222223433", nil),
+        ("card : 4222 2222 2222 3433", .all, "4222 2222 2222 3433", "card : ▓"),
+        ("card : 4242 4242 4242 4242", .all, "4242 4242 4242 4242", "card : ▓"),
+    ] as [(String, SensitiveKinds, String?, String?)])
+    func aCardIsReportedOnlyWhenCardsAreOn(line: String, kinds: SensitiveKinds, card: String?, left: String?) {
+        #expect(found(line, kinds).filter { $0.kind == .card }.map(\.text) == (card.map { [$0] } ?? []))
+        if let left {
+            #expect(masked(line, kinds) == left)
+        }
     }
 
     // MARK: A label in code and data: joined words, quotes, `=`, `(`
@@ -449,11 +425,6 @@ struct CardDetectionTests {
         #expect(masked("userCardNumber: 4222222222223433", .cards) == "userCardNumber: ▓")
         #expect(masked("billing_card = 4222222222223433", .cards) == "billing_card = ▓")
         #expect(masked("billing-cc=4222222222223433", .cards) == "billing-cc=▓")
-    }
-
-    @Test func aLabelledNumberInCodeIsMaskedWhateverTheOtherKindsAre() {
-        #expect(found("cardNumber: '4222222222223433'", [.cards]).map(\.text) == ["4222222222223433"])
-        #expect(found("card=4222222222223433", [.keysAndTokens, .ipAddresses]).allSatisfy { $0.kind != .card })
     }
 
     // MARK: A tab or a no-break space is a space

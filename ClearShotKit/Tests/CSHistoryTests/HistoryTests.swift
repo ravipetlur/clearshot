@@ -271,6 +271,7 @@ final class HistoryTests {
         store.holds.hold(held.id)
         store.clear()
         #expect(store.items.map(\.id) == [held.id])
+        #expect(exists(held.folder(in: root)))
         #expect(HistoryStore(root: root).items.map(\.id) == [held.id])
     }
 
@@ -349,27 +350,18 @@ final class HistoryTests {
         #expect(HistoryWriter.modificationDate(of: temporary.appending(path: "missing-\(UUID().uuidString).png")) == nil)
     }
 
-    @Test func aSavedFileWithinTheToleranceIsUnchanged() throws {
+    /// A saved file whose date is within the tolerance (10 ms) of the recorded one is unchanged; beyond it, or with no date,
+    /// it is changed. An item with no recorded date counts as unchanged.
+    @Test(arguments: [
+        (0, 0, true), (0, 0.005, true), (0, -0.005, true),
+        (0, 0.02, false), (0, -60, false), (0, nil, false),
+        (nil, 0, true), (nil, nil, true),
+    ] as [(TimeInterval?, TimeInterval?, Bool)])
+    func aSavedFileIsUnchangedWithinTheTolerance(recorded: TimeInterval?, modified: TimeInterval?, unchanged: Bool) throws {
         var item = try create()
-        item.savedFileDate = now
-        #expect(item.savedFileIsUnchanged(modifiedAt: now))
-        #expect(item.savedFileIsUnchanged(modifiedAt: now.addingTimeInterval(0.005)))
-        #expect(item.savedFileIsUnchanged(modifiedAt: now.addingTimeInterval(-0.005)))
-    }
-
-    @Test func aSavedFileChangedBeyondTheToleranceIsChanged() throws {
-        var item = try create()
-        item.savedFileDate = now
-        #expect(!item.savedFileIsUnchanged(modifiedAt: now.addingTimeInterval(0.02)))
-        #expect(!item.savedFileIsUnchanged(modifiedAt: now.addingTimeInterval(-60)))
-        #expect(!item.savedFileIsUnchanged(modifiedAt: nil))
-    }
-
-    @Test func anItemWithNoRecordedDateCountsAsUnchanged() throws {
-        let item = try create()
         #expect(item.savedFileDate == nil)
-        #expect(item.savedFileIsUnchanged(modifiedAt: now))
-        #expect(item.savedFileIsUnchanged(modifiedAt: nil))
+        item.savedFileDate = recorded.map { now.addingTimeInterval($0) }
+        #expect(item.savedFileIsUnchanged(modifiedAt: modified.map { now.addingTimeInterval($0) }) == unchanged)
     }
 
     @Test func createRecordsTheSavedFilesDateAndReloadingKeepsIt() throws {
@@ -384,6 +376,10 @@ final class HistoryTests {
     @Test func hasDocumentIsNilForNewAndOlderItemsAndSurvivesReloading() throws {
         var item = try create()
         #expect(item.hasDocument == nil)
+        // Details made from a capture leave it nil too, so the item reads as never annotated.
+        let capture = CaptureResult(kind: .selection, image: image(width: 4, height: 4), scale: 2, displayID: 1,
+                                    globalRect: .zero, appName: nil, windowTitle: nil, createdAt: now, isTransparent: false)
+        #expect(HistoryWriter.Details(capture: capture, displayName: "Name", savedURL: nil).hasDocument == nil)
         // An older meta.json has no such key, and decodes with it nil.
         let older = try JSONEncoder().encode(item)
         #expect(!String(decoding: older, as: UTF8.self).contains("hasDocument"))
@@ -394,12 +390,6 @@ final class HistoryTests {
     }
 
     @Test func detailsCarryHasDocument() throws {
-        // Details made without it, from a capture too, leave it nil, so the item reads as never annotated.
-        let capture = CaptureResult(kind: .selection, image: image(width: 4, height: 4), scale: 2, displayID: 1,
-                                    globalRect: .zero, appName: nil, windowTitle: nil, createdAt: now, isTransparent: false)
-        #expect(HistoryWriter.Details(capture: capture, displayName: "Name", savedURL: nil).hasDocument == nil)
-        #expect(details().hasDocument == nil)
-        #expect(try create().hasDocument == nil)
         var flagged = details(name: "Annotated")
         flagged.hasDocument = true
         let item = try HistoryWriter.create(image(width: 4, height: 4), details: flagged, root: root)

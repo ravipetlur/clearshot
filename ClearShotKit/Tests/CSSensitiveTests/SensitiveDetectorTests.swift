@@ -11,10 +11,6 @@ struct SensitiveDetectorTests {
 
     // MARK: The kinds filter
 
-    @Test func noKindsFindNothing() {
-        #expect(found("jane@example.com 10.0.0.5 4242 4242 4242 4242 \(Fake.github())", []) == [])
-    }
-
     @Test func aKindThatIsOffIsNotReported() {
         let line = "jane@example.com \(Fake.github()) 4242 4242 4242 4242 10.0.0.5"
         // The digits of the card number are a phone number to the system's detector, so contact details are not just the email.
@@ -24,9 +20,9 @@ struct SensitiveDetectorTests {
         #expect(found(line, .cards).map(\.kind) == [.card])
         #expect(found(line, .ipAddresses).map(\.kind) == [.ipAddress])
         #expect(found(line, [.keysAndTokens, .ipAddresses]).map(\.kind) == [.keyOrToken, .ipAddress])
-    }
-
-    @Test func aTokenIsNotReportedWhenOnlyContactDetailsAreAsked() {
+        // No kinds find nothing.
+        #expect(found(line, []) == [])
+        // A token is not reported when only contact details are asked.
         #expect(found("deploy with \(Fake.github())", .contact) == [])
         #expect(found("deploy with \(Fake.github())", .keysAndTokens).count == 1)
     }
@@ -109,19 +105,18 @@ struct SensitiveDetectorTests {
         }
     }
 
-    @Test func anIPv6AddressFollowedByAnAccentTakesTheWholeCharacter() {
-        assertWholeCharacters("fe80::1\u{301}", .ipAddresses, Found(.ipAddress, "fe80::1\u{301}"))
-        assertWholeCharacters("at fe80::1\u{301} up", .ipAddresses, Found(.ipAddress, "fe80::1\u{301}"))
-    }
-
-    @Test func aCardNumberFollowedByAnEmojiSelectorTakesTheWholeCharacter() {
-        let card = "4242 4242 4242 4242"
-        assertWholeCharacters(card + "\u{FE0F}", .cards, Found(.card, card + "\u{FE0F}"))
-        assertWholeCharacters("card " + card + "\u{FE0F} ok", .cards, Found(.card, card + "\u{FE0F}"))
-    }
-
-    @Test func aKeyFileNameFollowedByAnAccentTakesTheWholeCharacter() {
-        assertWholeCharacters("key.pem\u{301}", .keysAndTokens, Found(.keyOrToken, "key.pem\u{301}"))
+    @Test(arguments: [
+        // An IPv6 address followed by an accent.
+        ("fe80::1\u{301}", SensitiveKinds.ipAddresses, Found(.ipAddress, "fe80::1\u{301}")),
+        ("at fe80::1\u{301} up", .ipAddresses, Found(.ipAddress, "fe80::1\u{301}")),
+        // A card number followed by an emoji selector.
+        ("4242 4242 4242 4242\u{FE0F}", .cards, Found(.card, "4242 4242 4242 4242\u{FE0F}")),
+        ("card 4242 4242 4242 4242\u{FE0F} ok", .cards, Found(.card, "4242 4242 4242 4242\u{FE0F}")),
+        // A key file name followed by an accent.
+        ("key.pem\u{301}", .keysAndTokens, Found(.keyOrToken, "key.pem\u{301}")),
+    ])
+    func aSpanThatEndsInsideACharacterTakesTheWholeCharacter(line: String, kinds: SensitiveKinds, expected: Found) {
+        assertWholeCharacters(line, kinds, expected)
     }
 
     /// The colon and the accent after it are one Character, and the password the pattern finds starts at the accent.
@@ -203,34 +198,24 @@ struct SensitiveDetectorTests {
         }
     }
 
-    @Test func spansThatOnlyTouchAreNotMerged() {
+    @Test(arguments: [
+        // Nothing merges to nothing.
+        ([], []),
+        // Spans that only touch are not merged, and come out in order.
+        ([(.contact, 5..<10), (.ipAddress, 0..<5)], [(.ipAddress, 0..<5), (.contact, 5..<10)]),
+        // Spans that share a character are merged into their union and the most specific kind.
+        ([(.contact, 4..<12), (.card, 0..<5), (.keyOrToken, 11..<15)], [(.keyOrToken, 0..<15)]),
+        // A span inside another takes the kind of the more specific.
+        ([(.keyOrToken, 2..<12), (.contact, 4..<8)], [(.keyOrToken, 2..<12)]),
+        ([(.contact, 2..<12), (.card, 4..<8)], [(.card, 2..<12)]),
+        ([(.ipAddress, 2..<12), (.card, 4..<8)], [(.card, 2..<12)]),
+        ([(.contact, 2..<12), (.ipAddress, 4..<8)], [(.ipAddress, 2..<12)]),
+        // Two spans over the same text are one of the more specific kind.
+        ([(.contact, 3..<9), (.card, 3..<9)], [(.card, 3..<9)]),
+    ] as [([(SensitiveKind, Range<Int>)], [(SensitiveKind, Range<Int>)])])
+    func overlappingSpansMergeIntoTheirUnionAndTheMostSpecificKind(input: [(SensitiveKind, Range<Int>)], output: [(SensitiveKind, Range<Int>)]) {
         let text = String(repeating: "x", count: 20)
-        let input = spans(text, [(.contact, 5..<10), (.ipAddress, 0..<5)])
-        let merged = SensitiveDetector.merged(input)
-        #expect(merged == spans(text, [(.ipAddress, 0..<5), (.contact, 5..<10)]))
-    }
-
-    @Test func spansThatShareACharacterAreMergedIntoTheirUnionAndTheMostSpecificKind() {
-        let text = String(repeating: "x", count: 20)
-        let merged = SensitiveDetector.merged(spans(text, [(.contact, 4..<12), (.card, 0..<5), (.keyOrToken, 11..<15)]))
-        #expect(merged == spans(text, [(.keyOrToken, 0..<15)]))
-    }
-
-    @Test func aSpanInsideAnotherTakesTheKindOfTheMoreSpecific() {
-        let text = String(repeating: "x", count: 20)
-        #expect(SensitiveDetector.merged(spans(text, [(.keyOrToken, 2..<12), (.contact, 4..<8)])) == spans(text, [(.keyOrToken, 2..<12)]))
-        #expect(SensitiveDetector.merged(spans(text, [(.contact, 2..<12), (.card, 4..<8)])) == spans(text, [(.card, 2..<12)]))
-        #expect(SensitiveDetector.merged(spans(text, [(.ipAddress, 2..<12), (.card, 4..<8)])) == spans(text, [(.card, 2..<12)]))
-        #expect(SensitiveDetector.merged(spans(text, [(.contact, 2..<12), (.ipAddress, 4..<8)])) == spans(text, [(.ipAddress, 2..<12)]))
-    }
-
-    @Test func twoSpansOverTheSameTextAreOneOfTheMoreSpecificKind() {
-        let text = String(repeating: "x", count: 20)
-        #expect(SensitiveDetector.merged(spans(text, [(.contact, 3..<9), (.card, 3..<9)])) == spans(text, [(.card, 3..<9)]))
-    }
-
-    @Test func nothingMergesToNothing() {
-        #expect(SensitiveDetector.merged([]) == [])
+        #expect(SensitiveDetector.merged(spans(text, input)) == spans(text, output))
     }
 
     // MARK: OCR noise

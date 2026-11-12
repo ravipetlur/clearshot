@@ -9,14 +9,9 @@ struct MaskGeometryTests {
 
     // MARK: The rectangle
 
-    @Test func aMaskIsTheFindingPlusAMarginOnEverySide() {
-        // 20 px tall: 2 px above and below, 4 px (a fifth of the height) to each side.
-        let mask = MaskGeometry.maskRect(for: CGRect(x: 100, y: 100, width: 50, height: 20), imageSize: image)
-        #expect(mask == CGRect(x: 96, y: 98, width: 58, height: 24))
-    }
-
     @Test(arguments: [
-        // height, vertical margin: a tenth of the height rounded up, at least 2 px, so it grows with the text
+        // height, vertical margin: a tenth of the height rounded up, at least 2 px, so it grows with the text (the 2 px that did
+        // for a line of text would leave a block of lines, or big type, with its first and last row barely covered)
         (8.0, 2.0), (20.0, 2.0), (40.0, 4.0), (60.0, 6.0), (200.0, 20.0),
         (0.0, 2.0), (10.0, 2.0), (21.0, 3.0), (30.0, 3.0), (100.0, 10.0), (101.0, 11.0),
     ])
@@ -56,14 +51,6 @@ struct MaskGeometryTests {
                                          textRunsVertically: true, isBlock: true)
         #expect(mask.minX == 984 && mask.maxX == 1316, "\(mask)")
         #expect(mask.minY == 984 && mask.maxY == 1116, "\(mask)")
-    }
-
-    @Test func aTallerTextGetsAMarginAboveAndBelowThatGrowsWithIt() {
-        // The 2 px that did for a line of text leave a block of lines, or big type, with its first and last row barely covered.
-        let small = MaskGeometry.maskRect(for: CGRect(x: 100, y: 100, width: 200, height: 20), imageSize: image)
-        let block = MaskGeometry.maskRect(for: CGRect(x: 100, y: 100, width: 200, height: 200), imageSize: image)
-        #expect(small.minY == 98 && small.maxY == 122)
-        #expect(block.minY == 80 && block.maxY == 320)
     }
 
     @Test func aFractionalBoxKeepsItsFractions() {
@@ -161,11 +148,6 @@ struct MaskGeometryTests {
         #expect(MaskGeometry.maskRect(for: CGRect(x: 0, y: 0, width: 10, height: 10), imageSize: .zero, textRunsVertically: true) == .zero)
     }
 
-    @Test func textRunsAcrossByDefault() {
-        let box = CGRect(x: 100, y: 100, width: 50, height: 20)
-        #expect(MaskGeometry.maskRect(for: box, imageSize: image) == MaskGeometry.maskRect(for: box, imageSize: image, textRunsVertically: false))
-    }
-
     // MARK: The intensity
 
     /// Pixelate's block as `Redaction` makes it from an intensity (1…10) and the render's scale.
@@ -187,17 +169,10 @@ struct MaskGeometryTests {
         #expect(self.block(intensity: intensity, scale: scale) == block)
     }
 
-    @Test func theBlockIsNeverUnderTwelvePixelsHoweverShortTheText() {
-        for height in [0.0, 1, 4, 8, 11.9, 12] {
-            let intensity = MaskGeometry.pixelateIntensity(forHeight: height, pixelScale: 1)
-            #expect(intensity == 4, "height \(height)")
-            #expect(block(intensity: intensity, scale: 1) >= 12)
-        }
-    }
-
+    /// However short the text (no height at all, or just under twelve pixels), the block is never under twelve pixels.
     @Test(arguments: [1.0, 1.5, 2.0, 3.0])
     func theIntensityIsTheSmallestWholeOneWhoseBlockIsAsTallAsTheText(scale: Double) {
-        for height in stride(from: 1.0, through: 150.0, by: 0.5) {
+        for height in [0.0, 11.9] + Array(stride(from: 1.0, through: 150.0, by: 0.5)) {
             let intensity = MaskGeometry.pixelateIntensity(forHeight: height, pixelScale: scale)
             let wanted = max(height, 12)
             // A whole number of the redaction's range.
@@ -222,17 +197,15 @@ struct MaskGeometryTests {
         }
     }
 
-    @Test(arguments: [0.0, -1, Double.nan, Double.infinity, -Double.infinity])
-    func aScaleThatIsNotUsableCountsAsOne(scale: Double) {
-        #expect(MaskGeometry.pixelateIntensity(forHeight: 20, pixelScale: scale) == 7)
-    }
-
-    @Test(arguments: [-5.0, Double.nan, -Double.infinity])
-    func aHeightThatIsNotUsableCountsAsNothing(height: Double) {
-        #expect(MaskGeometry.pixelateIntensity(forHeight: height, pixelScale: 1) == 4)
-    }
-
-    @Test func anInfiniteHeightIsTheStrongest() {
-        #expect(MaskGeometry.pixelateIntensity(forHeight: Double.infinity, pixelScale: 2) == 10)
+    @Test(arguments: [
+        // A scale that is not usable counts as one.
+        (20.0, 0.0, 7.0), (20, -1, 7), (20, .nan, 7), (20, .infinity, 7), (20, -.infinity, 7),
+        // A height that is not usable counts as nothing.
+        (-5, 1, 4), (.nan, 1, 4), (-.infinity, 1, 4),
+        // An infinite height is the strongest.
+        (.infinity, 2, 10),
+    ] as [(Double, Double, Double)])
+    func aNumberThatIsNotUsableGivesAKnownIntensity(height: Double, scale: Double, intensity: Double) {
+        #expect(MaskGeometry.pixelateIntensity(forHeight: height, pixelScale: scale) == intensity)
     }
 }

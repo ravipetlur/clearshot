@@ -1,6 +1,10 @@
 import Testing
 @testable import CSSensitive
 
+private let three = FindingCounts([.contact: 2, .keyOrToken: 1])
+private let one = FindingCounts([.card: 1])
+private let nothing = FindingCounts([])
+
 /// The sensitive-info button in Annotate's tool strip, as a state machine over the pictures the open document has and the
 /// masks of the secrets check it holds: what it shows, what a click does, and when a scan for it is wanted, cancelled or
 /// started over. A picture here is a number; the app uses the document's `PictureIdentity`, which is equal exactly when the
@@ -8,9 +12,6 @@ import Testing
 struct SensitiveButtonStateTests {
     private typealias State = SensitiveButtonState<Int>
 
-    private let three = FindingCounts([.contact: 2, .keyOrToken: 1])
-    private let one = FindingCounts([.card: 1])
-    private let nothing = FindingCounts([])
     private let delay = Duration.milliseconds(500)
 
     /// A button whose editor has reported picture 1 (with no marked masks in it).
@@ -30,19 +31,6 @@ struct SensitiveButtonStateTests {
 
     // MARK: Opening
 
-    @Test func aButtonStartsIdleWithTheDefaultSettings() {
-        let state = State()
-        #expect(state.phase == .idle)
-        #expect(state.automatic)
-        #expect(state.kinds == .all)
-        #expect(state.picture == nil)
-        #expect(state.maskCount == 0)
-    }
-
-    @Test func theScanDelayIsHalfASecond() {
-        #expect(State.rescanDelay == .milliseconds(500))
-    }
-
     @Test func theFirstPictureIsScannedAtOnce() {
         var state = State()
         #expect(state.apply(.pictureChanged(1)) == .scan(after: .zero))
@@ -59,39 +47,30 @@ struct SensitiveButtonStateTests {
 
     // MARK: Findings and marked masks: every combination
 
-    @Test func noFindingsAndNoMasksIsAPlainButton() {
-        let state = scanned(nothing)
-        #expect(state.phase == SensitiveButtonPhase.none)
-        #expect(!state.showsWarning)
-        #expect(state.action == .mask)
-    }
-
-    @Test func findingsAndNoMasksIsTheWarning() {
-        let state = scanned(three)
-        #expect(state.phase == .found(three))
-        #expect(state.showsWarning)
-        #expect(state.action == .mask)
-    }
-
-    @Test func masksAndNoFindingsIsTheMaskedLookAndAClickUnmasks() {
-        let state = scanned(nothing, masks: 3)
-        #expect(state.phase == .masked(3))
-        #expect(!state.showsWarning)
-        #expect(state.action == .unmask)
-    }
-
-    @Test func masksAndFindingsIsTheWarningAndAClickMasksTheRest() {
-        // Unmasked findings take precedence over the masks that are already there.
-        let state = scanned(one, masks: 2)
-        #expect(state.phase == .found(one))
-        #expect(state.showsWarning)
-        #expect(state.action == .mask)
-    }
-
-    @Test func theMaskedLookCountsTheMasksInTheDocumentNotTheFindings() {
-        #expect(scanned(three, masks: 0).phase == .found(three))
-        #expect(scanned(nothing, masks: 1).phase == .masked(1))
-        #expect(scanned(nothing, masks: 7).phase == .masked(7))
+    @Test(arguments: [
+        // No findings and no masks: a plain button.
+        (nothing, 0, SensitiveButtonPhase.none, false, SensitiveButtonAction.mask),
+        // Findings and no masks: the warning.
+        (three, 0, .found(three), true, .mask),
+        (one, 0, .found(one), true, .mask),
+        // Masks and no findings: the masked look, and a click unmasks.
+        (nothing, 3, .masked(3), false, .unmask),
+        // Masks and findings: unmasked findings take precedence over the masks that are already there, and a click masks the rest.
+        (one, 2, .found(one), true, .mask),
+        // The masked look counts the masks in the document, not the findings.
+        (nothing, 1, .masked(1), false, .unmask),
+        (nothing, 7, .masked(7), false, .unmask),
+        // While a scan is wanted (no result yet), masks still show, and without them the button is plain.
+        (nil, 0, .scanning, false, .mask),
+        (nil, 2, .masked(2), false, .unmask),
+    ] as [(FindingCounts?, Int, SensitiveButtonPhase, Bool, SensitiveButtonAction)])
+    func findingsAndMarkedMasksMakeThePhase(counts: FindingCounts?, masks: Int, phase: SensitiveButtonPhase, warning: Bool,
+                                            action: SensitiveButtonAction) {
+        let state = counts.map { scanned($0, masks: masks) } ?? opened(masks: masks)
+        #expect(state.phase == phase)
+        #expect(state.showsWarning == warning)
+        #expect(state.action == action)
+        #expect(state.isEnabled(maskRunning: false))
     }
 
     @Test func theMaskedLookComesFromTheDocumentSoNoScanIsNeededForIt() {
@@ -110,12 +89,6 @@ struct SensitiveButtonStateTests {
         more.apply(.pictureChanged(1))
         more.apply(.scanFinished(1, kinds: .all, counts: one))
         #expect(more.phase == .found(one))
-    }
-
-    @Test func whileAScanIsWantedMasksStillShowAndWithoutThemTheButtonIsPlain() {
-        #expect(opened().phase == .scanning)
-        #expect(opened(masks: 2).phase == .masked(2))
-        #expect(opened(masks: 2).action == .unmask)
     }
 
     @Test func aFailedScanWithMasksStaysMaskedAndWithoutThemIsPlain() {
@@ -142,25 +115,19 @@ struct SensitiveButtonStateTests {
     // MARK: A scan finishes
 
     @Test func aScanThatFailsLeavesAPlainButtonAndDoesNotTryAgain() {
-        var state = opened()
-        #expect(state.apply(.scanFailed(1, kinds: .all)) == .none)
-        #expect(state.phase == .idle)
-        #expect(!state.showsWarning)
-        // The same picture again (a label drawn on it, say) is no reason to scan it again.
-        #expect(state.apply(.pictureChanged(1)) == .none)
-        #expect(state.phase == .idle)
-        // A change of picture is.
-        #expect(state.apply(.pictureChanged(2)) == .scan(after: delay))
-    }
-
-    @Test func aClicksScanThatFailsLeavesAPlainButtonNotAScanThatNeverEnds() {
         // A click with nothing ready scans for itself and its owner cancels the automatic scan, so the click's failure is
         // reported as that scan's: the button is plain and waiting for nothing.
         var state = opened()
         #expect(state.phase == .scanning)
         #expect(state.apply(.scanFailed(1, kinds: .all)) == .none)
         #expect(state.phase == .idle)
+        #expect(!state.showsWarning)
         #expect(state.isEnabled(maskRunning: false))
+        // The same picture again (a label drawn on it, say) is no reason to scan it again.
+        #expect(state.apply(.pictureChanged(1)) == .none)
+        #expect(state.phase == .idle)
+        // A change of picture is.
+        #expect(state.apply(.pictureChanged(2)) == .scan(after: delay))
     }
 
     @Test func aFailedScanCanBeRetriedBySwitchingTheSettingOffAndOn() {
@@ -171,21 +138,20 @@ struct SensitiveButtonStateTests {
         #expect(state.phase == .scanning)
     }
 
-    @Test func aResultForAnOlderPictureIsDropped() {
+    /// The first scan's result, failure or click's result arrives late: the picture has moved on, and the scan wanted now is
+    /// the second.
+    @Test(arguments: [
+        SensitiveButtonState<Int>.Event.scanFinished(1, kinds: .all, counts: three),
+        .scanFailed(1, kinds: .all),
+        .checked(1, kinds: .all, counts: three),
+    ])
+    func aResultForAnOlderPictureIsDropped(late: SensitiveButtonState<Int>.Event) {
         var state = opened()
         state.apply(.pictureChanged(2))
-        // The first scan's result arrives late: the picture has moved on, and the scan wanted now is the second.
-        #expect(state.apply(.scanFinished(1, kinds: .all, counts: three)) == .none)
+        #expect(state.apply(late) == .none)
         #expect(state.phase == .scanning)
         state.apply(.scanFinished(2, kinds: .all, counts: one))
         #expect(state.phase == .found(one))
-    }
-
-    @Test func aFailureForAnOlderPictureIsDropped() {
-        var state = opened()
-        state.apply(.pictureChanged(2))
-        #expect(state.apply(.scanFailed(1, kinds: .all)) == .none)
-        #expect(state.phase == .scanning)
     }
 
     @Test func aResultForOtherKindsIsDropped() {
@@ -368,13 +334,6 @@ struct SensitiveButtonStateTests {
         #expect(state.phase == .found(three))
     }
 
-    @Test func aClicksResultForAnOlderPictureIsDropped() {
-        var state = opened()
-        state.apply(.pictureChanged(2))
-        #expect(state.apply(.checked(1, kinds: .all, counts: three)) == .none)
-        #expect(state.phase == .scanning)
-    }
-
     // MARK: Masking and unmasking, as the app reports them
 
     /// What the app reports after a click masks `counts` found in picture 1, and the document is picture 2 with `masks` marked
@@ -411,15 +370,6 @@ struct SensitiveButtonStateTests {
         state.apply(.masksChanged(3))
         #expect(state.apply(.pictureChanged(2)) == .none)
         #expect(state.phase == .masked(3))
-    }
-
-    @Test func unmaskingBringsTheWarningBackWithNoScanWhenItsPictureIsKnown() {
-        var state = scanned(three)
-        masked(&state, counts: three, masks: 3)
-        // The click on the masked look takes every marked mask out: the picture that was scanned again.
-        state.apply(.masksChanged(0))
-        #expect(state.apply(.pictureChanged(1)) == .none)
-        #expect(state.phase == .found(three))
     }
 
     @Test func unmaskingACaptureOpenedMaskedScansItsUnmaskedPicture() {
@@ -498,14 +448,12 @@ struct SensitiveButtonStateTests {
 
     // MARK: Closing
 
-    @Test func closingCancelsTheScanOnItsWay() {
-        var state = opened()
-        #expect(state.apply(.closed) == .cancelScan)
-    }
-
-    @Test func closingWithNothingOnItsWayCancelsNothing() {
-        var state = scanned(three)
-        #expect(state.apply(.closed) == .none)
+    @Test func closingCancelsTheScanOnItsWayAndNothingElse() {
+        var waiting = opened()
+        #expect(waiting.apply(.closed) == .cancelScan)
+        // With nothing on its way, nothing is cancelled.
+        var done = scanned(three)
+        #expect(done.apply(.closed) == .none)
     }
 
     @Test func aLateResultAfterClosingDoesNothing() {
@@ -533,24 +481,12 @@ struct SensitiveButtonStateTests {
         #expect(!State(kinds: []).isEnabled(maskRunning: false))
     }
 
-    @Test func onlyTheFoundPhaseShowsTheWarning() {
-        #expect(!State().showsWarning)
-        #expect(!opened().showsWarning)
-        #expect(!scanned(nothing).showsWarning)
-        #expect(!scanned(nothing, masks: 2).showsWarning)
-        #expect(scanned(one).showsWarning)
-        #expect(scanned(one, masks: 2).showsWarning)
-        #expect(!State(kinds: []).showsWarning)
-    }
-
-    @Test func aClickUnmasksOnlyFromTheMaskedLook() {
-        #expect(State().action == .mask)
-        #expect(opened().action == .mask)
-        #expect(scanned(three).action == .mask)
-        #expect(scanned(nothing).action == .mask)
-        #expect(scanned(one, masks: 2).action == .mask)
-        #expect(scanned(nothing, masks: 2).action == .unmask)
-        #expect(State(kinds: []).action == .mask)
+    /// The other phases are in the table of findings and marked masks above.
+    @Test func withNoPictureOrNoKindThereIsNoWarningAndAClickMasks() {
+        for state in [State(), State(kinds: [])] {
+            #expect(!state.showsWarning, "\(state.phase)")
+            #expect(state.action == .mask, "\(state.phase)")
+        }
     }
 
     // MARK: A whole session

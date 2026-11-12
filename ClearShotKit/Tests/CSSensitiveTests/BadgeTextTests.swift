@@ -9,16 +9,17 @@ struct BadgeTextTests {
 
     // MARK: The pill
 
-    @Test func theFoundPillCountsTheFindings() {
-        #expect(BadgeText.label(for: found(mixed)) == "\u{26A0}\u{FE0E} 3")
-        #expect(BadgeText.label(for: found(FindingCounts([.card: 1]))) == "\u{26A0}\u{FE0E} 1")
-        #expect(BadgeText.label(for: found(FindingCounts([.ipAddress: 12]))) == "\u{26A0}\u{FE0E} 12")
-    }
-
-    @Test func theCountStopsAtNinetyNinePlus() {
-        #expect(BadgeText.label(for: found(FindingCounts([.contact: 99]))) == "\u{26A0}\u{FE0E} 99")
-        #expect(BadgeText.label(for: found(FindingCounts([.contact: 60, .card: 40]))) == "\u{26A0}\u{FE0E} 99+")
-        #expect(BadgeText.label(for: found(FindingCounts([.contact: 1000]))) == "\u{26A0}\u{FE0E} 99+")
+    @Test(arguments: [
+        (FindingCounts([.contact: 2, .keyOrToken: 1]), "3"),
+        (FindingCounts([.card: 1]), "1"),
+        (FindingCounts([.ipAddress: 12]), "12"),
+        // The count stops at 99+.
+        (FindingCounts([.contact: 99]), "99"),
+        (FindingCounts([.contact: 60, .card: 40]), "99+"),
+        (FindingCounts([.contact: 1000]), "99+"),
+    ])
+    func theFoundPillCountsTheFindings(counts: FindingCounts, count: String) {
+        #expect(BadgeText.label(for: found(counts)) == "\u{26A0}\u{FE0E} " + count)
     }
 
     @Test func theMaskedPillSaysSo() {

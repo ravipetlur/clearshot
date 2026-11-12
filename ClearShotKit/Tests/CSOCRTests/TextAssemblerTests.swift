@@ -10,6 +10,12 @@ struct TextAssemblerTests {
         }
     }
 
+    private func lines(_ texts: [String]) -> [OCRLine] {
+        texts.enumerated().map { index, text in
+            OCRLine(text: text, box: CGRect(x: 10, y: 10 + 40 * index, width: 300, height: 30))
+        }
+    }
+
     @Test func withLineBreaksJoinsLinesWithNewlines() {
         let text = TextAssembler.text(from: lines("First line", "  Second line ", "infor-", "mation"), keepLineBreaks: true)
         #expect(text == "First line\nSecond line\ninfor-\nmation")
@@ -20,44 +26,40 @@ struct TextAssemblerTests {
         #expect(text == "The quick brown fox jumps over the dog.")
     }
 
-    @Test func aHyphenBeforeALowercaseWordIsRemoved() {
-        #expect(TextAssembler.text(from: lines("More infor-", "mation here"), keepLineBreaks: false) == "More information here")
-        // Joins chain: each line's own ending decides.
-        #expect(TextAssembler.text(from: lines("infor-", "ma-", "tion"), keepLineBreaks: false) == "information")
+    @Test(arguments: [
+        // A hyphen before a lowercase word is removed; joins chain, each line's own ending deciding.
+        (["More infor-", "mation here"], "More information here"),
+        (["infor-", "ma-", "tion"], "information"),
+        // Before a capital it is kept without a space, and before anything other than a lowercase letter: a digit, a CJK
+        // character.
+        (["Jean-", "Paul Sartre"], "Jean-Paul Sartre"),
+        (["COVID-", "19 cases"], "COVID-19 cases"),
+        // A dash after a space is not a hyphen, and nor is a line that is only a dash: it has no letter before it.
+        (["costs -", "less"], "costs - less"),
+        (["one", "-", "two"], "one - two"),
+    ])
+    func aHyphenAtTheEndOfALineJoinsAWordOnlyBeforeALowercaseLetter(texts: [String], text: String) {
+        #expect(TextAssembler.text(from: lines(texts), keepLineBreaks: false) == text)
     }
 
-    @Test func aHyphenBeforeACapitalIsKeptWithoutASpace() {
-        #expect(TextAssembler.text(from: lines("Jean-", "Paul Sartre"), keepLineBreaks: false) == "Jean-Paul Sartre")
-        // Anything other than a lowercase letter keeps the hyphen: a digit, a CJK character.
-        #expect(TextAssembler.text(from: lines("COVID-", "19 cases"), keepLineBreaks: false) == "COVID-19 cases")
-    }
-
-    @Test func aDashAfterASpaceIsNotAHyphen() {
-        #expect(TextAssembler.text(from: lines("costs -", "less"), keepLineBreaks: false) == "costs - less")
-        // A line that is only a dash has no letter before it either.
-        #expect(TextAssembler.text(from: lines("one", "-", "two"), keepLineBreaks: false) == "one - two")
-    }
-
-    @Test func chineseAndJapaneseLinesJoinWithoutSpaces() {
-        #expect(TextAssembler.text(from: lines("日本語の", "テキスト"), keepLineBreaks: false) == "日本語のテキスト")
-        #expect(TextAssembler.text(from: lines("中文。", "下一行"), keepLineBreaks: false) == "中文。下一行")
-        #expect(TextAssembler.text(from: lines("カタカナ", "「引用」"), keepLineBreaks: false) == "カタカナ「引用」")
-        // Full-width punctuation, the usual line end in Chinese, runs on too.
-        #expect(TextAssembler.text(from: lines("中文，", "下一行"), keepLineBreaks: false) == "中文，下一行")
-        #expect(TextAssembler.text(from: lines("ﾊﾝｶｸ", "カナ"), keepLineBreaks: false) == "ﾊﾝｶｸカナ")
-    }
-
-    @Test func koreanLinesKeepASpace() {
+    @Test(arguments: [
+        // Chinese and Japanese lines join without spaces; full-width punctuation, the usual line end in Chinese, runs on too.
+        (["日本語の", "テキスト"], "日本語のテキスト"),
+        (["中文。", "下一行"], "中文。下一行"),
+        (["カタカナ", "「引用」"], "カタカナ「引用」"),
+        (["中文，", "下一行"], "中文，下一行"),
+        (["ﾊﾝｶｸ", "カナ"], "ﾊﾝｶｸカナ"),
         // Korean separates words with spaces, so a wrap between Hangul lines is one; Hanja beside Hangul too.
-        #expect(TextAssembler.text(from: lines("한국어", "텍스트"), keepLineBreaks: false) == "한국어 텍스트")
-        #expect(TextAssembler.text(from: lines("大韓民國", "헌법"), keepLineBreaks: false) == "大韓民國 헌법")
-        #expect(TextAssembler.text(from: lines("한국어", "Text"), keepLineBreaks: false) == "한국어 Text")
-    }
-
-    @Test func cjkNextToLatinGetsASpace() {
-        #expect(TextAssembler.text(from: lines("日本語", "English"), keepLineBreaks: false) == "日本語 English")
-        #expect(TextAssembler.text(from: lines("Hello", "世界"), keepLineBreaks: false) == "Hello 世界")
-        #expect(TextAssembler.text(from: lines("価格 100", "円"), keepLineBreaks: false) == "価格 100 円")
+        (["한국어", "텍스트"], "한국어 텍스트"),
+        (["大韓民國", "헌법"], "大韓民國 헌법"),
+        (["한국어", "Text"], "한국어 Text"),
+        // CJK next to Latin gets a space.
+        (["日本語", "English"], "日本語 English"),
+        (["Hello", "世界"], "Hello 世界"),
+        (["価格 100", "円"], "価格 100 円"),
+    ])
+    func linesOfEachScriptJoinWithTheSpaceItUses(texts: [String], text: String) {
+        #expect(TextAssembler.text(from: lines(texts), keepLineBreaks: false) == text)
     }
 
     @Test func emptyAndWhitespaceLinesAreSkipped() {

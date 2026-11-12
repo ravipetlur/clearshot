@@ -32,42 +32,38 @@ private func ellipseOutline(_ rect: CGRect) -> [CGPoint] {
 }
 
 struct RoughRandomTests {
-    @Test func aSeedGivesTheSameSequence() {
+    /// A seed gives the same sequence every time, and different seeds give different ones.
+    @Test func theSeedDecidesTheSequence() {
         var a = RoughRandom(seed: 42)
         var b = RoughRandom(seed: 42)
         #expect((0..<20).map { _ in a.unit() } == (0..<20).map { _ in b.unit() })
-    }
-
-    @Test func differentSeedsGiveDifferentSequences() {
-        var a = RoughRandom(seed: 1)
-        var b = RoughRandom(seed: 2)
-        #expect((0..<5).map { _ in a.unit() } != (0..<5).map { _ in b.unit() })
+        var c = RoughRandom(seed: 1)
+        var d = RoughRandom(seed: 2)
+        #expect((0..<5).map { _ in c.unit() } != (0..<5).map { _ in d.unit() })
     }
 
     @Test func valuesStayInRange() {
         var random = RoughRandom(seed: 0)
+        var units: [Double] = [], signeds: [Double] = []
         for _ in 0..<1000 {
-            let unit = random.unit()
-            let signed = random.signed()
-            #expect(unit >= 0 && unit < 1)
-            #expect(signed >= -1 && signed < 1)
+            units.append(random.unit())
+            signeds.append(random.signed())
         }
+        #expect(units.filter { !($0 >= 0 && $0 < 1) } == [])
+        #expect(signeds.filter { !($0 >= -1 && $0 < 1) } == [])
     }
 }
 
 struct RoughPathTests {
     private let rect = CGRect(x: 10, y: 20, width: 200, height: 120)
 
-    @Test func theSameSeedDrawsTheSameStrokes() {
+    /// The same seed draws the same strokes, and a different seed different ones.
+    @Test func theSeedDecidesTheStrokes() {
         let amplitude = RoughPath.amplitude(lineWidth: 4, extent: 120)
         #expect(RoughPath.rectangle(rect, amplitude: amplitude, seed: 7) == RoughPath.rectangle(rect, amplitude: amplitude, seed: 7))
         #expect(RoughPath.ellipse(rect, amplitude: amplitude, seed: 7) == RoughPath.ellipse(rect, amplitude: amplitude, seed: 7))
         #expect(RoughPath.path(from: RoughPath.ellipse(rect, amplitude: amplitude, seed: 7))
             == RoughPath.path(from: RoughPath.ellipse(rect, amplitude: amplitude, seed: 7)))
-    }
-
-    @Test func aDifferentSeedDrawsDifferentStrokes() {
-        let amplitude = RoughPath.amplitude(lineWidth: 4, extent: 120)
         #expect(RoughPath.rectangle(rect, amplitude: amplitude, seed: 7) != RoughPath.rectangle(rect, amplitude: amplitude, seed: 8))
         #expect(RoughPath.ellipse(rect, amplitude: amplitude, seed: 7) != RoughPath.ellipse(rect, amplitude: amplitude, seed: 8))
         let line = (CGPoint.zero, CGPoint(x: 100, y: 30))

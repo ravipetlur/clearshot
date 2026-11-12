@@ -77,9 +77,14 @@ struct EditorPixelsTests {
         let h = EditorHarness()
         _ = await h.editor.currentPicturePixels()
         h.act { h.editor.changeCanvas("Rotate") { $0 = $0.applying(.rotateLeft) } }
-        _ = try #require(try await ready(h.editor))
+        let turned = try #require(try await ready(h.editor))
+        #expect(turned.sampler.size == CGSize(width: 80, height: 100))
+        #expect(h.editor.undoManager.canUndo)
         h.editor.undoManager.undo()
+        #expect(h.editor.document.imageOps.isEmpty)
+        #expect(h.editor.picturePixels == nil)
         let pixels = try #require(try await ready(h.editor))
         #expect(pixels.sampler.size == CGSize(width: 100, height: 80))
+        #expect(pixels.identity == h.editor.document.picturePixelsIdentity)
     }
 }

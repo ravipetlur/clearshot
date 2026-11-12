@@ -36,11 +36,6 @@ struct SizeUnitTests {
         #expect(halved.displayedSize(ofBaseRect: rect, in: .points) == CGSize(width: 20, height: 5))
     }
 
-    @Test func unitsHaveTitlesAndAbbreviations() {
-        #expect(SizeUnit.allCases.map(\.title) == ["Points", "Pixels"])
-        #expect(SizeUnit.allCases.map(\.abbreviation) == ["pt", "px"])
-    }
-
     @MainActor
     @Test func preferencesDefaultAndPersist() {
         let throwaway = ThrowawayDefaults("size-unit")

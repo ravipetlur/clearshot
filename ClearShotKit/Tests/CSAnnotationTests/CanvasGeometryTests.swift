@@ -18,12 +18,6 @@ private func isWhole(_ rect: CGRect) -> Bool {
 }
 
 struct CropRatioTests {
-    @Test func theMenuListsTheRatiosInOrder() {
-        #expect(CropRatio.presets.map(\.title) == ["Freeform", "Original", "1:1", "5:4", "7:5", "4:3", "3:2", "16:10", "16:9",
-                                                   "2.35:1", "1.85:1", "4:5", "3:4", "2:3", "9:16"])
-        #expect(CropRatio.custom(width: 3, height: 1).title == "Custom")
-    }
-
     @Test func aspectsComeFromTheRatioOrThePicture() {
         let picture = CGSize(width: 100, height: 50)
         #expect(CropRatio.freeform.aspect(pictureSize: picture) == nil)

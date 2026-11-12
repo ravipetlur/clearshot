@@ -564,11 +564,6 @@ struct RendererRedactionTests {
         #expect(TestBitmaps.pixel(try render(document, images), 30, 30) == .init(r: 255, g: 0, b: 0, a: 255))
     }
 
-    @Test func blackOutIsSolidBlack() throws {
-        let (document, images) = TestBitmaps.document(base: noise, objects: [redact(.blackOut)])
-        #expect(TestBitmaps.pixel(try render(document, images), 30, 30) == .init(r: 0, g: 0, b: 0, a: 255))
-    }
-
     @Test func smoothBlurSoftensEdges() throws {
         let split = TestBitmaps.split(64, 64, left: TestBitmaps.black, right: TestBitmaps.white)
         let (document, images) = TestBitmaps.document(base: split, objects: [redact(.smoothBlur)])

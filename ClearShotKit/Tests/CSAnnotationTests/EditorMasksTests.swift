@@ -130,20 +130,27 @@ struct EditorMasksTests {
         #expect(!h.editor.undoManager.canUndo)
     }
 
-    @Test func aPendingCropRefusesTheMasks() {
-        let h = EditorHarness()
-        h.editor.tool = .crop
-        #expect(h.editor.crop != nil)
-        #expect(!h.editor.addMasks(masks(), actionName: name))
-        #expect(h.editor.document.objects.isEmpty)
-        #expect(!h.editor.undoManager.canUndo)
+    /// What holds the editor busy: a pending crop, or a live change. A drag or a text being typed holds a change open; masks
+    /// added or taken out under it would be undone with it, or it with them.
+    enum Busy: CaseIterable {
+        case pendingCrop, liveChange
+
+        @MainActor func begin(in h: EditorHarness) {
+            switch self {
+            case .pendingCrop:
+                h.editor.tool = .crop
+                #expect(h.editor.crop != nil)
+            case .liveChange:
+                h.editor.beginLiveChange()
+                #expect(h.editor.isInLiveChange)
+            }
+        }
     }
 
-    @Test func aLiveChangeRefusesTheMasks() {
-        // A drag or a text being typed holds a change open; masks added under it would be undone with it, or it with them.
+    @Test(arguments: Busy.allCases)
+    func aBusyEditorRefusesTheMasks(_ busy: Busy) {
         let h = EditorHarness()
-        h.editor.beginLiveChange()
-        #expect(h.editor.isInLiveChange)
+        busy.begin(in: h)
         #expect(!h.editor.addMasks(masks(), actionName: name))
         #expect(h.editor.document.objects.isEmpty)
         #expect(!h.editor.undoManager.canUndo)
@@ -237,25 +244,15 @@ struct EditorMasksTests {
         #expect(h.editor.document.canvasRect == canvas)
     }
 
-    @Test func aPendingCropRefusesTheRemoval() {
+    @Test(arguments: Busy.allCases)
+    func aBusyEditorRefusesTheRemoval(_ busy: Busy) {
         let h = EditorHarness()
         let added = masks(2)
         h.act { h.editor.addMasks(added, actionName: name) }
-        h.editor.tool = .crop
-        #expect(h.editor.crop != nil)
+        busy.begin(in: h)
         #expect(h.editor.removeSecretsMasks(actionName: unmask) == nil)
         #expect(h.editor.document.objects == added)
-        #expect(h.editor.undoManager.undoActionName == name)
-    }
-
-    @Test func aLiveChangeRefusesTheRemoval() {
-        let h = EditorHarness()
-        let added = masks(2)
-        h.act { h.editor.addMasks(added, actionName: name) }
-        h.editor.beginLiveChange()
-        #expect(h.editor.removeSecretsMasks(actionName: unmask) == nil)
-        #expect(h.editor.document.objects == added)
-        h.editor.cancelLiveChange()
+        if busy == .liveChange { h.editor.cancelLiveChange() }
         #expect(h.editor.undoManager.undoActionName == name)
     }
 

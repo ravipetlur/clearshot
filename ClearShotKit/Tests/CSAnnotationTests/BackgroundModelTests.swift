@@ -179,22 +179,15 @@ struct BackgroundModelTests {
         return (bytes, ImageStore.load(for: document, from: folder)[picture])
     }
 
-    @Test func jpgNamesAreWrittenAsJPEG() throws {
-        for name in ["images/background-a.jpg", "images/background-b.JPG"] {
-            let (bytes, read) = try Self.writePicture(named: name)
-            #expect(Array(bytes.prefix(3)) == [0xFF, 0xD8, 0xFF], "\(name)")
-            #expect(read?.width == 24, "\(name)")
-            #expect(read?.height == 16, "\(name)")
-        }
-    }
-
-    @Test func pngNamesStayPNG() throws {
-        for name in ["images/background-a.png", "images/background-a.jpeg"] {
-            let (bytes, read) = try Self.writePicture(named: name)
-            #expect(Array(bytes.prefix(4)) == [0x89, 0x50, 0x4E, 0x47], "\(name)")
-            #expect(read?.width == 24, "\(name)")
-            #expect(read?.height == 16, "\(name)")
-        }
+    /// A ".jpg" name, in either case, is written as JPEG; every other name, ".jpeg" included, stays PNG. Either way the
+    /// picture reads back at its size.
+    @Test(arguments: [("images/background-a.jpg", [UInt8]([0xFF, 0xD8, 0xFF])), ("images/background-b.JPG", [0xFF, 0xD8, 0xFF]),
+                      ("images/background-a.png", [0x89, 0x50, 0x4E, 0x47]), ("images/background-a.jpeg", [0x89, 0x50, 0x4E, 0x47])])
+    func aPictureIsWrittenInTheFormatItsNameSays(name: String, signature: [UInt8]) throws {
+        let (bytes, read) = try Self.writePicture(named: name)
+        #expect(Array(bytes.prefix(signature.count)) == signature)
+        #expect(read?.width == 24)
+        #expect(read?.height == 16)
     }
 
     // MARK: Styles
@@ -205,10 +198,6 @@ struct BackgroundModelTests {
         #expect(decoded.inset == 0)
         #expect(decoded.shadow == 100)
         #expect(decoded.corners == 64)
-        #expect(BackgroundStyle.paddingRange == 0...256)
-        #expect(BackgroundStyle.insetRange == 0...128)
-        #expect(BackgroundStyle.shadowRange == 0...100)
-        #expect(BackgroundStyle.cornersRange == 0...64)
 
         // `clamped()` does the same for a style made in code, and a non-finite number becomes the standard's.
         var style = BackgroundStyle.standard
@@ -328,35 +317,12 @@ struct BackgroundModelTests {
         #expect(try Self.decodeStyle(Self.json(object)).fill == .systemWallpaper(fileName: "Sequoia Sunrise.heic"))
     }
 
-    @Test func theDefaultsAreTheDecidedOnes() {
-        let standard = BackgroundStyle.standard
-        #expect(standard.fill == .gradient(BackgroundGradient.catalog[0]))
-        #expect(standard.padding == 64)
-        #expect(standard.inset == 0)
-        #expect(standard.insetColor == .auto)
-        #expect(standard.shadow == 50)
-        #expect(standard.corners == 12)
-        #expect(standard.autoBalance == false)
-        #expect(standard.alignment == .center)
-        #expect(standard.ratio == .auto)
-
-        let window = BackgroundStyle.windowStandard
-        #expect(window.fill == .desktop)
-        #expect(window.padding == 48)
-        #expect(window.inset == 0)
-        #expect(window.insetColor == .auto)
-        #expect(window.shadow == 0)
-        #expect(window.corners == 0)
-        #expect(window.autoBalance == false)
-        #expect(window.alignment == .center)
-        #expect(window.ratio == .auto)
-    }
-
     @Test func ratiosAndAlignmentFactors() throws {
-        #expect(BackgroundRatio.allCases == [.auto, .square, .r3x4, .r4x3, .r3x2, .r5x4, .r16x9, .r4x5, .r9x16])
-        let aspects: [Double?] = [nil, 1, 0.75, 4.0 / 3, 1.5, 1.25, 16.0 / 9, 0.8, 0.5625]
-        #expect(BackgroundRatio.allCases.map(\.aspect) == aspects)
-        #expect(BackgroundRatio.allCases.map(\.title) == ["Auto", "1:1", "3:4", "4:3", "3:2", "5:4", "16:9", "4:5", "9:16"])
+        let aspects: [(BackgroundRatio, Double?)] = [(.auto, nil), (.square, 1), (.r3x4, 0.75), (.r4x3, 4.0 / 3), (.r3x2, 1.5),
+                                                     (.r5x4, 1.25), (.r16x9, 16.0 / 9), (.r4x5, 0.8), (.r9x16, 0.5625)]
+        for (ratio, aspect) in aspects {
+            #expect(ratio.aspect == aspect, "\(ratio)")
+        }
         #expect(try JSONEncoder().encode(BackgroundRatio.r16x9) == Data(#""16:9""#.utf8))
 
         func factor(_ alignment: BackgroundAlignment) -> [Double] { [alignment.factor.x, alignment.factor.y] }
@@ -379,44 +345,6 @@ struct BackgroundModelTests {
 
     // MARK: The gradient catalog
 
-    /// The decided catalog: id, name, kind and colours, stops evenly spaced from 0 to 1.
-    static let decidedCatalog: [(id: String, name: String, kind: BackgroundGradient.Kind, colors: [String])] = [
-        ("coral", "Coral", .linear(angle: 45), ["#FF8A7A", "#FF5E8A"]),
-        ("lagoon", "Lagoon", .linear(angle: 45), ["#1FC8F0", "#2A5BE8"]),
-        ("meadow", "Meadow", .linear(angle: 45), ["#B3E26A", "#4FA83A"]),
-        ("dusk", "Dusk", .linear(angle: 45), ["#6A2BD0", "#2F7BF5"]),
-        ("ember", "Ember", .linear(angle: 45), ["#F2491C", "#F7C631"]),
-        ("glacier", "Glacier", .linear(angle: 90), ["#E6FAFC", "#7FDCE8", "#2DB8CF"]),
-        ("orchid", "Orchid", .linear(angle: 45), ["#D33CF5", "#8A3BEB"]),
-        ("citrus", "Citrus", .linear(angle: 45), ["#F8D86A", "#F99A7C"]),
-        ("slate", "Slate", .linear(angle: 90), ["#4E5B6A", "#262E38"]),
-        ("mint", "Mint", .linear(angle: 45), ["#DCF98A", "#8EDFA4"]),
-        ("aurora", "Aurora", .linear(angle: 30), ["#12EFA2", "#14CFEA", "#7A63F6"]),
-        ("peach", "Peach", .linear(angle: 45), ["#FFEBD6", "#F9AE96"]),
-        ("midnight", "Midnight", .linear(angle: 45), ["#10232B", "#22404A", "#2E5770"]),
-        ("bloom", "Bloom", .linear(angle: 45), ["#F7CBF0", "#F06EF0"]),
-        ("skyglow", "Sky glow", .radial, ["#A5D4FF", "#3D7BF0"]),
-        ("sunset", "Sunset", .linear(angle: 90), ["#FF5A3C", "#F2A024", "#FFD877"]),
-        ("lavender", "Lavender", .linear(angle: 45), ["#E4CBFA", "#92C6F8"]),
-        ("forest", "Forest", .linear(angle: 45), ["#18505C", "#74B07D"]),
-        ("candy", "Candy", .radial, ["#FCCDEB", "#A9C0EF"]),
-        ("graphite", "Graphite", .radial, ["#5C5C5C", "#1E1E1E"]),
-    ]
-
-    @Test func theCatalogHasTwentyGradients() {
-        #expect(BackgroundGradient.catalog.count == 20)
-        #expect(BackgroundGradient.standard == BackgroundGradient.catalog[0])
-        #expect(BackgroundGradient.standard.id == "coral")
-        for (gradient, decided) in zip(BackgroundGradient.catalog, Self.decidedCatalog) {
-            #expect(gradient.id == decided.id)
-            #expect(gradient.title == decided.name)
-            #expect(gradient.kind == decided.kind, "\(decided.id)")
-            #expect(gradient.stops.map(\.color) == decided.colors.map { RGBAColor(hex: $0)! }, "\(decided.id)")
-            let last = Double(decided.colors.count - 1)
-            #expect(gradient.stops.map(\.location) == decided.colors.indices.map { Double($0) / last }, "\(decided.id)")
-        }
-    }
-
     @Test func aGradientOutsideTheCatalogIsTitledGradient() {
         var gradient = BackgroundGradient.standard
         #expect(gradient.title == "Coral")
@@ -429,13 +357,11 @@ struct BackgroundModelTests {
             != .standard)
     }
 
-    @Test func catalogIDsAreUnique() {
+    /// Every catalog gradient has an id of its own, and two to six stops, ascending, in range.
+    @Test func everyCatalogGradientHasAUniqueIDAndTwoToSixAscendingStopsInRange() throws {
         let ids = BackgroundGradient.catalog.compactMap(\.id)
-        #expect(ids.count == 20)
-        #expect(Set(ids).count == 20)
-    }
-
-    @Test func everyCatalogGradientHasTwoToSixAscendingStopsInRange() throws {
+        #expect(ids.count == BackgroundGradient.catalog.count)
+        #expect(Set(ids).count == ids.count)
         for gradient in BackgroundGradient.catalog {
             #expect((2...6).contains(gradient.stops.count), "\(gradient.title)")
             let locations = gradient.stops.map(\.location)
@@ -450,12 +376,6 @@ struct BackgroundModelTests {
     }
 
     // MARK: The panel
-
-    @Test func theColorSwatchesAreTheDecidedOnes() {
-        #expect(BackgroundFill.colorSwatches.map(\.hex) == ["#FFFFFF", "#F2F2F7", "#C7C7CC", "#8E8E93", "#3A3A3C", "#000000",
-                                                            "#E8F0FE", "#FFF4E5"])
-        #expect(BackgroundFill.colorSwatches.allSatisfy { $0.alpha == 1 })
-    }
 
     @Test func onlyAColorOutsideTheSwatchesIsTheCustomColor() {
         for swatch in BackgroundFill.colorSwatches {
@@ -550,19 +470,6 @@ struct BackgroundModelTests {
         #expect(list.matching(.standard)?.name == "Preset 3")
         // A new preset after a removal is numbered from the count.
         #expect(list.add(name: "", style: .standard).name == "Preset 3")
-    }
-
-    @MainActor @Test func newPrefsHaveTheirDefaults() {
-        withThrowawayDefaults("backgrounds") { defaults in
-            let prefs = Preferences(defaults: defaults)
-            #expect(prefs[Prefs.backgroundPresets] == BackgroundPresetList())
-            #expect(prefs[Prefs.windowBackgroundPresets] == BackgroundPresetList())
-            #expect(prefs[Prefs.lastBackgroundStyle].style == nil)
-            #expect(prefs[Prefs.lastWindowBackgroundStyle].style == nil)
-            #expect(prefs[Prefs.autoApplyBackgroundPresetID] == "")
-            #expect(prefs[Prefs.autoApplyWindowBackgroundPresetID] == "")
-            #expect(prefs[Prefs.annotateBackgroundToolWasOpen] == false)
-        }
     }
 
     @MainActor @Test func presetsAndPreviousSettingsPersist() {

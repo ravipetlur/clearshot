@@ -6,88 +6,59 @@ import Testing
 struct PixelSelectionGeometryTests {
     private let bounds = CGSize(width: 100, height: 80)
 
-    @Test func aDragRoundsOutwardToWholePixels() {
-        let rect = PixelSelection.between(CGPoint(x: 10.4, y: 20.6), CGPoint(x: 30.2, y: 40.1), in: bounds)
-        #expect(rect == CGRect(x: 10, y: 20, width: 21, height: 21))
-    }
-
-    @Test func aDragInAnyDirectionMakesTheSameSelection() {
+    /// A drag rounds outward to whole pixels, makes the same selection in any direction, is cut to the picture, selects
+    /// nothing outside it, and is never smaller than a pixel.
+    @Test func aDragSelectsWholePixelsInsideThePicture() {
+        #expect(PixelSelection.between(CGPoint(x: 10.4, y: 20.6), CGPoint(x: 30.2, y: 40.1), in: bounds) == CGRect(x: 10, y: 20, width: 21, height: 21))
         let a = CGPoint(x: 5, y: 6), b = CGPoint(x: 25, y: 16)
         #expect(PixelSelection.between(a, b, in: bounds) == PixelSelection.between(b, a, in: bounds))
-    }
-
-    @Test func aDragPastThePictureIsCutToIt() {
         #expect(PixelSelection.between(CGPoint(x: 90, y: 70), CGPoint(x: 150, y: 120), in: bounds) == CGRect(x: 90, y: 70, width: 10, height: 10))
         #expect(PixelSelection.between(CGPoint(x: -30, y: -5), CGPoint(x: 10, y: 10), in: bounds) == CGRect(x: 0, y: 0, width: 11, height: 11))
-    }
-
-    @Test func aDragOutsideThePictureSelectsNothing() {
         #expect(PixelSelection.between(CGPoint(x: 120, y: 10), CGPoint(x: 150, y: 30), in: bounds) == nil)
         #expect(PixelSelection.between(CGPoint(x: -20, y: 10), CGPoint(x: -5, y: 30), in: bounds) == nil)
         #expect(PixelSelection.between(CGPoint(x: Double.nan, y: 0), CGPoint(x: 5, y: 5), in: bounds) == nil)
-    }
-
-    @Test func aSelectionIsNeverSmallerThanAPixel() {
         #expect(PixelSelection.clamped(CGRect(x: 100, y: 80, width: 0, height: 0), in: bounds) == CGRect(x: 99, y: 79, width: 1, height: 1))
         #expect(PixelSelection.clamped(CGRect(x: 10, y: 10, width: 0, height: 0), in: bounds) == CGRect(x: 10, y: 10, width: 1, height: 1))
     }
 
-    @Test func nudgingMovesBySteps() {
+    /// Nudging moves by steps, and stops at the edges without shrinking.
+    @Test func nudging() {
         let rect = CGRect(x: 10, y: 10, width: 20, height: 20)
         #expect(PixelSelection.nudged(rect, by: CGVector(dx: 1, dy: 0), in: bounds) == CGRect(x: 11, y: 10, width: 20, height: 20))
         #expect(PixelSelection.nudged(rect, by: CGVector(dx: -10, dy: 10), in: bounds) == CGRect(x: 0, y: 20, width: 20, height: 20))
+        let nearTheEdge = CGRect(x: 85, y: 5, width: 10, height: 10)
+        #expect(PixelSelection.nudged(nearTheEdge, by: CGVector(dx: 10, dy: -10), in: bounds) == CGRect(x: 90, y: 0, width: 10, height: 10))
     }
 
-    @Test func nudgingStopsAtTheEdgesWithoutShrinking() {
-        let rect = CGRect(x: 85, y: 5, width: 10, height: 10)
-        #expect(PixelSelection.nudged(rect, by: CGVector(dx: 10, dy: -10), in: bounds) == CGRect(x: 90, y: 0, width: 10, height: 10))
-    }
-
-    @Test func resizingMovesTheRightAndBottomEdges() {
+    /// Resizing moves the right and bottom edges, and stops at one pixel and at the picture's edge.
+    @Test func resizing() {
         let rect = CGRect(x: 10, y: 10, width: 20, height: 20)
         #expect(PixelSelection.resized(rect, by: CGVector(dx: 1, dy: -1), in: bounds) == CGRect(x: 10, y: 10, width: 21, height: 19))
         #expect(PixelSelection.resized(rect, by: CGVector(dx: 10, dy: 10), in: bounds) == CGRect(x: 10, y: 10, width: 30, height: 30))
+        let nearTheEdge = CGRect(x: 90, y: 70, width: 5, height: 5)
+        #expect(PixelSelection.resized(nearTheEdge, by: CGVector(dx: -10, dy: -10), in: bounds) == CGRect(x: 90, y: 70, width: 1, height: 1))
+        #expect(PixelSelection.resized(nearTheEdge, by: CGVector(dx: 10, dy: 10), in: bounds) == CGRect(x: 90, y: 70, width: 10, height: 10))
     }
 
-    @Test func resizingStopsAtOnePixelAndAtThePictureEdge() {
-        let rect = CGRect(x: 90, y: 70, width: 5, height: 5)
-        #expect(PixelSelection.resized(rect, by: CGVector(dx: -10, dy: -10), in: bounds) == CGRect(x: 90, y: 70, width: 1, height: 1))
-        #expect(PixelSelection.resized(rect, by: CGVector(dx: 10, dy: 10), in: bounds) == CGRect(x: 90, y: 70, width: 10, height: 10))
-    }
-
-    @Test func growingMovesEverySideOut() {
+    /// Growing moves every side out, stopping at each edge separately; shrinking stops at a pixel in the middle.
+    @Test func growing() {
         let rect = CGRect(x: 10, y: 10, width: 20, height: 20)
         #expect(PixelSelection.grown(rect, by: 1, in: bounds) == CGRect(x: 9, y: 9, width: 22, height: 22))
         #expect(PixelSelection.grown(rect, by: -1, in: bounds) == CGRect(x: 11, y: 11, width: 18, height: 18))
         #expect(PixelSelection.grown(rect, by: 10, in: bounds) == CGRect(x: 0, y: 0, width: 40, height: 40))
-    }
-
-    @Test func growingStopsAtEachEdgeSeparately() {
-        let rect = CGRect(x: 2, y: 10, width: 20, height: 20)
-        #expect(PixelSelection.grown(rect, by: 10, in: bounds) == CGRect(x: 0, y: 0, width: 32, height: 40))
-    }
-
-    @Test func shrinkingStopsAtAPixelInTheMiddle() {
-        let rect = CGRect(x: 10, y: 10, width: 4, height: 7)
-        let shrunk = PixelSelection.grown(rect, by: -10, in: bounds)
+        #expect(PixelSelection.grown(CGRect(x: 2, y: 10, width: 20, height: 20), by: 10, in: bounds) == CGRect(x: 0, y: 0, width: 32, height: 40))
+        let shrunk = PixelSelection.grown(CGRect(x: 10, y: 10, width: 4, height: 7), by: -10, in: bounds)
         #expect(shrunk.width == 1 && shrunk.height == 1)
         #expect(shrunk.minX == 12 && shrunk.minY == 13)
     }
 
-    @Test func aHandleDragKeepsTheOppositeSide() {
+    /// A handle drag keeps the opposite side, flips the selection when dragged past it, and stays inside the picture.
+    @Test func draggingAHandle() {
         let rect = CGRect(x: 10, y: 10, width: 20, height: 20)
         #expect(PixelSelection.dragging(.corner(.bottomRight), of: rect, to: CGPoint(x: 50.4, y: 45), in: bounds) == CGRect(x: 10, y: 10, width: 40, height: 35))
         #expect(PixelSelection.dragging(.edge(.left), of: rect, to: CGPoint(x: 4, y: 99), in: bounds) == CGRect(x: 4, y: 10, width: 26, height: 20))
         #expect(PixelSelection.dragging(.corner(.topLeft), of: rect, to: CGPoint(x: -20, y: 0), in: bounds) == CGRect(x: 0, y: 0, width: 30, height: 30))
-    }
-
-    @Test func aHandleDraggedPastTheOppositeSideFlipsTheSelection() {
-        let rect = CGRect(x: 10, y: 10, width: 20, height: 20)
         #expect(PixelSelection.dragging(.edge(.right), of: rect, to: CGPoint(x: 4, y: 0), in: bounds) == CGRect(x: 4, y: 10, width: 6, height: 20))
-    }
-
-    @Test func aHandleDragStaysInsideThePicture() {
-        let rect = CGRect(x: 10, y: 10, width: 20, height: 20)
         #expect(PixelSelection.dragging(.corner(.bottomRight), of: rect, to: CGPoint(x: 500, y: 500), in: bounds) == CGRect(x: 10, y: 10, width: 90, height: 70))
     }
 }
@@ -95,36 +66,23 @@ struct PixelSelectionGeometryTests {
 struct ZoomGeometryTests {
     private let limits = 0.05...8.0
 
-    @Test func aRectFillsTheWindowLessTheMargin() {
+    /// A rect fills the window less the margin, the tighter side setting the zoom, between the least and the most zoom, and
+    /// fits the same dragged in any direction; no area or no room gives no zoom.
+    @Test func fitting() {
         let target = ZoomGeometry.fitting(CGRect(x: 100, y: 50, width: 200, height: 100), in: CGSize(width: 432, height: 232), margin: 16, limits: limits)
         #expect(target == ZoomTarget(magnification: 2, center: CGPoint(x: 200, y: 100)))
-    }
-
-    @Test func theTighterSideSetsTheZoom() {
-        let target = ZoomGeometry.fitting(CGRect(x: 0, y: 0, width: 100, height: 400), in: CGSize(width: 1000, height: 832), margin: 16, limits: limits)
-        #expect(target?.magnification == 2)
-    }
-
-    @Test func aTinyRectStopsAtTheMostZoom() {
-        let target = ZoomGeometry.fitting(CGRect(x: 10, y: 10, width: 1, height: 1), in: CGSize(width: 800, height: 600), limits: limits)
-        #expect(target?.magnification == 8)
-        #expect(target?.center == CGPoint(x: 10.5, y: 10.5))
-    }
-
-    @Test func aHugeRectStopsAtTheLeastZoom() {
-        let target = ZoomGeometry.fitting(CGRect(x: 0, y: 0, width: 100_000, height: 100_000), in: CGSize(width: 800, height: 600), limits: limits)
-        #expect(target?.magnification == 0.05)
-    }
-
-    @Test func noAreaOrNoRoomGivesNoZoom() {
+        let tall = ZoomGeometry.fitting(CGRect(x: 0, y: 0, width: 100, height: 400), in: CGSize(width: 1000, height: 832), margin: 16, limits: limits)
+        #expect(tall?.magnification == 2)
+        let tiny = ZoomGeometry.fitting(CGRect(x: 10, y: 10, width: 1, height: 1), in: CGSize(width: 800, height: 600), limits: limits)
+        #expect(tiny?.magnification == 8)
+        #expect(tiny?.center == CGPoint(x: 10.5, y: 10.5))
+        let huge = ZoomGeometry.fitting(CGRect(x: 0, y: 0, width: 100_000, height: 100_000), in: CGSize(width: 800, height: 600), limits: limits)
+        #expect(huge?.magnification == 0.05)
         #expect(ZoomGeometry.fitting(CGRect(x: 0, y: 0, width: 0, height: 10), in: CGSize(width: 800, height: 600), limits: limits) == nil)
         #expect(ZoomGeometry.fitting(CGRect(x: 0, y: 0, width: 10, height: 10), in: CGSize(width: 20, height: 20), margin: 16, limits: limits) == nil)
         #expect(ZoomGeometry.fitting(CGRect(x: Double.nan, y: 0, width: 10, height: 10), in: CGSize(width: 800, height: 600), limits: limits) == nil)
-    }
-
-    @Test func aDraggedRectInAnyDirectionFitsTheSame() {
-        let target = ZoomGeometry.fitting(CGRect(x: 300, y: 150, width: -200, height: -100), in: CGSize(width: 432, height: 232), margin: 16, limits: limits)
-        #expect(target?.magnification == 2)
+        let dragged = ZoomGeometry.fitting(CGRect(x: 300, y: 150, width: -200, height: -100), in: CGSize(width: 432, height: 232), margin: 16, limits: limits)
+        #expect(dragged?.magnification == 2)
     }
 
     @Test func aClickDoublesTheZoomAtThePoint() {

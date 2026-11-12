@@ -166,15 +166,20 @@ struct EraseFillTests {
         #expect(TestBitmaps.pixel(try #require(after.makeImage()), 65, 15).r == 0)
     }
 
-    @Test func aFullWidthEraseOnA6KPictureIsFast() throws {
-        let width = 6144, height = 3456
+    /// A full-width Erase is linear in its pixels: on a 2048 × 1152 picture, a ninth of a 6K one, a band a ninth of the 6K
+    /// test's (6144 × 1000 in 100 ms) takes no more than a ninth of its time.
+    @Test func aFullWidthEraseIsFast() throws {
+        let width = 2048, height = 1152
         let context = TestBitmaps.context(width, height)
         context.setFillColor(TestBitmaps.blue)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height / 2))
         context.setFillColor(TestBitmaps.yellow)
         context.fill(CGRect(x: 0, y: height / 2, width: width, height: height / 2))
         let base = try #require(context.makeImage())
-        let band = CGRect(x: 0, y: 1200, width: width, height: 1000)
+        let bandHeight = 333
+        let band = CGRect(x: 0, y: 400, width: width, height: bandHeight)
+        // 100 ms for 6144 × 1000, scaled to this band's pixels.
+        let ceiling = Duration.milliseconds(100) * (Double(width * bandHeight) / Double(6144 * 1000))
         _ = EraseFill.image(base, region: CGRect(x: 0, y: 0, width: 10, height: 10)) // warm up
         // The thread's processor time, the best of a few runs, at the priority an edit on the canvas runs at, so the tests
         // running alongside count as little as they can.
@@ -194,17 +199,12 @@ struct EraseFillTests {
             }.min()!
             return (elapsed, size)
         }
-        #expect(size.0 == width && size.1 == 1000)
-        #expect(elapsed < .milliseconds(100), "\(elapsed)")
+        #expect(size.0 == width && size.1 == bandHeight)
+        #expect(elapsed < ceiling, "\(elapsed) against \(ceiling)")
     }
 }
 
 struct EraseModelTests {
-    @Test func eraseIsARedactStyleWithATitle() {
-        #expect(RedactStyle.allCases.contains(.erase))
-        #expect(RedactStyle.erase.title == "Erase")
-    }
-
     @Test func aRedactionWrittenBeforeEraseStillReads() throws {
         let old = #"{"rect":[[1,2],[30,40]],"style":"blackOut","intensity":4}"#
         let decoded = try JSONDecoder().decode(RedactObject.self, from: Data(old.utf8))

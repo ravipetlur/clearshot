@@ -13,17 +13,10 @@ struct ImagePlacementTests {
         #expect(ImagePlacement.scale(forDPI: dpi) == scale)
     }
 
-    @Test(arguments: [96.0, 150.0, 300.0, 288.0, 360.0, 600.0, 72.6, 144.6, 36.0])
-    func anyOtherDensityIsAPrintSettingAndCountsAsOne(dpi: Double) {
+    /// Any other density is a print setting, and a missing or nonsense one means nothing: each counts as one.
+    @Test(arguments: [96.0, 150.0, 300.0, 288.0, 360.0, 600.0, 72.6, 144.6, 36.0, nil, 0, -144, .nan, .infinity] as [Double?])
+    func anyOtherDensityCountsAsOne(dpi: Double?) {
         #expect(ImagePlacement.scale(forDPI: dpi) == 1)
-    }
-
-    @Test func aMissingOrNonsenseDensityCountsAsOne() {
-        #expect(ImagePlacement.scale(forDPI: nil) == 1)
-        #expect(ImagePlacement.scale(forDPI: 0) == 1)
-        #expect(ImagePlacement.scale(forDPI: -144) == 1)
-        #expect(ImagePlacement.scale(forDPI: .nan) == 1)
-        #expect(ImagePlacement.scale(forDPI: .infinity) == 1)
     }
 
     /// The density and pixels per point an editor reads from `data`, the way a dropped or pasted picture is read.
@@ -472,18 +465,14 @@ struct ImageInsertionTests {
 
     // MARK: Scales
 
-    @Test func aRetinaImageInAOneXDocumentKeepsItsSizeOnScreen() throws {
-        let h = EditorHarness() // pixelScale 1
-        h.act { #expect(h.editor.insertImage(TestBitmaps.solid(40, 20, TestBitmaps.red), scale: 2, .centered(visible: h.editor.document.canvasBounds))) }
+    /// An image keeps its size on screen: a Retina one in a 1x document is half its pixels, a 1x one in a Retina document
+    /// (100×80 output pixels) twice them.
+    @Test(arguments: [(1.0, 2.0, CGSize(width: 20, height: 10)), (2.0, 1.0, CGSize(width: 80, height: 40))])
+    func anImageKeepsItsSizeOnScreen(documentScale: Double, imageScale: Double, size: CGSize) throws {
+        let h = EditorHarness(pixelScale: documentScale)
+        h.act { #expect(h.editor.insertImage(TestBitmaps.solid(40, 20, TestBitmaps.red), scale: imageScale, .centered(visible: h.editor.document.canvasBounds))) }
         let inserted = try #require(insertedImage(h))
-        #expect(inserted.rect.size == CGSize(width: 20, height: 10))
-    }
-
-    @Test func aOneXImageInARetinaDocumentIsTwiceItsPixels() throws {
-        let h = EditorHarness(pixelScale: 2) // 100×80 output pixels
-        h.act { #expect(h.editor.insertImage(TestBitmaps.solid(40, 20, TestBitmaps.red), scale: 1, .centered(visible: h.editor.document.canvasBounds))) }
-        let inserted = try #require(insertedImage(h))
-        #expect(inserted.rect.size == CGSize(width: 80, height: 40))
+        #expect(inserted.rect.size == size)
     }
 
     // MARK: Shadows

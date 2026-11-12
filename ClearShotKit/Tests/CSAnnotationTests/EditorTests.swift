@@ -178,46 +178,25 @@ struct EditorCoalescingTests {
         h.editor.nudgeSelection(by: CGVector(dx: 1, dy: 0))
     }
 
-    @Test func nudgesLessThanASecondApartAreOneStep() {
+    /// Nudges less than a second apart are one step, each measured from the one before, up to just under a second; a pause
+    /// of exactly a second or more starts a new step.
+    @Test(arguments: [([0.5, 0.9], true), ([0.999], true), ([1.0], false), ([1.5], false)])
+    func nudgesAreOneStepUnlessASecondApart(gaps: [Double], joined: Bool) {
         let (h, id) = harness()
         h.act { nudge(h) }
-        h.clock += 0.5
-        nudge(h) // coalesced: records nothing, so it is made outside `act`
-        h.clock += 0.9
-        nudge(h) // within a second of the one before
-        #expect(h.rect(of: id)?.minX == 13)
+        for gap in gaps {
+            h.clock += gap
+            // A coalesced nudge records nothing, so it is made outside `act`.
+            if joined { nudge(h) } else { h.act { nudge(h) } }
+        }
+        #expect(h.rect(of: id)?.minX == CGFloat(11 + gaps.count))
         h.editor.undoManager.undo()
-        #expect(h.rect(of: id)?.minX == 10)
-        #expect(!h.editor.undoManager.canUndo)
-    }
-
-    @Test func aStepJustUnderASecondLaterStillJoinsTheRun() {
-        let (h, id) = harness()
-        h.act { nudge(h) }
-        h.clock += 0.999
-        nudge(h) // coalesced: records nothing, so it is made outside `act`
-        #expect(h.rect(of: id)?.minX == 12)
-        h.editor.undoManager.undo()
-        #expect(h.rect(of: id)?.minX == 10)
-        #expect(!h.editor.undoManager.canUndo)
-    }
-
-    @Test func exactlyASecondLaterStartsANewStep() {
-        let (h, id) = harness()
-        h.act { nudge(h) }
-        h.clock += 1.0
-        h.act { nudge(h) }
-        h.editor.undoManager.undo()
-        #expect(h.rect(of: id)?.minX == 11)
-    }
-
-    @Test func aPauseOfASecondStartsANewStep() {
-        let (h, id) = harness()
-        h.act { nudge(h) }
-        h.clock += 1.5
-        h.act { nudge(h) }
-        h.editor.undoManager.undo()
-        #expect(h.rect(of: id)?.minX == 11)
+        if joined {
+            #expect(h.rect(of: id)?.minX == 10)
+            #expect(!h.editor.undoManager.canUndo)
+        } else {
+            #expect(h.rect(of: id)?.minX == CGFloat(10 + gaps.count))
+        }
     }
 
     @Test func anotherSelectionStartsANewStep() {

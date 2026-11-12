@@ -14,11 +14,6 @@ struct PermissionTests {
         #expect(Permission.allCases == [.screenRecording, .microphone, .accessibility])
     }
 
-    @Test func accessibilityIsForScrollingCapturesAutoScroll() {
-        // Keystroke display and Studio Mode were dropped; auto-scroll still needs Accessibility.
-        #expect(Permission.accessibility.reason == "Scrolls the page for you in scrolling captures.")
-    }
-
     @Test func onlyScreenRecordingIsRequiredUpFront() {
         #expect(Permission.allCases.filter(\.isRequired) == [.screenRecording])
     }

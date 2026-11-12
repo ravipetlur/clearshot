@@ -14,14 +14,10 @@ struct LoginItemFeedbackTests {
         #expect(LoginItemFeedback.message(for: error(kSMErrorJobNotFound)) == nil)
     }
 
-    @Test func deniedByTheUserPointsToLoginItems() {
-        let message = LoginItemFeedback.message(for: error(kSMErrorLaunchDeniedByUser))
-        #expect(message?.contains("Login Items") == true)
-    }
-
-    @Test func anyOtherErrorStillSaysWhatToDo() {
-        let message = LoginItemFeedback.message(for: error(kSMErrorInternalFailure))
-        #expect(message?.contains("Login Items") == true)
+    /// Denied by the user, or any other error: the message still says where to go.
+    @Test(arguments: [kSMErrorLaunchDeniedByUser, kSMErrorInternalFailure])
+    func aRealErrorPointsToLoginItems(code: Int) {
+        #expect(LoginItemFeedback.message(for: error(code))?.contains("Login Items") == true)
     }
 
     @Test func pendingApprovalCountsAsOnButNeedsAction() {

@@ -19,22 +19,15 @@ struct CarbonModifiersTests {
         return (flags, carbon)
     }
 
-    @Test func eachEventFlagMapsToItsCarbonBit() {
-        #expect(CarbonModifiers.from(eventFlags: Self.commandFlag) == 256)
-        #expect(CarbonModifiers.from(eventFlags: Self.shiftFlag) == 512)
-        #expect(CarbonModifiers.from(eventFlags: Self.optionFlag) == 2048)
-        #expect(CarbonModifiers.from(eventFlags: Self.controlFlag) == 4096)
-        #expect(CarbonModifiers.from(eventFlags: 0) == 0)
-        #expect(CarbonModifiers.from(eventFlags: Self.shiftFlag | Self.commandFlag) == 768)
-    }
-
-    @Test func eachCarbonBitMapsToItsEventFlag() {
-        #expect(CarbonModifiers.eventFlags(from: 256) == Self.commandFlag)
-        #expect(CarbonModifiers.eventFlags(from: 512) == Self.shiftFlag)
-        #expect(CarbonModifiers.eventFlags(from: 2048) == Self.optionFlag)
-        #expect(CarbonModifiers.eventFlags(from: 4096) == Self.controlFlag)
-        #expect(CarbonModifiers.eventFlags(from: 0) == 0)
-        #expect(CarbonModifiers.eventFlags(from: 768) == Self.shiftFlag | Self.commandFlag)
+    /// Each flag on its own, none, and shift with command, both ways.
+    @Test(arguments: [
+        (CarbonModifiersTests.commandFlag, 256), (CarbonModifiersTests.shiftFlag, 512),
+        (CarbonModifiersTests.optionFlag, 2048), (CarbonModifiersTests.controlFlag, 4096), (0, 0),
+        (CarbonModifiersTests.shiftFlag | CarbonModifiersTests.commandFlag, 768),
+    ] as [(UInt, Int)])
+    func eachFlagMapsToItsCarbonBitAndBack(flags: UInt, carbon: Int) {
+        #expect(CarbonModifiers.from(eventFlags: flags) == carbon)
+        #expect(CarbonModifiers.eventFlags(from: carbon) == flags)
     }
 
     @Test func allSixteenCombinationsConvertBothWays() {
@@ -42,13 +35,6 @@ struct CarbonModifiersTests {
         for (flags, carbon) in Self.combinations {
             #expect(CarbonModifiers.from(eventFlags: flags) == carbon, "flags \(flags)")
             #expect(CarbonModifiers.eventFlags(from: carbon) == flags, "carbon \(carbon)")
-        }
-    }
-
-    @Test func allSixteenCombinationsRoundTrip() {
-        for (flags, carbon) in Self.combinations {
-            #expect(CarbonModifiers.eventFlags(from: CarbonModifiers.from(eventFlags: flags)) == flags)
-            #expect(CarbonModifiers.from(eventFlags: CarbonModifiers.eventFlags(from: carbon)) == carbon)
         }
     }
 

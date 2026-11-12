@@ -5,18 +5,13 @@ import CSUpdate
 /// mounted in it. An eject that was already tried (by the detach step) isn't tried again, so a stuck eject costs one
 /// attempt, not two.
 struct WorkFolderCleanupTests {
-    @Test func nothingMountedMeansTheFolderGoes() {
-        #expect(WorkFolderCleanup.next(ejectTried: false, mounted: false) == .remove)
-        #expect(WorkFolderCleanup.next(ejectTried: true, mounted: false) == .remove)
-    }
-
-    @Test func aMountedImageIsEjectedFirst() {
-        #expect(WorkFolderCleanup.next(ejectTried: false, mounted: true) == .eject)
-    }
-
-    /// The detach step already tried: the cleanup doesn't try a second time, and keeps the folder (it holds the mount).
-    @Test func anImageThatStaysMountedAfterTheEjectKeepsTheFolder() {
-        #expect(WorkFolderCleanup.next(ejectTried: true, mounted: true) == .keep)
+    /// Nothing mounted means the folder goes. A mounted image is ejected first; once the eject was tried (the detach
+    /// step tried already), the cleanup doesn't try a second time, and keeps the folder (it holds the mount).
+    @Test(arguments: [
+        (false, false, WorkFolderCleanup.Step.remove), (true, false, .remove), (false, true, .eject), (true, true, .keep),
+    ])
+    func theNextStep(ejectTried: Bool, mounted: Bool, step: WorkFolderCleanup.Step) {
+        #expect(WorkFolderCleanup.next(ejectTried: ejectTried, mounted: mounted) == step)
     }
 
     @Test func aWholeCleanupEjectsAtMostOnce() {

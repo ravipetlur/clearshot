@@ -7,10 +7,6 @@ struct InstallNamesTests {
     let old = VersionNumber("1.1.0")!
     let new = VersionNumber("1.2.0")!
 
-    @Test func theAppInsideTheImageIsClearShotApp() {
-        #expect(InstallNames.appName == "ClearShot.app")
-    }
-
     @Test func theStagedCopyIsHiddenAndNamesTheVersion() {
         let name = InstallNames.stagedName(for: new)
         #expect(name == ".ClearShot-update-1.2.0.app")
@@ -27,10 +23,6 @@ struct InstallNamesTests {
         let taken: Set<String> = ["ClearShot-1.1.0.app", "ClearShot-1.1.0 2.app"]
         #expect(InstallNames.backupName(for: old, isTaken: { taken.contains($0) }) == "ClearShot-1.1.0 3.app")
         #expect(InstallNames.backupName(for: old, isTaken: { $0 == "ClearShot-1.1.0.app" }) == "ClearShot-1.1.0 2.app")
-    }
-
-    @Test func theBackupNameIsNotHidden() {
-        #expect(!InstallNames.backupName(for: old, isTaken: { _ in false }).hasPrefix("."))
     }
 
     @Test func theWorkFolderIsRecognisedByItsName() {

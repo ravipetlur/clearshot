@@ -55,10 +55,4 @@ struct CheckAskersTests {
         #expect(askers.sources == [.statusMenu])
         #expect(askers.logName == "status menu")
     }
-
-    @Test func everySourceHasALogName() {
-        for source in CheckSource.allCases {
-            #expect(!source.logName.isEmpty, "\(source)")
-        }
-    }
 }

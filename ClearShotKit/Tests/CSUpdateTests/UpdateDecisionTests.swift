@@ -18,52 +18,30 @@ struct UpdateDecisionTests {
             checksum: .init(name: "ClearShot-\(version).dmg.sha256", size: 86, url: URL(string: base + ".sha256")!))
     }
 
-    @Test func offersAStrictlyNewerRelease() throws {
-        let latest = try release("1.2.0")
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: latest, skipped: nil) == latest)
-    }
-
-    @Test func offersNothingForTheSameVersion() throws {
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: try release("1.1.0"), skipped: nil) == nil)
-    }
-
-    @Test func neverOffersADowngrade() throws {
-        #expect(UpdateDecision.offer(current: try version("1.2.0"), latest: try release("1.1.0"), skipped: nil) == nil)
-        #expect(UpdateDecision.offer(current: try version("1.10.0"), latest: try release("1.9.9"), skipped: nil) == nil)
-    }
-
-    @Test func comparesNumericallyAcrossTenAndNine() throws {
-        let latest = try release("1.10.0")
-        #expect(UpdateDecision.offer(current: try version("1.9.9"), latest: latest, skipped: nil) == latest)
-    }
-
-    @Test func offersNothingWhenThereIsNoRelease() throws {
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: nil, skipped: nil) == nil)
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: nil, skipped: try version("1.2.0")) == nil)
-    }
-
-    @Test func doesNotOfferTheSkippedVersion() throws {
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: try release("1.2.0"), skipped: try version("1.2.0")) == nil)
-    }
-
-    @Test func offersAVersionNewerThanTheSkippedOne() throws {
-        let latest = try release("1.3.0")
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: latest, skipped: try version("1.2.0")) == latest)
-    }
-
-    @Test func aSkipOlderThanTheRunningVersionChangesNothing() throws {
-        let latest = try release("1.2.0")
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: latest, skipped: try version("1.0.5")) == latest)
-    }
-
-    /// A skip means "this one and anything before it": if the skipped release is pulled and an older one becomes the
-    /// latest, a newer one has already been declined, so the older one isn't offered either.
-    @Test func aReleaseOlderThanTheSkippedOneIsNotOffered() throws {
-        #expect(UpdateDecision.offer(current: try version("1.1.0"), latest: try release("1.2.0"), skipped: try version("1.3.0")) == nil)
-    }
-
-    @Test func skippingTheRunningVersionOffersNothing() throws {
-        #expect(UpdateDecision.offer(current: try version("1.3.0"), latest: try release("1.3.0"), skipped: try version("1.3.0")) == nil)
+    /// Only a strictly newer release is offered, compared numerically (1.10 is after 1.9): never the same version or a
+    /// downgrade, and nothing when there is no release. The skipped version isn't offered, nor is a release older than
+    /// it: a skip means "this one and anything before it", so if the skipped release is pulled and an older one becomes
+    /// the latest, a newer one has already been declined. A newer one than the skipped one is offered, and a skip older
+    /// than the running version changes nothing.
+    @Test(arguments: [
+        // (current, latest, skipped, offered)
+        ("1.1.0", "1.2.0", nil, true),
+        ("1.1.0", "1.1.0", nil, false),
+        ("1.2.0", "1.1.0", nil, false),
+        ("1.10.0", "1.9.9", nil, false),
+        ("1.9.9", "1.10.0", nil, true),
+        ("1.1.0", nil, nil, false),
+        ("1.1.0", nil, "1.2.0", false),
+        ("1.1.0", "1.2.0", "1.2.0", false),
+        ("1.1.0", "1.3.0", "1.2.0", true),
+        ("1.1.0", "1.2.0", "1.0.5", true),
+        ("1.1.0", "1.2.0", "1.3.0", false),
+        ("1.3.0", "1.3.0", "1.3.0", false),
+    ] as [(String, String?, String?, Bool)])
+    func offersOnlyANewerReleaseThatWasNotSkipped(current: String, latest: String?, skipped: String?, offered: Bool) throws {
+        let latestRelease = try latest.map(release)
+        let offer = UpdateDecision.offer(current: try version(current), latest: latestRelease, skipped: try skipped.map(version))
+        #expect(offer == (offered ? latestRelease : nil))
     }
 
     // MARK: What counts as the current version

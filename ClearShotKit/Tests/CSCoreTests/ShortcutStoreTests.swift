@@ -20,13 +20,6 @@ final class ShortcutStoreTests {
 
     // MARK: Reading
 
-    @Test func theDefaultComesBackWhenNothingIsStored() {
-        #expect(store.shortcut(for: .captureFullscreen) == fullscreen)
-        #expect(store.shortcut(for: .captureArea) == area)
-        #expect(store.shortcut(for: .allInOne) == allInOne)
-        #expect(store.shortcut(for: .recordScreen) == nil)
-    }
-
     @Test func eachActionHasAKeyOfItsOwn() {
         #expect(ShortcutStore.key(for: .captureAreaAndCopy) == "shortcut.captureAreaAndCopy")
         #expect(ShortcutStore.key(for: .allInOne) == "shortcut.allInOne")

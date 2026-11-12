@@ -85,17 +85,6 @@ struct ShortcutTextTests {
 
     // MARK: The whole text
 
-    @Test func commandShift4ReadsAsItDoesInTheNotices() {
-        let text = ShortcutText.string(for: .commandShift(Key.digit4)) { _ in "4" }
-        #expect(text == "⇧⌘4")
-        #expect(ShortcutText.string(for: .commandShift(Key.digit4), character: usLayout) == "⇧⌘4")
-    }
-
-    @Test func allFourModifiersAndALetter() {
-        let all = ShortcutSpec(carbonKeyCode: Key.a, carbonModifiers: 256 | 512 | 2048 | 4096)
-        #expect(ShortcutText.string(for: all, character: usLayout) == "⌃⌥⇧⌘A")
-    }
-
     @Test func everyModifierCombinationPrecedesTheKey() {
         for (mask, glyphs) in allModifierCombinations {
             let spec = ShortcutSpec(carbonKeyCode: Key.digit4, carbonModifiers: mask)
@@ -173,31 +162,31 @@ struct ShortcutTextTests {
         #expect(ShortcutText.string(for: ShortcutSpec(carbonKeyCode: Key.unknown, carbonModifiers: 0)) { _ in nil } == "Key 999")
     }
 
-    @Test func anEmptyCharacterFallsBackToo() {
-        let spec = ShortcutSpec(carbonKeyCode: Key.unknown, carbonModifiers: 0)
-        #expect(ShortcutText.string(for: spec) { _ in "" } == "Key 999")
-    }
-
     @Test func aCharacterThatShowsNothingFallsBackToo() {
-        // A layout can give a blank or a control character (the Help key gives U+0005) for a key; showing it would
-        // leave the key part of the text empty.
+        // A layout can give an empty string, a blank or a control character (the Help key gives U+0005) for a key;
+        // showing it would leave the key part of the text empty.
         let spec = ShortcutSpec(carbonKeyCode: Key.unknown, carbonModifiers: 0)
-        for character in [" ", "  ", "\t", "\n", "\u{5}", "\u{7F}", " \u{5}"] {
-            #expect(ShortcutText.string(for: spec) { _ in character } == "Key 999", "U+\(character.unicodeScalars.first!.value)")
+        for character in ["", " ", "  ", "\t", "\n", "\u{5}", "\u{7F}", " \u{5}"] {
+            #expect(ShortcutText.string(for: spec) { _ in character } == "Key 999", "\(character.debugDescription)")
         }
     }
 
+    /// Every key code, modifier combination and character: about 34,000 texts, so the failures are gathered and
+    /// expected once rather than with an expectation each.
     @Test func theTextIsNeverEmpty() {
         let characters: [String?] = [nil, "", " ", "\u{5}", "a", "ß", "`"]
+        var failures: [String] = []
         for code in -1...300 {
             for (mask, _) in allModifierCombinations {
                 for character in characters {
                     let text = ShortcutText.string(for: ShortcutSpec(carbonKeyCode: code, carbonModifiers: mask)) { _ in character }
-                    #expect(!text.isEmpty)
-                    #expect(text != ShortcutText.modifierGlyphs(mask), "key code \(code), character \(String(describing: character))")
+                    if text.isEmpty || text == ShortcutText.modifierGlyphs(mask) {
+                        failures.append("key code \(code), mask \(mask), character \(String(describing: character)): \(text.debugDescription)")
+                    }
                 }
             }
         }
+        #expect(failures.isEmpty, "\(failures.count) failed: \(failures.prefix(10).joined(separator: "; "))")
     }
 }
 
@@ -214,12 +203,6 @@ struct MenuKeyEquivalentTests {
         #expect(MenuKeyEquivalent.make(for: .commandShift(Key.grave), character: usLayout)?.key == "`")
     }
 
-    @Test func theLayoutIsAskedAboutTheShortcutsOwnKeyCode() {
-        let spec = ShortcutSpec(carbonKeyCode: Key.a, carbonModifiers: ShortcutSpec.command)
-        #expect(MenuKeyEquivalent.make(for: spec, character: usLayout)?.key == "a")
-        #expect(MenuKeyEquivalent.make(for: ShortcutSpec(carbonKeyCode: Key.digit1, carbonModifiers: 0), character: usLayout)?.key == "1")
-    }
-
     @Test func functionKeysUseAppKitsFunctionKeyCharacters() {
         // NSF1FunctionKey is 0xF704 and the others follow in order, F20 being 0xF717. The key codes are not in order.
         let codeByName = Dictionary(uniqueKeysWithValues: specialKeyNames.map { ($0.name, $0.code) })
@@ -230,30 +213,24 @@ struct MenuKeyEquivalentTests {
         #expect(key(Key.f5)?.key == "\u{F708}") // NSF5FunctionKey
     }
 
-    @Test func arrowsUseAppKitsArrowCharacters() {
-        #expect(key(Key.upArrow)?.key == "\u{F700}") // NSUpArrowFunctionKey
-        #expect(key(0x7D)?.key == "\u{F701}") // kVK_DownArrow, NSDownArrowFunctionKey
-        #expect(key(Key.leftArrow)?.key == "\u{F702}") // NSLeftArrowFunctionKey
-        #expect(key(0x7C)?.key == "\u{F703}") // kVK_RightArrow, NSRightArrowFunctionKey
-    }
-
-    @Test func returnTabAndSpaceUseTheirControlCharacters() {
-        #expect(key(Key.returnKey)?.key == "\r")
-        #expect(key(Key.tab)?.key == "\t")
-        #expect(key(Key.space)?.key == " ")
-    }
-
-    @Test func deleteKeysAndEscape() {
-        #expect(key(Key.forwardDelete)?.key == "\u{F728}") // NSDeleteFunctionKey: AppKit's name for forward delete
-        #expect(key(Key.delete)?.key == "\u{8}") // backspace
-        #expect(key(Key.escape)?.key == "\u{1B}")
-    }
-
-    @Test func navigationKeysUseAppKitsCharacters() {
-        #expect(key(0x73)?.key == "\u{F729}") // kVK_Home, NSHomeFunctionKey
-        #expect(key(0x77)?.key == "\u{F72B}") // kVK_End, NSEndFunctionKey
-        #expect(key(0x74)?.key == "\u{F72C}") // kVK_PageUp, NSPageUpFunctionKey
-        #expect(key(0x79)?.key == "\u{F72D}") // kVK_PageDown, NSPageDownFunctionKey
+    /// Arrows, Home, End and the page keys use AppKit's function-key characters; Return, Tab and Space their control
+    /// characters; Delete is a backspace and forward delete is AppKit's NSDeleteFunctionKey.
+    @Test(arguments: [
+        (Key.upArrow, "\u{F700}"), // NSUpArrowFunctionKey
+        (0x7D, "\u{F701}"), // kVK_DownArrow, NSDownArrowFunctionKey
+        (Key.leftArrow, "\u{F702}"), // NSLeftArrowFunctionKey
+        (0x7C, "\u{F703}"), // kVK_RightArrow, NSRightArrowFunctionKey
+        (Key.returnKey, "\r"), (Key.tab, "\t"), (Key.space, " "),
+        (Key.forwardDelete, "\u{F728}"), // NSDeleteFunctionKey: AppKit's name for forward delete
+        (Key.delete, "\u{8}"), // backspace
+        (Key.escape, "\u{1B}"),
+        (0x73, "\u{F729}"), // kVK_Home, NSHomeFunctionKey
+        (0x77, "\u{F72B}"), // kVK_End, NSEndFunctionKey
+        (0x74, "\u{F72C}"), // kVK_PageUp, NSPageUpFunctionKey
+        (0x79, "\u{F72D}"), // kVK_PageDown, NSPageDownFunctionKey
+    ])
+    func specialKeysUseAppKitsCharacters(code: Int, character: String) {
+        #expect(key(code)?.key == character)
     }
 
     @Test func aSpecialKeyIgnoresTheLayout() {

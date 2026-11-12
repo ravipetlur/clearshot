@@ -19,6 +19,7 @@ struct APIDocumentedExamplesTests {
         ("clearshot://capture-area?x=100&y=120&width=200&height=150&display=1", .captureArea(areaA, action: nil)),
         ("clearshot://capture-area?x=100&y=120&width=200&height=150&display=1&action=copy",
          .captureArea(areaA, action: .copy)),
+        ("clearshot://capture-area-raycast-aichat", .captureAreaForRaycast(nil)),
         ("clearshot://capture-previous-area", .capturePreviousArea(action: nil)),
         ("clearshot://capture-fullscreen", .captureFullscreen(action: nil)),
         ("clearshot://capture-window", .captureWindow(action: nil)),

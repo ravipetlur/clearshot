@@ -66,13 +66,10 @@ struct ReleaseFeedTests {
         #expect(info.version == VersionNumber("1.2.0"))
     }
 
-    @Test func aNullBodyGivesEmptyNotes() throws {
-        let info = try #require(ReleaseFeed.latest(from: Self.release(body: "null")))
-        #expect(info.notes == "")
-    }
-
-    @Test func aMissingBodyGivesEmptyNotes() throws {
-        let info = try #require(ReleaseFeed.latest(from: Self.release(body: nil)))
+    /// A null body, or none at all, gives empty notes.
+    @Test(arguments: ["null", nil] as [String?])
+    func noBodyGivesEmptyNotes(body: String?) throws {
+        let info = try #require(ReleaseFeed.latest(from: Self.release(body: body)))
         #expect(info.notes == "")
     }
 
@@ -103,16 +100,10 @@ struct ReleaseFeedTests {
 
     // MARK: Drafts and pre-releases
 
-    @Test func aDraftGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(draft: "true")) == nil)
-    }
-
-    @Test func aPreReleaseGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(prerelease: "true")) == nil)
-    }
-
-    @Test func aDraftPreReleaseGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(draft: "true", prerelease: "true")) == nil)
+    /// A draft, a pre-release, or both, gives nothing.
+    @Test(arguments: [("true", "false"), ("false", "true"), ("true", "true")])
+    func aDraftOrPreReleaseGivesNothing(draft: String, prerelease: String) {
+        #expect(ReleaseFeed.latest(from: Self.release(draft: draft, prerelease: prerelease)) == nil)
     }
 
     /// The endpoint always sends both flags; a release that carries neither isn't marked as either.
@@ -138,33 +129,20 @@ struct ReleaseFeedTests {
 
     // MARK: The assets
 
-    @Test func assetsNamedForAnotherVersionThanTheTagGiveNothing() {
-        let dmg = Self.asset("ClearShot-1.1.0.dmg", tag: "v1.1.0")
-        let sum = Self.asset("ClearShot-1.1.0.dmg.sha256", size: 86, tag: "v1.1.0")
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [dmg, sum])) == nil)
-    }
-
-    @Test func aDMGOfAnotherVersionGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.asset("ClearShot-1.1.0.dmg"), Self.goodChecksum])) == nil)
-    }
-
-    @Test func aChecksumOfAnotherVersionGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.goodDMG, Self.asset("ClearShot-1.1.0.dmg.sha256", size: 86)])) == nil)
-    }
-
-    @Test func aMissingChecksumGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.goodDMG])) == nil)
-    }
-
-    @Test func aMissingDMGGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.goodChecksum])) == nil)
-    }
-
-    @Test func noAssetsGiveNothing() {
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [])) == nil)
-        #expect(ReleaseFeed.latest(from: Self.release(assets: nil)) == nil)
-        let nullAssets = #"{"tag_name": "v1.2.0", "draft": false, "prerelease": false, "html_url": "https://example.com/r", "assets": null}"#
-        #expect(ReleaseFeed.latest(from: Data(nullAssets.utf8)) == nil)
+    /// Both assets are needed, each named for the tag's version: a disk image or checksum of another version, a missing
+    /// one, or no assets at all (an empty list, none, or null) give nothing.
+    @Test(arguments: [
+        release(assets: [asset("ClearShot-1.1.0.dmg", tag: "v1.1.0"), asset("ClearShot-1.1.0.dmg.sha256", size: 86, tag: "v1.1.0")]),
+        release(assets: [asset("ClearShot-1.1.0.dmg"), goodChecksum]),
+        release(assets: [goodDMG, asset("ClearShot-1.1.0.dmg.sha256", size: 86)]),
+        release(assets: [goodDMG]),
+        release(assets: [goodChecksum]),
+        release(assets: []),
+        release(assets: nil),
+        Data(#"{"tag_name": "v1.2.0", "draft": false, "prerelease": false, "html_url": "https://example.com/r", "assets": null}"#.utf8),
+    ])
+    func aReleaseWithoutBothAssetsOfItsVersionGivesNothing(data: Data) {
+        #expect(ReleaseFeed.latest(from: data) == nil)
     }
 
     @Test func extraAssetsAreIgnored() throws {
@@ -177,14 +155,15 @@ struct ReleaseFeedTests {
         #expect(info.checksum.name == "ClearShot-1.2.0.dmg.sha256")
     }
 
-    @Test func aDuplicatedDMGIsAmbiguous() {
-        let again = Self.asset("ClearShot-1.2.0.dmg", size: 999, url: "https://example.com/mirror/ClearShot-1.2.0.dmg")
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.goodDMG, again, Self.goodChecksum])) == nil)
-    }
-
-    @Test func aDuplicatedChecksumIsAmbiguous() {
-        let again = Self.asset("ClearShot-1.2.0.dmg.sha256", size: 86, url: "https://example.com/mirror/ClearShot-1.2.0.dmg.sha256")
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.goodDMG, Self.goodChecksum, again])) == nil)
+    /// A second disk image or checksum under the wanted name makes the release ambiguous, even a malformed twin: it isn't
+    /// silently dropped in favour of the well-formed one.
+    @Test(arguments: [
+        [goodDMG, asset("ClearShot-1.2.0.dmg", size: 999, url: "https://example.com/mirror/ClearShot-1.2.0.dmg"), goodChecksum],
+        [goodDMG, goodChecksum, asset("ClearShot-1.2.0.dmg.sha256", size: 86, url: "https://example.com/mirror/ClearShot-1.2.0.dmg.sha256")],
+        [goodDMG, #"{"name": "ClearShot-1.2.0.dmg", "size": "big", "browser_download_url": "https://example.com/x"}"#, goodChecksum],
+    ])
+    func aDuplicatedAssetIsAmbiguous(assets: [String]) {
+        #expect(ReleaseFeed.latest(from: Self.release(assets: assets)) == nil)
     }
 
     /// Names are matched exactly: case, spacing, and any extra suffix all count.
@@ -249,31 +228,19 @@ struct ReleaseFeedTests {
         #expect(info.dmg.name == "ClearShot-1.2.0.dmg")
     }
 
-    /// A malformed copy of a wanted name still counts toward ambiguity: it isn't silently dropped in favour of the
-    /// well-formed twin.
-    @Test func aMalformedTwinOfTheDMGMakesItAmbiguous() {
-        let twin = #"{"name": "ClearShot-1.2.0.dmg", "size": "big", "browser_download_url": "https://example.com/x"}"#
-        #expect(ReleaseFeed.latest(from: Self.release(assets: [Self.goodDMG, twin, Self.goodChecksum])) == nil)
-    }
-
     // MARK: Garbage
 
-    @Test(arguments: ["", "not json", "{", "[]", "null", "7", #""text""#, "{}", #"{"tag_name": 5}"#, #"{"tag_name": null}"#, "[{\"tag_name\": \"v1.2.0\"}]"])
-    func garbageGivesNothing(text: String) {
-        #expect(ReleaseFeed.latest(from: Data(text.utf8)) == nil)
-    }
+    /// Text that isn't a release object, a truncated release, binary garbage, and assets that are not an array.
+    static let garbage: [Data] = {
+        let texts = ["", "not json", "{", "[]", "null", "7", #""text""#, "{}", #"{"tag_name": 5}"#, #"{"tag_name": null}"#,
+                     "[{\"tag_name\": \"v1.2.0\"}]",
+                     #"{"tag_name": "v1.2.0", "draft": false, "prerelease": false, "html_url": "https://example.com/r", "assets": {"name": "x"}}"#]
+        let whole = release()
+        return texts.map { Data($0.utf8) } + [whole.prefix(whole.count / 2), Data([0x00, 0xFF, 0xFE, 0x7B, 0x80])]
+    }()
 
-    @Test func aTruncatedReleaseGivesNothing() {
-        let whole = Self.release()
-        #expect(ReleaseFeed.latest(from: whole.prefix(whole.count / 2)) == nil)
-    }
-
-    @Test func binaryGarbageGivesNothing() {
-        #expect(ReleaseFeed.latest(from: Data([0x00, 0xFF, 0xFE, 0x7B, 0x80])) == nil)
-    }
-
-    @Test func assetsThatAreNotAnArrayAreGarbage() {
-        let data = Data(#"{"tag_name": "v1.2.0", "draft": false, "prerelease": false, "html_url": "https://example.com/r", "assets": {"name": "x"}}"#.utf8)
+    @Test(arguments: garbage)
+    func garbageGivesNothing(data: Data) {
         #expect(ReleaseFeed.latest(from: data) == nil)
     }
 }

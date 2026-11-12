@@ -1,3 +1,4 @@
+import Darwin
 import Testing
 @testable import CSSensitive
 
@@ -152,8 +153,10 @@ struct SensitiveDetectorTests {
 
     // MARK: Long lines
 
-    /// Nothing may take longer than a second on a line of 20 000 characters, whatever it holds; the patterns read a line in
-    /// time proportional to its length. Each of these made one of them quadratic.
+    /// Nothing may take longer than a second of CPU time on a line of 20 000 characters, whatever it holds; the patterns
+    /// read a line in time proportional to its length. Each of these made one of them quadratic. The time is the calling
+    /// thread's CPU time, not the wall time: the cases run side by side with the rest of the suite, and on a shared test
+    /// machine the wall time of the slowest (about a third of a second of CPU on Apple Silicon) passed a second.
     static let longLineUnits: [String] = {
         let units: [String] = [
             "a", "-", "—", "1 ", "a.", "a@", "1.", "a:", "1-", "ab12", "x://a:", "token=", "id_rsa.", "eyJ", "sk-", "Bearer ",
@@ -187,9 +190,10 @@ struct SensitiveDetectorTests {
     @Test(arguments: longLineUnits)
     func aVeryLongLineIsReadInLinearTime(unit: String) {
         let line = String(repeating: unit, count: 20_000 / unit.count)
-        let clock = ContinuousClock()
-        let elapsed = clock.measure { _ = SensitiveDetector.findings(in: line, kinds: .all) }
-        #expect(elapsed < .seconds(1), "\(unit.debugDescription) x \(line.count) took \(elapsed)")
+        let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+        _ = SensitiveDetector.findings(in: line, kinds: .all)
+        let seconds = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e9
+        #expect(seconds < 1, "\(unit.debugDescription) x \(line.count) took \(seconds) s of CPU time")
     }
 
     // MARK: The merge itself
